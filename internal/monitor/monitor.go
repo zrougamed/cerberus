@@ -31,6 +31,10 @@ type NetworkMonitor struct {
 		ArpPackets   uint64
 		TcpPackets   uint64
 		UdpPackets   uint64
+		IcmpPackets  uint64
+		DnsPackets   uint64
+		HttpPackets  uint64
+		TlsPackets   uint64
 	}
 }
 
@@ -129,6 +133,60 @@ func (nm *NetworkMonitor) classifyARPTraffic(srcIP, dstIP string, op uint16) mod
 	return models.TrafficARPRequest
 }
 
+func (nm *NetworkMonitor) classifyICMPTraffic(icmpType, icmpCode uint8) models.TrafficType {
+	switch icmpType {
+	case 0:
+		return models.TrafficICMPEchoReply
+	case 3:
+		return models.TrafficICMPDestUnreach
+	case 5:
+		return models.TrafficICMPRedirect
+	case 8:
+		return models.TrafficICMPEchoRequest
+	case 11:
+		return models.TrafficICMPTimeExceeded
+	default:
+		return models.TrafficICMPCustom
+	}
+}
+
+func (nm *NetworkMonitor) classifyDNSTraffic(payload [32]byte) models.TrafficType {
+	// DNS queries have QR bit = 0, responses have QR bit = 1
+	// Flags are in bytes 2-3, QR is the first bit of byte 2
+	if len(payload) >= 3 {
+		flags := uint16(payload[2])<<8 | uint16(payload[3])
+		if flags&0x8000 != 0 {
+			return models.TrafficDNSResponse
+		}
+	}
+	return models.TrafficDNSQuery
+}
+
+func (nm *NetworkMonitor) classifyHTTPTraffic(payload [32]byte) models.TrafficType {
+	str := string(payload[:])
+	if strings.HasPrefix(str, "GET ") {
+		return models.TrafficHTTPGET
+	} else if strings.HasPrefix(str, "POST ") {
+		return models.TrafficHTTPPOST
+	}
+	return models.TrafficHTTPRequest
+}
+
+func (nm *NetworkMonitor) classifyTLSTraffic(payload [32]byte) models.TrafficType {
+	// TLS handshake record type 0x16, followed by version
+	if len(payload) >= 6 {
+		// Check for Client Hello (handshake type 0x01)
+		if payload[0] == 0x16 && payload[5] == 0x01 {
+			return models.TrafficTLSClientHello
+		}
+		// Check for Server Hello (handshake type 0x02)
+		if payload[0] == 0x16 && payload[5] == 0x02 {
+			return models.TrafficTLSServerHello
+		}
+	}
+	return models.TrafficTLSHandshake
+}
+
 func (nm *NetworkMonitor) getServiceName(port uint16, protocol string) string {
 	if svc, ok := nm.serviceDB[port]; ok && (svc.Protocol == protocol || svc.Protocol == "BOTH") {
 		return svc.Service
@@ -149,6 +207,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	var trafficType models.TrafficType
 	var service string
 	var protocol string
+	var l7Info string
 
 	switch evt.EventType {
 	case models.EVENT_TYPE_ARP:
@@ -162,12 +221,41 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 		trafficType = nm.classifyTCPTraffic(srcIP, dstIP, evt.SrcPort, evt.DstPort, evt.TCPFlags)
 		protocol = "TCP"
 		service = nm.getServiceName(evt.DstPort, "TCP")
+		l7Info = utils.GetL7Info(evt)
 
 	case models.EVENT_TYPE_UDP:
 		nm.Stats.UdpPackets++
 		trafficType = nm.classifyUDPTraffic(srcIP, dstIP, evt.SrcPort, evt.DstPort)
 		protocol = "UDP"
 		service = nm.getServiceName(evt.DstPort, "UDP")
+		l7Info = utils.GetL7Info(evt)
+
+	case models.EVENT_TYPE_ICMP:
+		nm.Stats.IcmpPackets++
+		trafficType = nm.classifyICMPTraffic(evt.ICMPType, evt.ICMPCode)
+		protocol = "ICMP"
+		service = string(trafficType)
+
+	case models.EVENT_TYPE_DNS:
+		nm.Stats.DnsPackets++
+		trafficType = nm.classifyDNSTraffic(evt.L7Payload)
+		protocol = "DNS"
+		service = "DNS"
+		l7Info = utils.GetL7Info(evt)
+
+	case models.EVENT_TYPE_HTTP:
+		nm.Stats.HttpPackets++
+		trafficType = nm.classifyHTTPTraffic(evt.L7Payload)
+		protocol = "HTTP"
+		service = "HTTP"
+		l7Info = utils.GetL7Info(evt)
+
+	case models.EVENT_TYPE_TLS:
+		nm.Stats.TlsPackets++
+		trafficType = nm.classifyTLSTraffic(evt.L7Payload)
+		protocol = "TLS"
+		service = "TLS"
+		l7Info = utils.GetL7Info(evt)
 	}
 
 	// Get or create device
@@ -197,6 +285,9 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 			LastSeen:          time.Now(),
 			Targets:           []string{},
 			Services:          make(map[string]int),
+			DNSDomains:        make(map[string]int),
+			HTTPHosts:         make(map[string]int),
+			TLSSNIs:           make(map[string]int),
 			SeenPatterns:      make(map[string]bool),
 			TrafficTypeCounts: make(map[models.TrafficType]int),
 			FlowStats:         make(map[string]*models.FlowStats),
@@ -217,6 +308,15 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	if device.FlowStats == nil {
 		device.FlowStats = make(map[string]*models.FlowStats)
 	}
+	if device.DNSDomains == nil {
+		device.DNSDomains = make(map[string]int)
+	}
+	if device.HTTPHosts == nil {
+		device.HTTPHosts = make(map[string]int)
+	}
+	if device.TLSSNIs == nil {
+		device.TLSSNIs = make(map[string]int)
+	}
 
 	// Update device info
 	device.LastSeen = time.Now()
@@ -227,12 +327,29 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	device.TrafficTypeCounts[trafficType]++
 	device.Services[service]++
 
+	// Track L7 information
+	if l7Info != "" {
+		switch evt.EventType {
+		case models.EVENT_TYPE_DNS:
+			device.DNSDomains[l7Info]++
+			device.DNSQueries++
+		case models.EVENT_TYPE_HTTP:
+			device.HTTPHosts[l7Info]++
+			device.HTTPRequests++
+		case models.EVENT_TYPE_TLS:
+			device.TLSSNIs[l7Info]++
+			device.TLSConnections++
+		}
+	}
+
 	// Track connections
 	switch evt.EventType {
-	case models.EVENT_TYPE_TCP:
+	case models.EVENT_TYPE_TCP, models.EVENT_TYPE_HTTP, models.EVENT_TYPE_TLS:
 		device.TCPConnections++
-	case models.EVENT_TYPE_UDP:
+	case models.EVENT_TYPE_UDP, models.EVENT_TYPE_DNS:
 		device.UDPConnections++
+	case models.EVENT_TYPE_ICMP:
+		device.ICMPPackets++
 	case models.EVENT_TYPE_ARP:
 		if evt.ArpOp == 1 {
 			device.RequestCount++
@@ -240,6 +357,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 			device.ReplyCount++
 		}
 	}
+
 	// Track targets
 	if dstIP != "0.0.0.0" && !utils.Contains(device.Targets, dstIP) {
 		device.Targets = append(device.Targets, dstIP)
@@ -262,6 +380,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 			TrafficType: trafficType,
 			Service:     service,
 			Timestamp:   time.Now(),
+			L7Info:      l7Info,
 		}
 
 		select {
@@ -323,8 +442,13 @@ func (nm *NetworkMonitor) newPatternNotifier() {
 			vendor = device.Vendor
 		}
 
+		l7Suffix := ""
+		if pattern.L7Info != "" {
+			l7Suffix = fmt.Sprintf(" [%s]", pattern.L7Info)
+		}
+
 		if pattern.DstPort > 0 {
-			fmt.Printf("[%s] %s (%s) [%s] → %s:%d (%s)\n",
+			fmt.Printf("[%s] %s (%s) [%s] → %s:%d (%s)%s\n",
 				pattern.Protocol,
 				pattern.SrcIP,
 				pattern.SrcMAC,
@@ -332,15 +456,17 @@ func (nm *NetworkMonitor) newPatternNotifier() {
 				pattern.DstIP,
 				pattern.DstPort,
 				pattern.Service,
+				l7Suffix,
 			)
 		} else {
-			fmt.Printf("[%s] %s (%s) [%s] → %s (%s)\n",
+			fmt.Printf("[%s] %s (%s) [%s] → %s (%s)%s\n",
 				pattern.Protocol,
 				pattern.SrcIP,
 				pattern.SrcMAC,
 				vendor,
 				pattern.DstIP,
 				pattern.Service,
+				l7Suffix,
 			)
 		}
 	}
@@ -375,21 +501,50 @@ func (nm *NetworkMonitor) GetStats() map[string]*models.DeviceInfo {
 func (nm *NetworkMonitor) PrintStats() {
 	stats := nm.GetStats()
 
-	fmt.Printf("\n╔════════════════════════════════════════════════════════════════╗\n")
+	fmt.Printf("\n╔═══════════════════════════════════════════════════════════════╗\n")
 	fmt.Printf("║              NETWORK STATISTICS SUMMARY                       ║\n")
-	fmt.Printf("╠════════════════════════════════════════════════════════════════╣\n")
+	fmt.Printf("╠═══════════════════════════════════════════════════════════════╣\n")
 	fmt.Printf("║ Total Devices: %-47d ║\n", len(stats))
 	fmt.Printf("║ Total Packets: %-47d ║\n", nm.Stats.TotalPackets)
-	fmt.Printf("║   - ARP: %-53d ║\n", nm.Stats.ArpPackets)
-	fmt.Printf("║   - TCP: %-53d ║\n", nm.Stats.TcpPackets)
-	fmt.Printf("║   - UDP: %-53d ║\n", nm.Stats.UdpPackets)
-	fmt.Printf("╚════════════════════════════════════════════════════════════════╝\n\n")
+	fmt.Printf("║   - ARP:  %-53d ║\n", nm.Stats.ArpPackets)
+	fmt.Printf("║   - TCP:  %-53d ║\n", nm.Stats.TcpPackets)
+	fmt.Printf("║   - UDP:  %-53d ║\n", nm.Stats.UdpPackets)
+	fmt.Printf("║   - ICMP: %-53d ║\n", nm.Stats.IcmpPackets)
+	fmt.Printf("║   - DNS:  %-53d ║\n", nm.Stats.DnsPackets)
+	fmt.Printf("║   - HTTP: %-53d ║\n", nm.Stats.HttpPackets)
+	fmt.Printf("║   - TLS:  %-53d ║\n", nm.Stats.TlsPackets)
+	fmt.Printf("╚═══════════════════════════════════════════════════════════════╝\n\n")
 
 	for mac, device := range stats {
 		fmt.Printf("┌─ Device: %s\n", mac)
 		fmt.Printf("│  IP: %s | Vendor: %s\n", device.IP, device.Vendor)
-		fmt.Printf("│  ARP: Req=%d Reply=%d | TCP: %d | UDP: %d\n",
-			device.RequestCount, device.ReplyCount, device.TCPConnections, device.UDPConnections)
+		fmt.Printf("│  ARP: Req=%d Reply=%d | TCP: %d | UDP: %d | ICMP: %d\n",
+			device.RequestCount, device.ReplyCount, device.TCPConnections,
+			device.UDPConnections, device.ICMPPackets)
+
+		if device.DNSQueries > 0 {
+			fmt.Printf("│  DNS Queries: %d", device.DNSQueries)
+			if len(device.DNSDomains) > 0 {
+				fmt.Printf(" | Top Domains: ")
+				count := 0
+				for domain, cnt := range device.DNSDomains {
+					if count >= 3 {
+						break
+					}
+					fmt.Printf("%s(%d) ", domain, cnt)
+					count++
+				}
+			}
+			fmt.Println()
+		}
+
+		if device.HTTPRequests > 0 {
+			fmt.Printf("│  HTTP Requests: %d\n", device.HTTPRequests)
+		}
+
+		if device.TLSConnections > 0 {
+			fmt.Printf("│  TLS Connections: %d\n", device.TLSConnections)
+		}
 
 		if len(device.Services) > 0 {
 			fmt.Printf("│  Top Services: ")

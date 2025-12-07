@@ -1,0 +1,28 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+build/
+*.o
+cerberus
+
+# Go
+vendor/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+README.md
+LICENSE
+*.md
+data/

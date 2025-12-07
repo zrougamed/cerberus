@@ -22,13 +22,13 @@ type HookInfo struct {
 }
 
 func main() {
-	monitor, err := monitor.NewNetworkMonitor(1000, "network.db")
+	monitor, err := monitor.NewNetworkMonitor(1000, "./data/network.db")
 	if err != nil {
 		panic(err)
 	}
 	defer monitor.Close()
 
-	module, err := bpf.NewModuleFromFile("arp_xdp.o")
+	module, err := bpf.NewModuleFromFile("monitor_xdp.o")
 	if err != nil {
 		panic(err)
 	}
@@ -49,7 +49,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println(" Scanning for network interfaces...")
+	fmt.Println("Scanning for network interfaces...")
 
 	var hooks []HookInfo
 	attachedCount := 0
@@ -73,11 +73,11 @@ func main() {
 			continue
 		}
 
-		fmt.Printf(" Attaching to %s...\n", ifaceName)
+		fmt.Printf("Attaching to %s...\n", ifaceName)
 
 		hook := module.TcHookInit()
 		if err := hook.SetInterfaceByName(ifaceName); err != nil {
-			fmt.Printf("️Failed to set interface %s: %v\n", ifaceName, err)
+			fmt.Printf("Failed to set interface %s: %v\n", ifaceName, err)
 			continue
 		}
 
@@ -88,7 +88,7 @@ func main() {
 
 		// Create new hook
 		if err := hook.Create(); err != nil {
-			fmt.Printf("️  Failed to create TC hook on %s: %v\n", ifaceName, err)
+			fmt.Printf("Failed to create TC hook on %s: %v\n", ifaceName, err)
 			continue
 		}
 
@@ -97,25 +97,25 @@ func main() {
 		}
 
 		if err := hook.Attach(tcOpts); err != nil {
-			fmt.Printf("️  Failed to attach TC hook to %s: %v\n", ifaceName, err)
+			fmt.Printf("Failed to attach TC hook to %s: %v\n", ifaceName, err)
 			hook.Destroy()
 			continue
 		}
 
 		hooks = append(hooks, HookInfo{hook: hook, tcOpts: tcOpts})
 		attachedCount++
-		fmt.Printf(" Successfully attached to %s\n", ifaceName)
+		fmt.Printf("Successfully attached to %s\n", ifaceName)
 	}
 
 	if attachedCount == 0 {
-		panic(" Failed to attach to any interface!")
+		panic("Failed to attach to any interface!")
 	}
 
-	fmt.Printf("\n Monitoring %d interface(s)\n\n", attachedCount)
+	fmt.Printf("\nMonitoring %d interface(s)\n\n", attachedCount)
 
 	// Cleanup hooks on exit
 	defer func() {
-		fmt.Println("\n Cleaning up hooks...")
+		fmt.Println("\nCleaning up hooks...")
 		for _, h := range hooks {
 			h.hook.Detach(h.tcOpts)
 			h.hook.Destroy()
@@ -132,8 +132,8 @@ func main() {
 	rb.Start()
 	defer rb.Stop()
 
-	fmt.Println(" Monitoring network traffic... Press Ctrl+C to exit")
-	fmt.Println(" Stats will be printed every 60 seconds\n")
+	fmt.Println("Monitoring network traffic... Press Ctrl+C to exit")
+	fmt.Println("Stats will be printed every 60 seconds")
 
 	// Add debug ticker to show we're alive
 	debugTicker := time.NewTicker(10 * time.Second)
@@ -141,11 +141,15 @@ func main() {
 
 	go func() {
 		for range debugTicker.C {
-			fmt.Printf(" Alive - Packets: Total=%d ARP=%d TCP=%d UDP=%d | Devices=%d\n",
+			fmt.Printf("Alive - Packets: Total=%d ARP=%d TCP=%d UDP=%d ICMP=%d DNS=%d HTTP=%d TLS=%d | Devices=%d\n",
 				monitor.Stats.TotalPackets,
 				monitor.Stats.ArpPackets,
 				monitor.Stats.TcpPackets,
 				monitor.Stats.UdpPackets,
+				monitor.Stats.IcmpPackets,
+				monitor.Stats.DnsPackets,
+				monitor.Stats.HttpPackets,
+				monitor.Stats.TlsPackets,
 				monitor.Cache.Len())
 		}
 	}()
@@ -161,20 +165,41 @@ func main() {
 
 	go func() {
 		eventCount := 0
+		// Expected packet size: 1 + 6 + 6 + 4 + 4 + 2 + 2 + 1 + 1 + 2 + 6 + 6 + 1 + 1 + 32 = 75 bytes
+		expectedSize := 75
+
 		for data := range eventsChan {
 			eventCount++
 
-			if len(data) < 41 { // Changed from 44 to 41
-				fmt.Printf("️  Short packet: %d bytes (expected 41)\n", len(data))
+			if len(data) < expectedSize {
+				fmt.Printf("Short packet: %d bytes (expected %d)\n", len(data), expectedSize)
 				continue
 			}
 
 			evt := utils.ParseNetworkEvent(data)
 
-			// Debug: Print first 5 events
-			if eventCount <= 5 {
-				fmt.Printf(" Event #%d: Type=%d SrcIP=%s DstIP=%s SrcPort=%d DstPort=%d\n",
-					eventCount, evt.EventType,
+			// Debug: Print first 10 events to verify parsing
+			if eventCount <= 10 {
+				eventTypeStr := "UNKNOWN"
+				switch evt.EventType {
+				case 1:
+					eventTypeStr = "ARP"
+				case 2:
+					eventTypeStr = "TCP"
+				case 3:
+					eventTypeStr = "UDP"
+				case 4:
+					eventTypeStr = "ICMP"
+				case 5:
+					eventTypeStr = "DNS"
+				case 6:
+					eventTypeStr = "HTTP"
+				case 7:
+					eventTypeStr = "TLS"
+				}
+
+				fmt.Printf("Event #%d: Type=%s(%d) SrcIP=%s DstIP=%s SrcPort=%d DstPort=%d\n",
+					eventCount, eventTypeStr, evt.EventType,
 					utils.IntToIP(evt.SrcIP), utils.IntToIP(evt.DstIP),
 					evt.SrcPort, evt.DstPort)
 			}
@@ -187,7 +212,7 @@ func main() {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 
-	fmt.Println("\n\n Final Statistics:")
+	fmt.Println("\n\nFinal Statistics:")
 	monitor.PrintStats()
-	fmt.Println(" Shutting down...")
+	fmt.Println("Shutting down...")
 }
