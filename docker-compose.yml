@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  cerberus-ubuntu:
+    build:
+      context: .
+      dockerfile: Dockerfile.debian
+    container_name: cerberus-debian
+    privileged: true
+    network_mode: host
+    volumes:
+      - /sys/kernel/debug:/sys/kernel/debug:rw
+      - /sys/fs/bpf:/sys/fs/bpf:rw
+      - ./data:/app/data
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+      - BPF
+      - PERFMON
+    security_opt:
+      - apparmor=unconfined
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+    restart: unless-stopped
