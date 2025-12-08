@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -64,14 +63,14 @@ func main() {
 		// TODO: work on feeding this using yaml config
 		// Skip virtual interfaces (optional - remove these conditions to monitor everything)
 		ifaceName := iface.Name
-		if strings.HasPrefix(ifaceName, "veth") ||
-			strings.HasPrefix(ifaceName, "cali") ||
-			strings.HasPrefix(ifaceName, "docker") ||
-			strings.HasPrefix(ifaceName, "br-") ||
-			strings.HasPrefix(ifaceName, "flannel") {
-			fmt.Printf("Skipping virtual interface: %s\n", ifaceName)
-			continue
-		}
+		// if strings.HasPrefix(ifaceName, "veth") ||
+		// 	strings.HasPrefix(ifaceName, "cali") ||
+		// 	strings.HasPrefix(ifaceName, "docker") ||
+		// 	strings.HasPrefix(ifaceName, "br-") ||
+		// 	strings.HasPrefix(ifaceName, "flannel") {
+		// 	fmt.Printf("Skipping virtual interface: %s\n", ifaceName)
+		// 	continue
+		// }
 
 		fmt.Printf("Attaching to %s...\n", ifaceName)
 

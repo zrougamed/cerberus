@@ -85,6 +85,10 @@ func ParseNetworkEvent(data []byte) *models.NetworkEvent {
 	evt.ICMPCode = data[offset]
 	offset += 1
 
+	// Interface Index (4 bytes)
+	evt.IfIndex = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+
 	// L7 Payload (32 bytes)
 	if len(data) >= offset+32 {
 		copy(evt.L7Payload[:], data[offset:offset+32])
@@ -102,6 +106,15 @@ func IntToIP(i uint32) net.IP {
 func MacToString(mac [6]byte) string {
 	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
 		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+}
+
+// IfIndexToName converts an interface index to its name (e.g., "eth0")
+func IfIndexToName(ifindex uint32) string {
+	iface, err := net.InterfaceByIndex(int(ifindex))
+	if err != nil {
+		return fmt.Sprintf("if%d", ifindex)
+	}
+	return iface.Name
 }
 
 // InspectDNS extracts domain name from DNS query/response payload

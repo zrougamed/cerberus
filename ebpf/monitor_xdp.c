@@ -76,8 +76,10 @@ struct network_event {
     __u8 arp_tha[6];       // 6 bytes
     __u8 icmp_type;        // 1 byte
     __u8 icmp_code;        // 1 byte
+    __u32 ifindex;         // 4 bytes
     __u8 l7_payload[32];   // 32 bytes
 } __attribute__((packed));
+// Total: 79 bytes
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -98,7 +100,7 @@ static __always_inline int is_http_request(__u8 *payload, void *data_end)
         (payload[0] == 'D' && payload[1] == 'E' && payload[2] == 'L' && payload[3] == 'E')) {
         return 1;
     }
-    
+
     return 0;
 }
 
@@ -115,7 +117,7 @@ static __always_inline int is_tls_handshake(__u8 *payload, void *data_end)
             return 1;
         }
     }
-    
+
     return 0;
 }
 
@@ -153,6 +155,7 @@ static __always_inline int handle_arp(struct __sk_buff *skb, struct ethhdr *eth)
     e->tcp_flags = 0;
     e->icmp_type = 0;
     e->icmp_code = 0;
+    e->ifindex = skb->ifindex;
     __builtin_memset(e->l7_payload, 0, sizeof(e->l7_payload));
 
     bpf_ringbuf_submit(e, 0);
@@ -174,7 +177,7 @@ static __always_inline int handle_tcp(struct __sk_buff *skb, struct ethhdr *eth,
 
     // Default to TCP event type
     e->event_type = EVENT_TYPE_TCP;
-    
+
     __builtin_memcpy(e->src_mac, eth->h_source, 6);
     __builtin_memcpy(e->dst_mac, eth->h_dest, 6);
     e->src_ip = iph->saddr;
@@ -183,6 +186,7 @@ static __always_inline int handle_tcp(struct __sk_buff *skb, struct ethhdr *eth,
     e->dst_port = dst_port;
     e->protocol = PROTO_TCP;
     e->arp_op = 0;
+    e->ifindex = skb->ifindex;
 
     // TCP flags
     __u8 flags = 0;
@@ -215,8 +219,8 @@ static __always_inline int handle_tcp(struct __sk_buff *skb, struct ethhdr *eth,
                     break;
                 }
             }
-            
-            // Detect HTTP on port 80 or 8080
+
+            // Detect HTTP on port 80 or 8080 
             if (dst_port == HTTP_PORT || dst_port == HTTP_ALT_PORT || 
                 src_port == HTTP_PORT || src_port == HTTP_ALT_PORT) {
                 if (is_http_request(payload, data_end)) {
@@ -270,6 +274,7 @@ static __always_inline int handle_udp(struct __sk_buff *skb, struct ethhdr *eth,
     e->arp_op = 0;
     e->icmp_type = 0;
     e->icmp_code = 0;
+    e->ifindex = skb->ifindex;
     __builtin_memset(e->arp_sha, 0, 6);
     __builtin_memset(e->arp_tha, 0, 6);
 
@@ -315,6 +320,7 @@ static __always_inline int handle_icmp(struct __sk_buff *skb, struct ethhdr *eth
     e->protocol = PROTO_ICMP;
     e->icmp_type = icmph->type;
     e->icmp_code = icmph->code;
+    e->ifindex = skb->ifindex;
 
     e->tcp_flags = 0;
     e->arp_op = 0;

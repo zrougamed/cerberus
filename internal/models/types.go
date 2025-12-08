@@ -83,6 +83,7 @@ type NetworkEvent struct {
 	ArpTha    [6]byte
 	ICMPType  uint8
 	ICMPCode  uint8
+	IfIndex   uint32   // Interface index
 	L7Payload [32]byte // First 32 bytes of payload for L7 inspection
 }
 
@@ -102,7 +103,8 @@ type CommunicationPattern struct {
 	TrafficType TrafficType `json:"traffic_type"`
 	Service     string      `json:"service"`
 	Timestamp   time.Time   `json:"timestamp"`
-	L7Info      string      `json:"l7_info,omitempty"` // DNS domain, HTTP path, TLS SNI, etc.
+	L7Info      string      `json:"l7_info,omitempty"`   // DNS domain, HTTP path, TLS SNI, etc.
+	Interface   string      `json:"interface,omitempty"` // Network interface name (e.g., eth0, wlan0)
 }
 
 type FlowStats struct {
@@ -116,6 +118,7 @@ type DeviceInfo struct {
 	MAC               string                `json:"mac"`
 	IP                string                `json:"ip"`
 	Vendor            string                `json:"vendor"`
+	Interface         string                `json:"interface,omitempty"` // Network interface name (e.g., eth0, wlan0)
 	FirstSeen         time.Time             `json:"first_seen"`
 	LastSeen          time.Time             `json:"last_seen"`
 	RequestCount      int                   `json:"request_count"`

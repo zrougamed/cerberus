@@ -281,6 +281,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 			MAC:               srcMAC,
 			IP:                srcIP,
 			Vendor:            vendor,
+			Interface:         utils.IfIndexToName(evt.IfIndex),
 			FirstSeen:         time.Now(),
 			LastSeen:          time.Now(),
 			Targets:           []string{},
@@ -371,6 +372,9 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	if !device.SeenPatterns[patternKey] {
 		device.SeenPatterns[patternKey] = true
 
+		// Get interface name from index
+		ifName := utils.IfIndexToName(evt.IfIndex)
+
 		pattern := &models.CommunicationPattern{
 			SrcMAC:      srcMAC,
 			SrcIP:       srcIP,
@@ -381,6 +385,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 			Service:     service,
 			Timestamp:   time.Now(),
 			L7Info:      l7Info,
+			Interface:   ifName,
 		}
 
 		select {
@@ -447,8 +452,15 @@ func (nm *NetworkMonitor) newPatternNotifier() {
 			l7Suffix = fmt.Sprintf(" [%s]", pattern.L7Info)
 		}
 
+		// Add interface name to output
+		ifPrefix := ""
+		if pattern.Interface != "" {
+			ifPrefix = fmt.Sprintf("[%s] ", pattern.Interface)
+		}
+
 		if pattern.DstPort > 0 {
-			fmt.Printf("[%s] %s (%s) [%s] → %s:%d (%s)%s\n",
+			fmt.Printf("%s[%s] %s (%s) [%s] → %s:%d (%s)%s\n",
+				ifPrefix,
 				pattern.Protocol,
 				pattern.SrcIP,
 				pattern.SrcMAC,
@@ -459,7 +471,8 @@ func (nm *NetworkMonitor) newPatternNotifier() {
 				l7Suffix,
 			)
 		} else {
-			fmt.Printf("[%s] %s (%s) [%s] → %s (%s)%s\n",
+			fmt.Printf("%s[%s] %s (%s) [%s] → %s (%s)%s\n",
+				ifPrefix,
 				pattern.Protocol,
 				pattern.SrcIP,
 				pattern.SrcMAC,
@@ -506,13 +519,13 @@ func (nm *NetworkMonitor) PrintStats() {
 	fmt.Printf("╠═══════════════════════════════════════════════════════════════╣\n")
 	fmt.Printf("║ Total Devices: %-47d ║\n", len(stats))
 	fmt.Printf("║ Total Packets: %-47d ║\n", nm.Stats.TotalPackets)
-	fmt.Printf("║   - ARP:  %-53d ║\n", nm.Stats.ArpPackets)
-	fmt.Printf("║   - TCP:  %-53d ║\n", nm.Stats.TcpPackets)
-	fmt.Printf("║   - UDP:  %-53d ║\n", nm.Stats.UdpPackets)
-	fmt.Printf("║   - ICMP: %-53d ║\n", nm.Stats.IcmpPackets)
-	fmt.Printf("║   - DNS:  %-53d ║\n", nm.Stats.DnsPackets)
-	fmt.Printf("║   - HTTP: %-53d ║\n", nm.Stats.HttpPackets)
-	fmt.Printf("║   - TLS:  %-53d ║\n", nm.Stats.TlsPackets)
+	fmt.Printf("║   - ARP:  %-52d ║\n", nm.Stats.ArpPackets)
+	fmt.Printf("║   - TCP:  %-52d ║\n", nm.Stats.TcpPackets)
+	fmt.Printf("║   - UDP:  %-52d ║\n", nm.Stats.UdpPackets)
+	fmt.Printf("║   - ICMP: %-52d ║\n", nm.Stats.IcmpPackets)
+	fmt.Printf("║   - DNS:  %-52d ║\n", nm.Stats.DnsPackets)
+	fmt.Printf("║   - HTTP: %-52d ║\n", nm.Stats.HttpPackets)
+	fmt.Printf("║   - TLS:  %-52d ║\n", nm.Stats.TlsPackets)
 	fmt.Printf("╚═══════════════════════════════════════════════════════════════╝\n\n")
 
 	for mac, device := range stats {

@@ -2,10 +2,7 @@ version: '3.8'
 
 services:
   cerberus-ubuntu:
-    build:
-      context: .
-      dockerfile: Dockerfile.debian
-    container_name: cerberus-debian
+    image: cerberus
     privileged: true
     network_mode: host
     volumes:
