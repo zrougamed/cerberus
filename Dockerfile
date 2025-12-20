@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y \
     libbpf-dev \
     zlib1g \
     ca-certificates \
+    iproute2 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/cerberus /app/cerberus
