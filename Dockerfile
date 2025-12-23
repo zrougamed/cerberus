@@ -1,47 +1,49 @@
 # Build stage
-FROM ubuntu:22.04 AS builder
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y \
-    build-essential \
+FROM golang:1.25-alpine AS builder
+
+# Install only what we need for BPF compilation
+RUN apk add --no-cache \
     clang \
     llvm \
-    libelf-dev \
+    build-base \
     libbpf-dev \
-    linux-headers-generic \
-    linux-tools-generic \
-    pkg-config \
-    git \
-    wget \
-    ca-certificates \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
-RUN wget https://go.dev/dl/go1.25.4.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.25.4.linux-amd64.tar.gz && \
-    rm go1.25.4.linux-amd64.tar.gz
-ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/go"
-ENV PATH="${GOPATH}/bin:${PATH}"
+    linux-headers \
+    make \
+    git
+
+ENV GOCACHE=/root/.cache/go-build
+ENV GOMODCACHE=/go/pkg/mod
+
 WORKDIR /app
+
+# Copy dependency files
 COPY go.mod go.sum ./
 RUN go mod download
+
+# Copy source code
 COPY . .
+
+# Build eBPF program
 RUN make bpf
-RUN CGO_CFLAGS="-I/usr/include" \
-    CGO_LDFLAGS="$(pkg-config --libs libbpf)" \
-    go build -o cerberus cmd/cerberus/main.go
+
+# Build Go binary
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o cerberus cmd/cerberus/main.go
 
 # Runtime stage
-FROM ubuntu:22.04
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y \
-    libelf-dev \
-    libbpf-dev \
-    zlib1g \
+FROM alpine:latest
+
+# Install minimal runtime dependencies
+RUN apk add --no-cache \
     ca-certificates \
-    iproute2 \
-    && rm -rf /var/lib/apt/lists/*
+    iproute2
+
 WORKDIR /app
+
+# Copy compiled artifacts
 COPY --from=builder /app/cerberus /app/cerberus
-COPY --from=builder /app/monitor_xdp.o /app/monitor_xdp.o
+COPY --from=builder /app/build/cerberus_tc.o /app/cerberus_tc.o
+
+# Create data directory
 RUN mkdir -p /app/data
+
 CMD ["./cerberus"]
