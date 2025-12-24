@@ -226,7 +226,7 @@ func detectGatewayWindows() net.IP {
 	// Parse Windows route output
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		if strings.Contains(line, "0.0.0.0") && strings.Contains(line, "0.0.0.0") {
+		if strings.Contains(line, "0.0.0.0") {
 			fields := strings.Fields(line)
 			if len(fields) > 2 {
 				return net.ParseIP(fields[2])

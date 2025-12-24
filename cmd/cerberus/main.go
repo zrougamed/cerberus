@@ -1,46 +1,56 @@
-// embed
 package main
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
+
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/utils"
-
-	bpf "github.com/aquasecurity/libbpfgo"
 )
 
-type HookInfo struct {
-	hook   *bpf.TcHook
-	tcOpts *bpf.TcOpts
-}
-
 func main() {
+	// Clean up any existing TC hooks
 	utils.CleanCards()
-	monitor, err := monitor.NewNetworkMonitor(1000, "./data/network.db")
+
+	// Ensure the data directory exists
+	err := os.MkdirAll("./data", 0755)
+	if err != nil {
+		log.Fatalf("failed to create data directory: %v", err)
+	}
+
+	// Initialize monitor
+	mon, err := monitor.NewNetworkMonitor(1000, "./data/network.db")
 	if err != nil {
 		panic(err)
 	}
-	defer monitor.Close()
+	defer mon.Close()
 
-	module, err := bpf.NewModuleFromFile("monitor_xdp.o")
+	// Load BPF collection from compiled object file
+	spec, err := ebpf.LoadCollectionSpec("cerberus_tc.o")
 	if err != nil {
-		panic(err)
-	}
-	defer module.Close()
-
-	if err := module.BPFLoadObject(); err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to load BPF spec: %w", err))
 	}
 
-	prog, err := module.GetProgram("xdp_arp_monitor")
+	coll, err := ebpf.NewCollection(spec)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to create BPF collection: %w", err))
+	}
+	defer coll.Close()
+
+	// Get the classifier program
+	prog := coll.Programs["xdp_arp_monitor"]
+	if prog == nil {
+		panic("BPF program 'xdp_arp_monitor' not found in object file")
 	}
 
 	// Get all network interfaces
@@ -51,50 +61,32 @@ func main() {
 
 	fmt.Println("Scanning for network interfaces...")
 
-	var hooks []HookInfo
+	var links []link.Link
 	attachedCount := 0
 
 	for _, iface := range ifaces {
-		// TODO: listen to interface state changes (up/down) and handle accordingly
 		// Skip loopback and down interfaces
 		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
 			continue
 		}
 
-		ifaceName := iface.Name
+		fmt.Printf("Attaching to %s...\n", iface.Name)
 
-		fmt.Printf("Attaching to %s...\n", ifaceName)
-
-		hook := module.TcHookInit()
-		if err := hook.SetInterfaceByName(ifaceName); err != nil {
-			fmt.Printf("Failed to set interface %s: %v\n", ifaceName, err)
+		// Attach using TCX (modern TC hook mechanism)
+		// TCX is the new way to attach TC programs, replacing the old clsact qdisc approach
+		l, err := link.AttachTCX(link.TCXOptions{
+			Interface: iface.Index,
+			Program:   prog,
+			Attach:    ebpf.AttachTCXIngress,
+		})
+		if err != nil {
+			fmt.Printf("Failed to attach to %s: %v\n", iface.Name, err)
 			continue
 		}
 
-		hook.SetAttachPoint(bpf.BPFTcIngress)
-
-		// Clean up any existing hooks first
-		hook.Destroy()
-
-		// Create new hook
-		if err := hook.Create(); err != nil {
-			fmt.Printf("Failed to create TC hook on %s: %v\n", ifaceName, err)
-			continue
-		}
-
-		tcOpts := &bpf.TcOpts{
-			ProgFd: int(prog.GetFd()),
-		}
-
-		if err := hook.Attach(tcOpts); err != nil {
-			fmt.Printf("Failed to attach TC hook to %s: %v\n", ifaceName, err)
-			hook.Destroy()
-			continue
-		}
-
-		hooks = append(hooks, HookInfo{hook: hook, tcOpts: tcOpts})
+		links = append(links, l)
 		attachedCount++
-		fmt.Printf("Successfully attached to %s\n", ifaceName)
+		fmt.Printf("Successfully attached to %s\n", iface.Name)
 	}
 
 	if attachedCount == 0 {
@@ -106,67 +98,86 @@ func main() {
 	// Cleanup hooks on exit
 	defer func() {
 		fmt.Println("\nCleaning up hooks...")
-		for _, h := range hooks {
-			h.hook.Detach(h.tcOpts)
-			h.hook.Destroy()
+		for _, l := range links {
+			if err := l.Close(); err != nil {
+				fmt.Printf("Error cleaning up link: %v\n", err)
+			}
 		}
 	}()
 
-	eventsChan := make(chan []byte)
-	rb, err := module.InitRingBuf("events", eventsChan)
-	if err != nil {
-		panic(err)
+	// Open ring buffer for event communication
+	eventsMap := coll.Maps["events"]
+	if eventsMap == nil {
+		panic("Ring buffer map 'events' not found")
 	}
-	defer rb.Close()
 
-	rb.Start()
-	defer rb.Stop()
+	reader, err := ringbuf.NewReader(eventsMap)
+	if err != nil {
+		panic(fmt.Errorf("failed to open ring buffer: %w", err))
+	}
+	defer reader.Close()
 
 	fmt.Println("Monitoring network traffic... Press Ctrl+C to exit")
 	fmt.Println("Stats will be printed every 60 seconds")
 
-	// Add debug ticker to show we're alive
+	// Debug ticker to show we're alive
 	debugTicker := time.NewTicker(10 * time.Second)
 	defer debugTicker.Stop()
 
 	go func() {
 		for range debugTicker.C {
 			fmt.Printf("Alive - Packets: Total=%d ARP=%d TCP=%d UDP=%d ICMP=%d DNS=%d HTTP=%d TLS=%d | Devices=%d\n",
-				monitor.Stats.TotalPackets,
-				monitor.Stats.ArpPackets,
-				monitor.Stats.TcpPackets,
-				monitor.Stats.UdpPackets,
-				monitor.Stats.IcmpPackets,
-				monitor.Stats.DnsPackets,
-				monitor.Stats.HttpPackets,
-				monitor.Stats.TlsPackets,
-				monitor.Cache.Len())
+				mon.Stats.TotalPackets,
+				mon.Stats.ArpPackets,
+				mon.Stats.TcpPackets,
+				mon.Stats.UdpPackets,
+				mon.Stats.IcmpPackets,
+				mon.Stats.DnsPackets,
+				mon.Stats.HttpPackets,
+				mon.Stats.TlsPackets,
+				mon.Cache.Len())
 		}
 	}()
 
+	// Statistics ticker
 	statsTicker := time.NewTicker(60 * time.Second)
 	defer statsTicker.Stop()
 
 	go func() {
 		for range statsTicker.C {
-			monitor.PrintStats()
+			mon.PrintStats()
 		}
 	}()
 
+	// Event processor goroutine
 	go func() {
 		eventCount := 0
-		// Expected packet size: 1 + 6 + 6 + 4 + 4 + 2 + 2 + 1 + 1 + 2 + 6 + 6 + 1 + 1 + 32 = 75 bytes
-		expectedSize := 75
+		// Expected packet size: 79 bytes as defined in cerberus_tc.c
+		expectedSize := 79
 
-		for data := range eventsChan {
-			eventCount++
-
-			if len(data) < expectedSize {
-				fmt.Printf("Short packet: %d bytes (expected %d)\n", len(data), expectedSize)
+		for {
+			// Read event from ring buffer
+			record, err := reader.Read()
+			if err != nil {
+				if errors.Is(err, ringbuf.ErrClosed) {
+					fmt.Println("Ring buffer closed, stopping event processor")
+					return
+				}
+				fmt.Printf("Error reading from ring buffer: %v\n", err)
 				continue
 			}
 
-			evt := utils.ParseNetworkEvent(data)
+			eventCount++
+
+			// Validate packet size
+			if len(record.RawSample) < expectedSize {
+				fmt.Printf("Short packet: %d bytes (expected %d)\n",
+					len(record.RawSample), expectedSize)
+				continue
+			}
+
+			// Parse network event
+			evt := utils.ParseNetworkEvent(record.RawSample)
 
 			// Debug: Print first 10 events to verify parsing
 			if eventCount <= 10 {
@@ -194,15 +205,17 @@ func main() {
 					evt.SrcPort, evt.DstPort)
 			}
 
-			monitor.TrackEvent(evt)
+			// Track event in monitor
+			mon.TrackEvent(evt)
 		}
 	}()
 
+	// Wait for interrupt signal
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 
 	fmt.Println("\n\nFinal Statistics:")
-	monitor.PrintStats()
+	mon.PrintStats()
 	fmt.Println("Shutting down...")
 }

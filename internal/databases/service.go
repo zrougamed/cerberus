@@ -211,149 +211,150 @@ func (db *ServiceDatabase) parseIANACSV(data string) int {
 func (db *ServiceDatabase) loadFallbackDatabase() {
 	fallback := map[uint16]*models.ServiceInfo{
 		// File Transfer
-		20:  {20, "TCP", "FTP-DATA", "File Transfer Protocol (Data)"},
-		21:  {21, "TCP", "FTP", "File Transfer Protocol (Control)"},
-		69:  {69, "UDP", "TFTP", "Trivial File Transfer Protocol"},
-		989: {989, "TCP", "FTPS-DATA", "FTP over TLS/SSL (Data)"},
-		990: {990, "TCP", "FTPS", "FTP over TLS/SSL (Control)"},
+		20:  {Port: 20, Protocol: "TCP", Service: "FTP-DATA", Description: "File Transfer Protocol (Data)"},
+		21:  {Port: 21, Protocol: "TCP", Service: "FTP", Description: "File Transfer Protocol (Control)"},
+		69:  {Port: 69, Protocol: "UDP", Service: "TFTP", Description: "Trivial File Transfer Protocol"},
+		989: {Port: 989, Protocol: "TCP", Service: "FTPS-DATA", Description: "FTP over TLS/SSL (Data)"},
+		990: {Port: 990, Protocol: "TCP", Service: "FTPS", Description: "FTP over TLS/SSL (Control)"},
 
 		// Remote Access
-		22:   {22, "TCP", "SSH", "Secure Shell"},
-		23:   {23, "TCP", "TELNET", "Telnet"},
-		3389: {3389, "TCP", "RDP", "Remote Desktop Protocol"},
-		5900: {5900, "TCP", "VNC", "Virtual Network Computing"},
-		5901: {5901, "TCP", "VNC-1", "VNC Display 1"},
+		22:   {Port: 22, Protocol: "TCP", Service: "SSH", Description: "Secure Shell"},
+		23:   {Port: 23, Protocol: "TCP", Service: "TELNET", Description: "Telnet"},
+		3389: {Port: 3389, Protocol: "TCP", Service: "RDP", Description: "Remote Desktop Protocol"},
+		5900: {Port: 5900, Protocol: "TCP", Service: "VNC", Description: "Virtual Network Computing"},
+		5901: {Port: 5901, Protocol: "TCP", Service: "VNC-1", Description: "VNC Display 1"},
 
 		// Email
-		25:  {25, "TCP", "SMTP", "Simple Mail Transfer Protocol"},
-		110: {110, "TCP", "POP3", "Post Office Protocol v3"},
-		143: {143, "TCP", "IMAP", "Internet Message Access Protocol"},
-		465: {465, "TCP", "SMTPS", "SMTP over TLS/SSL"},
-		587: {587, "TCP", "SUBMISSION", "Email Message Submission"},
-		993: {993, "TCP", "IMAPS", "IMAP over TLS/SSL"},
-		995: {995, "TCP", "POP3S", "POP3 over TLS/SSL"},
+		25:  {Port: 25, Protocol: "TCP", Service: "SMTP", Description: "Simple Mail Transfer Protocol"},
+		110: {Port: 110, Protocol: "TCP", Service: "POP3", Description: "Post Office Protocol v3"},
+		143: {Port: 143, Protocol: "TCP", Service: "IMAP", Description: "Internet Message Access Protocol"},
+		465: {Port: 465, Protocol: "TCP", Service: "SMTPS", Description: "SMTP over TLS/SSL"},
+		587: {Port: 587, Protocol: "TCP", Service: "SUBMISSION", Description: "Email Message Submission"},
+		993: {Port: 993, Protocol: "TCP", Service: "IMAPS", Description: "IMAP over TLS/SSL"},
+		995: {Port: 995, Protocol: "TCP", Service: "POP3S", Description: "POP3 over TLS/SSL"},
 
 		// Web
-		80:   {80, "TCP", "HTTP", "Hypertext Transfer Protocol"},
-		443:  {443, "TCP", "HTTPS", "HTTP over TLS/SSL"},
-		8000: {8000, "TCP", "HTTP-ALT", "HTTP Alternate"},
-		8080: {8080, "TCP", "HTTP-PROXY", "HTTP Proxy"},
-		8443: {8443, "TCP", "HTTPS-ALT", "HTTPS Alternate"},
-		8888: {8888, "TCP", "HTTP-ALT2", "HTTP Alternate 2"},
+		80:   {Port: 80, Protocol: "TCP", Service: "HTTP", Description: "Hypertext Transfer Protocol"},
+		443:  {Port: 443, Protocol: "TCP", Service: "HTTPS", Description: "HTTP over TLS/SSL"},
+		8000: {Port: 8000, Protocol: "TCP", Service: "HTTP-ALT", Description: "HTTP Alternate"},
+		8080: {Port: 8080, Protocol: "TCP", Service: "HTTP-PROXY", Description: "HTTP Proxy"},
+		8443: {Port: 8443, Protocol: "TCP", Service: "HTTPS-ALT", Description: "HTTPS Alternate"},
+		8888: {Port: 8888, Protocol: "TCP", Service: "HTTP-ALT2", Description: "HTTP Alternate 2"},
 
 		// DNS & Network Services
-		53:  {53, "UDP", "DNS", "Domain Name System"},
-		67:  {67, "UDP", "DHCP-SERVER", "DHCP Server"},
-		68:  {68, "UDP", "DHCP-CLIENT", "DHCP Client"},
-		123: {123, "UDP", "NTP", "Network Time Protocol"},
-		514: {514, "UDP", "SYSLOG", "System Logging"},
-		520: {520, "UDP", "RIP", "Routing Information Protocol"},
+		53:  {Port: 53, Protocol: "UDP", Service: "DNS", Description: "Domain Name System"},
+		67:  {Port: 67, Protocol: "UDP", Service: "DHCP-SERVER", Description: "DHCP Server"},
+		68:  {Port: 68, Protocol: "UDP", Service: "DHCP-CLIENT", Description: "DHCP Client"},
+		123: {Port: 123, Protocol: "UDP", Service: "NTP", Description: "Network Time Protocol"},
+		514: {Port: 514, Protocol: "UDP", Service: "SYSLOG", Description: "System Logging"},
+		520: {Port: 520, Protocol: "UDP", Service: "RIP", Description: "Routing Information Protocol"},
 
 		// File Sharing
-		137:  {137, "UDP", "NETBIOS-NS", "NetBIOS Name Service"},
-		138:  {138, "UDP", "NETBIOS-DGM", "NetBIOS Datagram Service"},
-		139:  {139, "TCP", "NETBIOS-SSN", "NetBIOS Session Service"},
-		445:  {445, "TCP", "SMB", "Server Message Block"},
-		2049: {2049, "TCP", "NFS", "Network File System"},
+		137:  {Port: 137, Protocol: "UDP", Service: "NETBIOS-NS", Description: "NetBIOS Name Service"},
+		138:  {Port: 138, Protocol: "UDP", Service: "NETBIOS-DGM", Description: "NetBIOS Datagram Service"},
+		139:  {Port: 139, Protocol: "TCP", Service: "NETBIOS-SSN", Description: "NetBIOS Session Service"},
+		445:  {Port: 445, Protocol: "TCP", Service: "SMB", Description: "Server Message Block"},
+		2049: {Port: 2049, Protocol: "TCP", Service: "NFS", Description: "Network File System"},
 
 		// Databases
-		1433:  {1433, "TCP", "MSSQL", "Microsoft SQL Server"},
-		1521:  {1521, "TCP", "ORACLE", "Oracle Database"},
-		3306:  {3306, "TCP", "MYSQL", "MySQL Database"},
-		5432:  {5432, "TCP", "POSTGRESQL", "PostgreSQL Database"},
-		6379:  {6379, "TCP", "REDIS", "Redis Database"},
-		27017: {27017, "TCP", "MONGODB", "MongoDB Database"},
-		9200:  {9200, "TCP", "ELASTICSEARCH", "Elasticsearch"},
-		9300:  {9300, "TCP", "ELASTICSEARCH-CLUSTER", "Elasticsearch Cluster"},
+		1433:  {Port: 1433, Protocol: "TCP", Service: "MSSQL", Description: "Microsoft SQL Server"},
+		1521:  {Port: 1521, Protocol: "TCP", Service: "ORACLE", Description: "Oracle Database"},
+		3306:  {Port: 3306, Protocol: "TCP", Service: "MYSQL", Description: "MySQL Database"},
+		5432:  {Port: 5432, Protocol: "TCP", Service: "POSTGRESQL", Description: "PostgreSQL Database"},
+		6379:  {Port: 6379, Protocol: "TCP", Service: "REDIS", Description: "Redis Database"},
+		27017: {Port: 27017, Protocol: "TCP", Service: "MONGODB", Description: "MongoDB Database"},
+		9200:  {Port: 9200, Protocol: "TCP", Service: "ELASTICSEARCH", Description: "Elasticsearch"},
+		9300:  {Port: 9300, Protocol: "TCP", Service: "ELASTICSEARCH-CLUSTER", Description: "Elasticsearch Cluster"},
 
 		// Message Queues
-		1883: {1883, "TCP", "MQTT", "Message Queuing Telemetry Transport"},
-		5672: {5672, "TCP", "AMQP", "Advanced Message Queuing Protocol"},
-		9092: {9092, "TCP", "KAFKA", "Apache Kafka"},
-		4222: {4222, "TCP", "NATS", "NATS Messaging"},
+		1883: {Port: 1883, Protocol: "TCP", Service: "MQTT", Description: "Message Queuing Telemetry Transport"},
+		5672: {Port: 5672, Protocol: "TCP", Service: "AMQP", Description: "Advanced Message Queuing Protocol"},
+		9092: {Port: 9092, Protocol: "TCP", Service: "KAFKA", Description: "Apache Kafka"},
+		4222: {Port: 4222, Protocol: "TCP", Service: "NATS", Description: "NATS Messaging"},
 
 		// VPN & Tunneling
-		500:  {500, "UDP", "ISAKMP", "Internet Security Association and Key Management Protocol"},
-		1194: {1194, "UDP", "OPENVPN", "OpenVPN"},
-		1701: {1701, "UDP", "L2TP", "Layer 2 Tunneling Protocol"},
-		1723: {1723, "TCP", "PPTP", "Point-to-Point Tunneling Protocol"},
-		4500: {4500, "UDP", "IPSEC-NAT-T", "IPsec NAT Traversal"},
+		500:  {Port: 500, Protocol: "UDP", Service: "ISAKMP", Description: "Internet Security Association and Key Management Protocol"},
+		1194: {Port: 1194, Protocol: "UDP", Service: "OPENVPN", Description: "OpenVPN"},
+		1701: {Port: 1701, Protocol: "UDP", Service: "L2TP", Description: "Layer 2 Tunneling Protocol"},
+		1723: {Port: 1723, Protocol: "TCP", Service: "PPTP", Description: "Point-to-Point Tunneling Protocol"},
+		4500: {Port: 4500, Protocol: "UDP", Service: "IPSEC-NAT-T", Description: "IPsec NAT Traversal"},
 
 		// Directory Services
-		389: {389, "TCP", "LDAP", "Lightweight Directory Access Protocol"},
-		636: {636, "TCP", "LDAPS", "LDAP over TLS/SSL"},
-		88:  {88, "TCP", "KERBEROS", "Kerberos Authentication"},
+		389: {Port: 389, Protocol: "TCP", Service: "LDAP", Description: "Lightweight Directory Access Protocol"},
+		636: {Port: 636, Protocol: "TCP", Service: "LDAPS", Description: "LDAP over TLS/SSL"},
+		88:  {Port: 88, Protocol: "TCP", Service: "KERBEROS", Description: "Kerberos Authentication"},
 
 		// Monitoring & Management
-		161:  {161, "UDP", "SNMP", "Simple Network Management Protocol"},
-		162:  {162, "UDP", "SNMP-TRAP", "SNMP Trap"},
-		9090: {9090, "TCP", "PROMETHEUS", "Prometheus Monitoring"},
-		9093: {9093, "TCP", "ALERTMANAGER", "Prometheus Alertmanager"},
-		8086: {8086, "TCP", "INFLUXDB", "InfluxDB Time Series Database"},
+		161:  {Port: 161, Protocol: "UDP", Service: "SNMP", Description: "Simple Network Management Protocol"},
+		162:  {Port: 162, Protocol: "UDP", Service: "SNMP-TRAP", Description: "SNMP Trap"},
+		9090: {Port: 9090, Protocol: "TCP", Service: "PROMETHEUS", Description: "Prometheus Monitoring"},
+		9093: {Port: 9093, Protocol: "TCP", Service: "ALERTMANAGER", Description: "Prometheus Alertmanager"},
+		8086: {Port: 8086, Protocol: "TCP", Service: "INFLUXDB", Description: "InfluxDB Time Series Database"},
 
 		// Container & Orchestration
-		2375:  {2375, "TCP", "DOCKER", "Docker REST API (unencrypted)"},
-		2376:  {2376, "TCP", "DOCKER-TLS", "Docker REST API (TLS)"},
-		6443:  {6443, "TCP", "KUBERNETES", "Kubernetes API Server"},
-		8001:  {8001, "TCP", "KUBERNETES-PROXY", "Kubernetes API Proxy"},
-		10250: {10250, "TCP", "KUBELET", "Kubernetes Kubelet API"},
+		2375:  {Port: 2375, Protocol: "TCP", Service: "DOCKER", Description: "Docker REST API (unencrypted)"},
+		2376:  {Port: 2376, Protocol: "TCP", Service: "DOCKER-TLS", Description: "Docker REST API (TLS)"},
+		6443:  {Port: 6443, Protocol: "TCP", Service: "KUBERNETES", Description: "Kubernetes API Server"},
+		8001:  {Port: 8001, Protocol: "TCP", Service: "KUBERNETES-PROXY", Description: "Kubernetes API Proxy"},
+		10250: {Port: 10250, Protocol: "TCP", Service: "KUBELET", Description: "Kubernetes Kubelet API"},
 
 		// Game Servers
-		25565: {25565, "TCP", "MINECRAFT", "Minecraft Server"},
-		27015: {27015, "UDP", "STEAM", "Steam Game Server"},
-		3074:  {3074, "UDP", "XBOX-LIVE", "Xbox Live"},
-		7777:  {7777, "UDP", "UNREAL", "Unreal Tournament"},
+		25565: {Port: 25565, Protocol: "TCP", Service: "MINECRAFT", Description: "Minecraft Server"},
+		27015: {Port: 27015, Protocol: "UDP", Service: "STEAM", Description: "Steam Game Server"},
+		3074:  {Port: 3074, Protocol: "UDP", Service: "XBOX-LIVE", Description: "Xbox Live"},
+		7777:  {Port: 7777, Protocol: "UDP", Service: "UNREAL", Description: "Unreal Tournament"},
 
 		// Media Streaming
-		554:  {554, "TCP", "RTSP", "Real Time Streaming Protocol"},
-		1935: {1935, "TCP", "RTMP", "Real Time Messaging Protocol"},
-		5004: {5004, "UDP", "RTP", "Real-time Transport Protocol"},
-		8554: {8554, "TCP", "RTSP-ALT", "RTSP Alternate"},
+		554:  {Port: 554, Protocol: "TCP", Service: "RTSP", Description: "Real Time Streaming Protocol"},
+		1935: {Port: 1935, Protocol: "TCP", Service: "RTMP", Description: "Real Time Messaging Protocol"},
+		5004: {Port: 5004, Protocol: "UDP", Service: "RTP", Description: "Real-time Transport Protocol"},
+		8554: {Port: 8554, Protocol: "TCP", Service: "RTSP-ALT", Description: "RTSP Alternate"},
 
 		// IoT Protocols
-		8883: {8883, "TCP", "MQTT-TLS", "MQTT over TLS"},
-		5683: {5683, "UDP", "COAP", "Constrained Application Protocol"},
-		5684: {5684, "UDP", "COAPS", "CoAP over DTLS"},
+		8883: {Port: 8883, Protocol: "TCP", Service: "MQTT-TLS", Description: "MQTT over TLS"},
+		5683: {Port: 5683, Protocol: "UDP", Service: "COAP", Description: "Constrained Application Protocol"},
+		5684: {Port: 5684, Protocol: "UDP", Service: "COAPS", Description: "CoAP over DTLS"},
 
 		// Printing
-		515:  {515, "TCP", "LPD", "Line Printer Daemon"},
-		631:  {631, "TCP", "IPP", "Internet Printing Protocol"},
-		9100: {9100, "TCP", "PDL", "Printer Data Language"},
+		515:  {Port: 515, Protocol: "TCP", Service: "LPD", Description: "Line Printer Daemon"},
+		631:  {Port: 631, Protocol: "TCP", Service: "IPP", Description: "Internet Printing Protocol"},
+		9100: {Port: 9100, Protocol: "TCP", Service: "PDL", Description: "Printer Data Language"},
 
 		// Development
-		3000: {3000, "TCP", "DEV-SERVER", "Development Server (React/Node)"},
-		4000: {4000, "TCP", "DEV-SERVER-ALT", "Development Server Alt"},
-		5000: {5000, "TCP", "FLASK", "Flask Development Server"},
-		9229: {9229, "TCP", "NODE-INSPECT", "Node.js Inspector"},
+		3000: {Port: 3000, Protocol: "TCP", Service: "DEV-SERVER", Description: "Development Server (React/Node)"},
+		4000: {Port: 4000, Protocol: "TCP", Service: "DEV-SERVER-ALT", Description: "Development Server Alt"},
+		5000: {Port: 5000, Protocol: "TCP", Service: "FLASK", Description: "Flask Development Server"},
+		9229: {Port: 9229, Protocol: "TCP", Service: "NODE-INSPECT", Description: "Node.js Inspector"},
 
 		// Backup & Storage
-		873:  {873, "TCP", "RSYNC", "rsync File Synchronization"},
-		3260: {3260, "TCP", "ISCSI", "iSCSI Storage"},
+		873:  {Port: 873, Protocol: "TCP", Service: "RSYNC", Description: "rsync File Synchronization"},
+		3260: {Port: 3260, Protocol: "TCP", Service: "ISCSI", Description: "iSCSI Storage"},
 
 		// Proxy & Cache
-		3128: {3128, "TCP", "SQUID", "Squid Proxy"},
-		8118: {8118, "TCP", "PRIVOXY", "Privoxy Proxy"},
-		9050: {9050, "TCP", "TOR-SOCKS", "Tor SOCKS Proxy"},
+		3128: {Port: 3128, Protocol: "TCP", Service: "SQUID", Description: "Squid Proxy"},
+		8118: {Port: 8118, Protocol: "TCP", Service: "PRIVOXY", Description: "Privoxy Proxy"},
+		9050: {Port: 9050, Protocol: "TCP", Service: "TOR-SOCKS", Description: "Tor SOCKS Proxy"},
 
 		// Version Control
-		9418: {9418, "TCP", "GIT", "Git Protocol"},
-		3690: {3690, "TCP", "SVN", "Subversion"},
+		9418: {Port: 9418, Protocol: "TCP", Service: "GIT", Description: "Git Protocol"},
+		3690: {Port: 3690, Protocol: "TCP", Service: "SVN", Description: "Subversion"},
 
 		// Analytics & Search
-		5601: {5601, "TCP", "KIBANA", "Kibana"},
-		8983: {8983, "TCP", "SOLR", "Apache Solr"},
+		5601: {Port: 5601, Protocol: "TCP", Service: "KIBANA", Description: "Kibana"},
+		8983: {Port: 8983, Protocol: "TCP", Service: "SOLR", Description: "Apache Solr"},
 	}
 
 	db.mu.Lock()
-	db.services = fallback
 	// Split into TCP/UDP maps
 	for port, svc := range fallback {
-		if svc.Protocol == "TCP" {
+		switch svc.Protocol {
+		case "TCP":
 			db.tcpServices[port] = svc
-		} else if svc.Protocol == "UDP" {
+		case "UDP":
 			db.udpServices[port] = svc
 		}
 	}
+
 	db.mu.Unlock()
 
 	fmt.Printf("Using fallback database with %d services\n", len(fallback))
@@ -413,15 +414,15 @@ func (db *ServiceDatabase) loadThreatDatabase() {
 func (db *ServiceDatabase) Lookup(port uint16, protocol string) *models.ServiceInfo {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
-
 	protocol = strings.ToUpper(protocol)
 
 	// Protocol-specific lookup
-	if protocol == "TCP" {
+	switch protocol {
+	case "TCP":
 		if svc, ok := db.tcpServices[port]; ok {
 			return svc
 		}
-	} else if protocol == "UDP" {
+	case "UDP":
 		if svc, ok := db.udpServices[port]; ok {
 			return svc
 		}
@@ -455,12 +456,11 @@ func (db *ServiceDatabase) IsDangerous(port uint16) bool {
 	return exists
 }
 
-// GetStats returns database statistics
-func (db *ServiceDatabase) GetStats() map[string]interface{} {
+func (db *ServiceDatabase) GetStats() map[string]any {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total_services": len(db.services),
 		"tcp_services":   len(db.tcpServices),
 		"udp_services":   len(db.udpServices),

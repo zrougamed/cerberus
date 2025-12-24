@@ -1,0 +1,287 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.25'
+
+jobs:
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Build Tests - Verify compilation across multiple distributions
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  
+  build-ubuntu-2204:
+    name: Build - Ubuntu 22.04
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CI image
+        run: |
+          docker build --build-arg BASE_IMAGE=ubuntu:22.04 \
+            -t cerberus-ci-ubuntu22 \
+            -f .ci/Dockerfile .
+
+      - name: Run build test
+        run: |
+          chmod +x .ci/build.sh
+          docker run --rm -v $(pwd):/workspace \
+            cerberus-ci-ubuntu22 /workspace/.ci/build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-ubuntu-22.04
+          path: |
+            build/cerberus
+            build/cerberus_tc.o
+          retention-days: 7
+
+  build-ubuntu-2404:
+    name: Build - Ubuntu 24.04
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CI image
+        run: |
+          docker build --build-arg BASE_IMAGE=ubuntu:24.04 \
+            -t cerberus-ci-ubuntu24 \
+            -f .ci/Dockerfile .
+
+      - name: Run build test
+        run: |
+          chmod +x .ci/build.sh
+          docker run --rm -v $(pwd):/workspace \
+            cerberus-ci-ubuntu24 /workspace/.ci/build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-ubuntu-24.04
+          path: |
+            build/cerberus
+            build/cerberus_tc.o
+          retention-days: 7
+
+  build-debian:
+    name: Build - Debian 12
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CI image
+        run: |
+          docker build --build-arg BASE_IMAGE=debian:12 \
+            -t cerberus-ci-debian \
+            -f .ci/Dockerfile .
+
+      - name: Run build test
+        run: |
+          chmod +x .ci/build.sh
+          docker run --rm -v $(pwd):/workspace \
+            cerberus-ci-debian /workspace/.ci/build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-debian-12
+          path: |
+            build/cerberus
+            build/cerberus_tc.o
+          retention-days: 7
+
+  build-arch:
+    name: Build - Arch Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CI image
+        run: |
+          docker build --build-arg BASE_IMAGE=archlinux:latest \
+            -t cerberus-ci-arch \
+            -f .ci/Dockerfile .
+
+      - name: Run build test
+        run: |
+          chmod +x .ci/build.sh
+          docker run --rm -v $(pwd):/workspace \
+            cerberus-ci-arch /workspace/.ci/build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-arch-linux
+          path: |
+            build/cerberus
+            build/cerberus_tc.o
+          retention-days: 7
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Code Quality Checks
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+
+      - name: Run go mod verify
+        run: go mod verify
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run gofmt
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "Code is not formatted. Run: gofmt -s -w ."
+            gofmt -s -l .
+            exit 1
+          fi
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        run: staticcheck ./...
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Security Scanning
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run Gosec
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt sarif -out results.sarif ./...'
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Docker Build Test
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  docker:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production Docker image
+        run: |
+          docker build -t cerberus:test .
+
+      - name: Verify image
+        run: |
+          docker images cerberus:test
+          docker inspect cerberus:test | jq '.[0].Size'
+
+      - name: Test image structure
+        run: |
+          docker run --rm cerberus:test ls -lh /app/
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Summary
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs:
+      - build-ubuntu-2204
+      - build-ubuntu-2404
+      - build-debian
+      - build-arch
+      - lint
+      - security
+      - docker
+    if: always()
+    steps:
+      - name: Check build results
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  CI Summary"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Build Tests:"
+          echo "  Ubuntu 22.04: ${{ needs.build-ubuntu-2204.result }}"
+          echo "  Ubuntu 24.04: ${{ needs.build-ubuntu-2404.result }}"
+          echo "  Debian 12:    ${{ needs.build-debian.result }}"
+          echo "  Arch Linux:   ${{ needs.build-arch.result }}"
+          echo ""
+          echo "Quality Checks:"
+          echo "  Lint:         ${{ needs.lint.result }}"
+          echo "  Security:     ${{ needs.security.result }}"
+          echo "  Docker:       ${{ needs.docker.result }}"
+          echo ""
+
+      - name: Fail if any job failed
+        if: |
+          needs.build-ubuntu-2204.result == 'failure' ||
+          needs.build-ubuntu-2404.result == 'failure' ||
+          needs.build-debian.result == 'failure' ||
+          needs.build-arch.result == 'failure' ||
+          needs.lint.result == 'failure' ||
+          needs.security.result == 'failure' ||
+          needs.docker.result == 'failure'
+        run: |
+          echo "One or more CI jobs failed"
+          exit 1
+
+      - name: Success
+        if: success()
+        run: |
+          echo "All CI checks passed!"
