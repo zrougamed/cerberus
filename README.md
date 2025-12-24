@@ -545,6 +545,6 @@ Cerberus has been successfully built and tested on the following Linux distribut
 | Debian 12    | Passed |
 | Arch Linux   | Passed |
 
----
+--- 
 
 **Made with ❤️ and eBPF**
