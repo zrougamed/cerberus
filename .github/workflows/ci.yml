@@ -4,11 +4,16 @@ on:
   push:
     branches: [ master ]
   pull_request:
-    branches: [ master]
+    branches: [ master ]
   workflow_dispatch:
 
 env:
   GO_VERSION: '1.25'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
 
 jobs:
   # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -187,6 +192,9 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -205,6 +213,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
   # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   # Docker Build Test
