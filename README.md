@@ -1,14 +1,13 @@
 # Cerberus
 
 ![Go Version](https://img.shields.io/badge/go-1.25-blue)
-![Build Ubuntu 22.04](https://github.com/zrougamed/cerberus/actions/workflows/ci.yml/badge.svg?branch=master&event=push)
-![Build Ubuntu 24.04](https://github.com/zrougamed/cerberus/actions/workflows/ci.yml/badge.svg?branch=master&event=push)
-![Build Debian 12](https://github.com/zrougamed/cerberus/actions/workflows/ci.yml/badge.svg?branch=master&event=push)
-![Build Arch Linux](https://github.com/zrougamed/cerberus/actions/workflows/ci.yml/badge.svg?branch=master&event=push)
+![Ubuntu 22.04](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Ubuntu%2022.04)
+![Ubuntu 24.04](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Ubuntu%2024.04)
+![Debian 12](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Debian%2012)
+![Arch Linux](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Arch%20Linux)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen)
 ![eBPF Library](https://img.shields.io/badge/eBPF-cilium%2Febpf-blue)
-
 
 **Network Guardian - Real-time Traffic Monitoring & Device Discovery**
 
