@@ -29,7 +29,7 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 
 **Built with Pure Go + eBPF** - Cerberus uses [cilium/ebpf](https://github.com/cilium/ebpf) instead of CGO-based alternatives, delivering:
 - **Zero CGO dependencies** - No libbpf version conflicts, works everywhere
-- **95% smaller binaries** - 23MB vs 447MB Docker images
+- **95% smaller binaries** - 19.5MB vs 447MB Docker images
 - **64% faster builds** - 31s vs 87s compilation time
 - **Production-proven** - Same library powering Cilium, Falco, and Tetragon
 
@@ -105,7 +105,7 @@ flowchart TD
 
 ## Prerequisites
 
-- Linux kernel 4.18+ (with eBPF support)
+- Linux kernel 5.10+ (with eBPF support)
 - Go 1.24+
 - Clang/LLVM
 - Root/sudo privileges (for eBPF and TC hooks)
@@ -123,7 +123,7 @@ sudo apt-get install -y \
     gcc
 
 # Verify kernel support
-uname -r  # Should be 4.18+
+uname -r  # Should be 5.10+
 grep CONFIG_BPF_SYSCALL /boot/config-$(uname -r)  # Should output =y
 ```
 
@@ -342,6 +342,7 @@ statsTicker := time.NewTicker(60 * time.Second)
 
 ```
 cerberus/
+├── .ci/                # CI/CD tests for compatibility
 ├── build/              # Compiled binaries
 ├── cmd/
 │   └── cerberus/       # Main application entry point
@@ -505,7 +506,7 @@ curl https://zrouga.email
 ## Compatibility
 
 - **Go Version**: 1.24+
-- **Kernel**: 4.18+ with eBPF support
+- **Kernel**: 5.10+ with eBPF support
 - **Dependencies**: No external runtime dependencies
 - **Database**: Backward compatible with existing network.db files
 
@@ -529,7 +530,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
-- Built with [libbpfgo](https://github.com/aquasecurity/libbpfgo)
+- Built with [Cilium eBPF](https://github.com/cilium/ebpf)
 - Uses [BuntDB](https://github.com/tidwall/buntdb) for storage
 - Uses [golang-lru](https://github.com/hashicorp/golang-lru) for caching
 - Inspired by network security monitoring tools
