@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
@@ -16,8 +17,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/swagger"
 
-	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/models"
+	"github.com/zrougamed/cerberus/internal/monitor"
 
 	_ "github.com/zrougamed/cerberus/docs" // swagger docs
 )
@@ -37,15 +38,15 @@ type Server struct {
 
 // InterfaceInfo holds information about a monitored interface
 type InterfaceInfo struct {
-	Name           string   `json:"name" example:"eth0"`
-	Index          int      `json:"index" example:"2"`
-	MAC            string   `json:"mac" example:"00:11:22:33:44:55"`
-	Addresses      []string `json:"addresses"`
-	IsUp           bool     `json:"is_up" example:"true"`
-	IsLoopback     bool     `json:"is_loopback" example:"false"`
-	MTU            int      `json:"mtu" example:"1500"`
-	PacketsCaptured int64   `json:"packets_captured" example:"12345"`
-	Attached       bool     `json:"attached" example:"true"`
+	Name            string   `json:"name" example:"eth0"`
+	Index           int      `json:"index" example:"2"`
+	MAC             string   `json:"mac" example:"00:11:22:33:44:55"`
+	Addresses       []string `json:"addresses"`
+	IsUp            bool     `json:"is_up" example:"true"`
+	IsLoopback      bool     `json:"is_loopback" example:"false"`
+	MTU             int      `json:"mtu" example:"1500"`
+	PacketsCaptured int64    `json:"packets_captured" example:"12345"`
+	Attached        bool     `json:"attached" example:"true"`
 }
 
 // NewServer creates a new API server instance
@@ -179,9 +180,9 @@ type ErrorResponse struct {
 
 // HealthResponse represents health check response
 type HealthResponse struct {
-	Status             string `json:"status" example:"healthy"`
-	Uptime             int64  `json:"uptime" example:"86400"`
-	Version            string `json:"version" example:"1.0.0"`
+	Status              string `json:"status" example:"healthy"`
+	Uptime              int64  `json:"uptime" example:"86400"`
+	Version             string `json:"version" example:"1.0.0"`
 	InterfacesMonitored int    `json:"interfaces_monitored" example:"2"`
 }
 
@@ -227,7 +228,7 @@ type DeviceListResponse struct {
 
 // PatternListResponse represents a list of patterns
 type PatternListResponse struct {
-	Total    int                           `json:"total" example:"1892"`
+	Total    int                            `json:"total" example:"1892"`
 	Patterns []*models.CommunicationPattern `json:"patterns"`
 }
 
@@ -296,9 +297,9 @@ func (s *Server) healthCheck(c *fiber.Ctx) error {
 	s.mu.RUnlock()
 
 	return c.JSON(HealthResponse{
-		Status:             "healthy",
-		Uptime:             int64(time.Since(s.startTime).Seconds()),
-		Version:            "1.0.0",
+		Status:              "healthy",
+		Uptime:              int64(time.Since(s.startTime).Seconds()),
+		Version:             "1.0.0",
 		InterfacesMonitored: interfaceCount,
 	})
 }
@@ -736,8 +737,7 @@ func (s *Server) streamPatterns(c *fiber.Ctx) error {
 	}()
 
 	protocolFilter := strings.ToUpper(c.Query("protocol", ""))
-
-	c.Context().SetBodyStreamWriter(func(w *fiber.Response) {
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		for pattern := range patternChan {
 			if protocolFilter != "" && pattern.Protocol != protocolFilter {
 				continue
@@ -746,7 +746,10 @@ func (s *Server) streamPatterns(c *fiber.Ctx) error {
 			data := fmt.Sprintf("event: pattern\ndata: {\"src_mac\":\"%s\",\"src_ip\":\"%s\",\"dst_ip\":\"%s\",\"dst_port\":%d,\"protocol\":\"%s\",\"traffic_type\":\"%s\"}\n\n",
 				pattern.SrcMAC, pattern.SrcIP, pattern.DstIP, pattern.DstPort, pattern.Protocol, pattern.TrafficType)
 
-			if _, err := w.Write([]byte(data)); err != nil {
+			if _, err := w.WriteString(data); err != nil {
+				return
+			}
+			if err := w.Flush(); err != nil {
 				return
 			}
 		}
