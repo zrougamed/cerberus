@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # Cerberus eBPF Network Monitor Backend
+  cerberus:
+    build: .
+    image: cerberus:latest
+    container_name: cerberus-backend
+    privileged: true
+    network_mode: host
+    volumes:
+      - /sys/kernel/debug:/sys/kernel/debug:rw
+      - /sys/fs/bpf:/sys/fs/bpf:rw
+      - cerberus-data:/app/data
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+      - BPF
+      - PERFMON
+    security_opt:
+      - apparmor=unconfined
+    environment:
+      - CERBERUS_API_PORT=8080
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Cerberus Web UI
+  cerberus-ui:
+    build: ./web
+    image: cerberus-ui:latest
+    container_name: cerberus-ui
+    ports:
+      - "3000:80"
+    environment:
+      # Point to the backend API (using host network mode, backend is on localhost)
+      - CERBERUS_BACKEND=http://host.docker.internal:8080/api/v1/
+    depends_on:
+      cerberus:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  cerberus-data:
+    driver: local

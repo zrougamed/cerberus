@@ -24,6 +24,8 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Statistics Dashboard**: Real-time network statistics and device behavior analysis
 - **Smart Deduplication**: Only alert on new traffic patterns (first occurrence)
 - **Persistent Storage**: Local database for historical data with Redis migration path
+- **REST API**: Full-featured API with Swagger documentation for integrations
+- **Web Dashboard**: Modern React-based UI for real-time monitoring and visualization
 
 ## Why Cerberus?
 
@@ -146,11 +148,69 @@ make
 sudo ./build/cerberus
 ```
 
+### Running with Web UI (Docker)
+
+The easiest way to run Cerberus with the web dashboard is using Docker:
+
+```bash
+# Build everything (backend + UI)
+make stack-build
+
+# Start the full stack
+make stack-up
+
+# Access the services:
+#   - Web UI:      http://localhost:3000
+#   - Backend API: http://localhost:8080/api/v1
+#   - Swagger:     http://localhost:8080/swagger/index.html
+
+# View logs
+make stack-logs
+
+# Stop everything
+make stack-down
+```
+
 ### Usage
 
 ```bash
 # Basic usage
 sudo ./build/cerberus
+```
+
+## Web UI
+
+Cerberus includes a modern web dashboard for real-time network monitoring.
+
+### Features
+
+- **Dashboard**: Real-time packet statistics, traffic charts, and live activity feed
+- **Devices**: Browse and filter discovered network devices with detailed info
+- **Device Detail**: Deep-dive into individual device traffic, DNS queries, and patterns
+- **Patterns**: Live stream of network communication events with protocol filtering
+- **Interfaces**: Monitor status of network interfaces being captured
+- **Lookup Tools**: MAC vendor and port service lookup utilities
+
+### Screenshots
+
+The dashboard provides real-time visibility into:
+- Protocol distribution (TCP, UDP, DNS, HTTP, TLS, ARP, ICMP)
+- Active device count and traffic statistics
+- Live communication pattern stream
+- Network interface health
+
+### Running the UI Standalone
+
+```bash
+# Using Docker
+cd web
+make build
+make run PORT=3000 CERBERUS_BACKEND=http://your-cerberus-host:8080/api/v1/
+
+# Development mode (requires Node.js 20+)
+cd web
+npm install
+npm run dev:client
 ```
 
 ## Output Examples
@@ -343,12 +403,16 @@ statsTicker := time.NewTicker(60 * time.Second)
 ```
 cerberus/
 ├── .ci/                # CI/CD tests for compatibility
+├── api/                # OpenAPI specification
+│   └── openapi.yaml    # API schema definition
 ├── build/              # Compiled binaries
 ├── cmd/
 │   └── cerberus/       # Main application entry point
+├── docs/               # Generated Swagger documentation
 ├── ebpf/               # eBPF C programs
 │   └── cerberus_tc.c   # TC classifier for packet capture
 ├── internal/
+│   ├── api/            # REST API server (Fiber)
 │   ├── cache/          # LRU cache implementation
 │   ├── databases/      # OUI and service databases
 │   ├── models/         # Data structures
@@ -357,6 +421,19 @@ cerberus/
 │   └── utils/          # Helper functions (includes L7 inspection)
 ├── scripts/            # Utility scripts
 │   └── cleanup.sh      # TC hook cleanup
+├── web/                # Web UI (React + TypeScript)
+│   ├── client/         # Frontend source code
+│   │   └── src/
+│   │       ├── components/  # React components
+│   │       ├── pages/       # Route pages
+│   │       ├── hooks/       # Custom React hooks
+│   │       ├── lib/         # API client & utilities
+│   │       └── types/       # TypeScript interfaces
+│   ├── Dockerfile      # UI container build
+│   ├── nginx.conf      # Production server config
+│   └── Makefile        # UI build targets
+├── docker-compose.yml      # Backend-only compose
+├── docker-compose.full.yml # Full stack (backend + UI)
 ├── Makefile            # Build automation
 └── go.mod              # Go dependencies
 ```
@@ -479,9 +556,9 @@ curl https://zrouga.email
 
 ## Roadmap
 
+- [x] REST API for external integrations
+- [x] Web dashboard for visualization
 - [ ] Redis backend for distributed deployments
-- [ ] REST API for external integrations
-- [ ] Web dashboard for visualization
 - [ ] Anomaly detection using ML
 - [ ] IPv6 support
 - [ ] Expand L7 payload capture to 128-256 bytes for better SNI/HTTP header extraction
@@ -494,6 +571,9 @@ curl https://zrouga.email
 - [ ] Export to Prometheus/Grafana
 - [ ] Custom alerting rules
 - [ ] GeoIP location tracking
+- [ ] Dark/light theme toggle in UI
+- [ ] Device grouping and tagging
+- [ ] Historical traffic playback
 
 ## Performance
 

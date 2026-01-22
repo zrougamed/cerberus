@@ -40,6 +40,15 @@ deps:
 	$(GO) mod download
 	$(GO) mod tidy
 
+# Install swagger tool and generate docs
+swagger:
+	$(GO) install github.com/swaggo/swag/cmd/swag@latest
+	swag init -g cmd/cerberus/main.go -o docs --parseDependency --parseInternal
+
+# Regenerate swagger docs
+swagger-gen:
+	swag init -g cmd/cerberus/main.go -o docs --parseDependency --parseInternal
+
 # Docker build
 docker-build:
 	docker build -t cerberus:latest .
@@ -147,6 +156,65 @@ ci-clean:
 	docker rmi -f cerberus-ci-ubuntu22 cerberus-ci-ubuntu24 cerberus-ci-debian cerberus-ci-arch 2>/dev/null || true
 	rm -f cerberus-test.log
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# UI Targets
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+.PHONY: ui-install ui-dev ui-build ui-docker ui-clean
+
+# Install UI dependencies
+ui-install:
+	@echo "Installing UI dependencies..."
+	cd web && npm install
+
+# Run UI in development mode
+ui-dev:
+	@echo "Starting UI development server..."
+	cd web && npm run dev
+
+# Build UI for production
+ui-build:
+	@echo "Building UI for production..."
+	cd web && npm run build
+
+# Build UI Docker image
+ui-docker:
+	@echo "Building UI Docker image..."
+	cd web && docker build -t cerberus-ui:latest .
+
+# Clean UI build artifacts
+ui-clean:
+	cd web && rm -rf dist node_modules
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Full Stack Targets
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+.PHONY: stack-build stack-up stack-down stack-logs
+
+# Build full stack (backend + UI)
+stack-build: docker-build ui-docker
+	@echo "Full stack built successfully!"
+
+# Start full stack with docker-compose
+stack-up:
+	@echo "Starting Cerberus full stack..."
+	docker-compose -f docker-compose.full.yml up -d
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "  Cerberus Stack Running:"
+	@echo "    Backend API: http://localhost:8080/api/v1"
+	@echo "    Swagger UI:  http://localhost:8080/swagger/index.html"
+	@echo "    Web UI:      http://localhost:3000"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Stop full stack
+stack-down:
+	docker-compose -f docker-compose.full.yml down
+
+# View full stack logs
+stack-logs:
+	docker-compose -f docker-compose.full.yml logs -f
+
 # Help
 help:
 	@echo "Cerberus Makefile - Available Targets:"
@@ -162,6 +230,19 @@ help:
 	@echo "    make run           - Build and run (requires sudo)"
 	@echo "    make docker-build  - Build Docker image"
 	@echo "    make docker-run    - Run in privileged Docker container"
+	@echo ""
+	@echo "  UI:"
+	@echo "    make ui-install    - Install UI dependencies"
+	@echo "    make ui-dev        - Run UI dev server"
+	@echo "    make ui-build      - Build UI for production"
+	@echo "    make ui-docker     - Build UI Docker image"
+	@echo "    make ui-clean      - Clean UI build artifacts"
+	@echo ""
+	@echo "  Full Stack:"
+	@echo "    make stack-build   - Build backend + UI images"
+	@echo "    make stack-up      - Start full stack (backend + UI)"
+	@echo "    make stack-down    - Stop full stack"
+	@echo "    make stack-logs    - View full stack logs"
 	@echo ""
 	@echo "  CI/CD:"
 	@echo "    make ci            - Run all CI tests (build + runtime)"

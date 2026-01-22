@@ -1,0 +1,698 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "REST API for Cerberus - a high-performance network monitoring tool built with eBPF.",
+        "title": "Cerberus Network Monitor API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "Cerberus Project",
+            "url": "https://github.com/zrougamed/cerberus"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/health": {
+            "get": {
+                "description": "Returns service health status",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Statistics"],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/stats": {
+            "get": {
+                "description": "Returns aggregate packet counts and network statistics",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Statistics"],
+                "summary": "Get overall network statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.NetworkStatsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/stats/history": {
+            "get": {
+                "description": "Returns time-series statistics data for charts",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Statistics"],
+                "summary": "Get historical statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start timestamp (RFC3339)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End timestamp (RFC3339)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "enum": ["1m", "5m", "15m", "1h", "1d"],
+                        "default": "5m",
+                        "description": "Aggregation interval",
+                        "name": "interval",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.StatsHistoryResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices": {
+            "get": {
+                "description": "Returns all devices discovered on the network",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Devices"],
+                "summary": "List all discovered devices",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by vendor name (partial match)",
+                        "name": "vendor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by IP address",
+                        "name": "ip",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Filter by activity (seen within last N minutes)",
+                        "name": "active",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "enum": ["mac", "ip", "vendor", "last_seen", "first_seen", "tcp_connections"],
+                        "default": "last_seen",
+                        "description": "Sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "enum": ["asc", "desc"],
+                        "default": "desc",
+                        "description": "Sort order",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of devices",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.DeviceListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{mac}": {
+            "get": {
+                "description": "Returns detailed information about a specific device",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Devices"],
+                "summary": "Get device details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MAC address (format XX:XX:XX:XX:XX:XX)",
+                        "name": "mac",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.DeviceInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Device not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{mac}/patterns": {
+            "get": {
+                "description": "Returns all communication patterns for a specific device",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Devices", "Patterns"],
+                "summary": "Get device communication patterns",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MAC address",
+                        "name": "mac",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "enum": ["ARP", "TCP", "UDP", "ICMP", "DNS", "HTTP", "TLS"],
+                        "description": "Filter by protocol",
+                        "name": "protocol",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum patterns",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PatternListResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Device not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{mac}/dns": {
+            "get": {
+                "description": "Returns DNS domains queried by a specific device with counts",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Devices"],
+                "summary": "Get DNS domains queried by device",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MAC address",
+                        "name": "mac",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Maximum domains",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.DNSDomainListResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Device not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{mac}/services": {
+            "get": {
+                "description": "Returns services/ports accessed by a specific device",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Devices"],
+                "summary": "Get services accessed by device",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MAC address",
+                        "name": "mac",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ServiceAccessListResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Device not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/patterns": {
+            "get": {
+                "description": "Returns recent unique communication patterns across all devices",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Patterns"],
+                "summary": "List all communication patterns",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "enum": ["ARP", "TCP", "UDP", "ICMP", "DNS", "HTTP", "TLS"],
+                        "description": "Filter by protocol",
+                        "name": "protocol",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum patterns",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PatternListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/patterns/stream": {
+            "get": {
+                "description": "Server-Sent Events stream of new communication patterns",
+                "consumes": ["application/json"],
+                "produces": ["text/event-stream"],
+                "tags": ["Patterns", "Events"],
+                "summary": "Stream new patterns (SSE)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "enum": ["ARP", "TCP", "UDP", "ICMP", "DNS", "HTTP", "TLS"],
+                        "description": "Filter by protocol",
+                        "name": "protocol",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/interfaces": {
+            "get": {
+                "description": "Returns all network interfaces being monitored",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Interfaces"],
+                "summary": "List monitored network interfaces",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.InterfaceListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/interfaces/{name}": {
+            "get": {
+                "description": "Returns details and statistics for a specific interface",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Interfaces"],
+                "summary": "Get interface details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Interface name (e.g., eth0, wlan0)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.InterfaceInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Interface not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/lookup/vendor/{mac}": {
+            "get": {
+                "description": "Returns vendor information for a MAC address using IEEE OUI database",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Lookup"],
+                "summary": "Lookup MAC vendor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MAC address or OUI prefix (XX:XX:XX)",
+                        "name": "mac",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.VendorInfoResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Vendor not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/lookup/service/{port}": {
+            "get": {
+                "description": "Returns service information for a port number",
+                "consumes": ["application/json"],
+                "produces": ["application/json"],
+                "tags": ["Lookup"],
+                "summary": "Lookup service by port",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Port number",
+                        "name": "port",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "enum": ["TCP", "UDP"],
+                        "default": "TCP",
+                        "description": "Protocol",
+                        "name": "protocol",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ServiceInfoResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Service not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "healthy"
+                },
+                "uptime": {
+                    "type": "integer",
+                    "example": 86400
+                },
+                "version": {
+                    "type": "string",
+                    "example": "1.0.0"
+                },
+                "interfaces_monitored": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "api.NetworkStatsResponse": {
+            "type": "object",
+            "properties": {
+                "total_packets": {"type": "integer", "example": 1542890},
+                "arp_packets": {"type": "integer", "example": 12543},
+                "tcp_packets": {"type": "integer", "example": 987234},
+                "udp_packets": {"type": "integer", "example": 432567},
+                "icmp_packets": {"type": "integer", "example": 1234},
+                "dns_packets": {"type": "integer", "example": 45678},
+                "http_packets": {"type": "integer", "example": 23456},
+                "tls_packets": {"type": "integer", "example": 89012},
+                "total_devices": {"type": "integer", "example": 47},
+                "active_devices": {"type": "integer", "example": 23},
+                "unique_patterns": {"type": "integer", "example": 1892},
+                "interfaces_monitored": {"type": "integer", "example": 2},
+                "uptime_seconds": {"type": "integer", "example": 86400}
+            }
+        },
+        "api.StatsHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "interval": {"type": "string", "example": "5m"},
+                "data_points": {
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/api.StatsDataPoint"}
+                }
+            }
+        },
+        "api.StatsDataPoint": {
+            "type": "object",
+            "properties": {
+                "timestamp": {"type": "string", "format": "date-time"},
+                "total_packets": {"type": "integer"},
+                "tcp_packets": {"type": "integer"},
+                "udp_packets": {"type": "integer"},
+                "devices_active": {"type": "integer"}
+            }
+        },
+        "api.DeviceListResponse": {
+            "type": "object",
+            "properties": {
+                "total": {"type": "integer", "example": 47},
+                "limit": {"type": "integer", "example": 100},
+                "offset": {"type": "integer", "example": 0},
+                "devices": {
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/models.DeviceInfo"}
+                }
+            }
+        },
+        "api.PatternListResponse": {
+            "type": "object",
+            "properties": {
+                "total": {"type": "integer", "example": 1892},
+                "patterns": {
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/models.CommunicationPattern"}
+                }
+            }
+        },
+        "api.DNSDomainListResponse": {
+            "type": "object",
+            "properties": {
+                "mac": {"type": "string", "example": "00:11:22:33:44:55"},
+                "total_queries": {"type": "integer", "example": 156},
+                "domains": {
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/api.DNSDomain"}
+                }
+            }
+        },
+        "api.DNSDomain": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "example": "google.com"},
+                "count": {"type": "integer", "example": 42}
+            }
+        },
+        "api.ServiceAccessListResponse": {
+            "type": "object",
+            "properties": {
+                "mac": {"type": "string", "example": "00:11:22:33:44:55"},
+                "services": {
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/api.ServiceAccess"}
+                }
+            }
+        },
+        "api.ServiceAccess": {
+            "type": "object",
+            "properties": {
+                "service": {"type": "string", "example": "HTTPS"},
+                "port": {"type": "integer", "example": 443},
+                "protocol": {"type": "string", "example": "TCP"},
+                "count": {"type": "integer", "example": 89}
+            }
+        },
+        "api.InterfaceListResponse": {
+            "type": "object",
+            "properties": {
+                "interfaces": {
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/api.InterfaceInfo"}
+                }
+            }
+        },
+        "api.InterfaceInfo": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "example": "eth0"},
+                "index": {"type": "integer", "example": 2},
+                "mac": {"type": "string", "example": "00:11:22:33:44:55"},
+                "addresses": {"type": "array", "items": {"type": "string"}},
+                "is_up": {"type": "boolean", "example": true},
+                "is_loopback": {"type": "boolean", "example": false},
+                "mtu": {"type": "integer", "example": 1500},
+                "packets_captured": {"type": "integer", "example": 12345},
+                "attached": {"type": "boolean", "example": true}
+            }
+        },
+        "api.VendorInfoResponse": {
+            "type": "object",
+            "properties": {
+                "oui": {"type": "string", "example": "00:11:22"},
+                "vendor": {"type": "string", "example": "Apple, Inc."},
+                "address": {"type": "string"}
+            }
+        },
+        "api.ServiceInfoResponse": {
+            "type": "object",
+            "properties": {
+                "port": {"type": "integer", "example": 443},
+                "protocol": {"type": "string", "example": "TCP"},
+                "service": {"type": "string", "example": "https"},
+                "description": {"type": "string", "example": "HTTP over TLS/SSL"}
+            }
+        },
+        "api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {"type": "string", "example": "Device not found"},
+                "code": {"type": "string", "example": "404"}
+            }
+        },
+        "models.DeviceInfo": {
+            "type": "object",
+            "properties": {
+                "mac": {"type": "string", "example": "00:11:22:33:44:55"},
+                "ip": {"type": "string", "example": "192.168.1.100"},
+                "vendor": {"type": "string", "example": "Apple, Inc."},
+                "interface": {"type": "string", "example": "eth0"},
+                "first_seen": {"type": "string", "format": "date-time"},
+                "last_seen": {"type": "string", "format": "date-time"},
+                "request_count": {"type": "integer"},
+                "reply_count": {"type": "integer"},
+                "tcp_connections": {"type": "integer"},
+                "udp_connections": {"type": "integer"},
+                "icmp_packets": {"type": "integer"},
+                "dns_queries": {"type": "integer"},
+                "http_requests": {"type": "integer"},
+                "tls_connections": {"type": "integer"},
+                "targets": {"type": "array", "items": {"type": "string"}},
+                "services": {"type": "object", "additionalProperties": {"type": "integer"}},
+                "dns_domains": {"type": "object", "additionalProperties": {"type": "integer"}},
+                "http_hosts": {"type": "object", "additionalProperties": {"type": "integer"}},
+                "tls_snis": {"type": "object", "additionalProperties": {"type": "integer"}},
+                "traffic_type_counts": {"type": "object", "additionalProperties": {"type": "integer"}}
+            }
+        },
+        "models.CommunicationPattern": {
+            "type": "object",
+            "properties": {
+                "src_mac": {"type": "string", "example": "00:11:22:33:44:55"},
+                "src_ip": {"type": "string", "example": "192.168.1.100"},
+                "dst_ip": {"type": "string", "example": "8.8.8.8"},
+                "dst_port": {"type": "integer", "example": 53},
+                "protocol": {"type": "string", "example": "UDP"},
+                "traffic_type": {"type": "string", "example": "UDP_DNS"},
+                "service": {"type": "string", "example": "DNS"},
+                "timestamp": {"type": "string", "format": "date-time"},
+                "l7_info": {"type": "string", "example": "google.com"},
+                "interface": {"type": "string", "example": "eth0"}
+            }
+        }
+    }
+}

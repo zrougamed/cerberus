@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  cerberus-ui:
+    build: .
+    ports:
+      - "3000:80"
+    environment:
+      # Set the Cerberus backend URL (used by nginx proxy)
+      - CERBERUS_BACKEND=http://cerberus:8080/api/v1/
+    depends_on:
+      - cerberus
+    restart: unless-stopped
+
+  cerberus:
+    image: cerberus:latest
+    privileged: true
+    network_mode: host
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+      - BPF
+    environment:
+      - PORT=8080
+    restart: unless-stopped

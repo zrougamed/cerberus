@@ -14,9 +14,25 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 
+	"github.com/zrougamed/cerberus/internal/api"
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/utils"
 )
+
+// @title Cerberus Network Monitor API
+// @version 1.0
+// @description REST API for Cerberus - a high-performance network monitoring tool built with eBPF.
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name Cerberus Project
+// @contact.url https://github.com/zrougamed/cerberus
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /api/v1
+// @schemes http
 
 func main() {
 	// Clean up any existing TC hooks
@@ -63,6 +79,7 @@ func main() {
 
 	var links []link.Link
 	attachedCount := 0
+	attachedInterfaces := make([]api.InterfaceInfo, 0)
 
 	for _, iface := range ifaces {
 		// Skip loopback and down interfaces
@@ -87,6 +104,24 @@ func main() {
 		links = append(links, l)
 		attachedCount++
 		fmt.Printf("Successfully attached to %s\n", iface.Name)
+
+		// Collect interface info for API
+		addrs, _ := iface.Addrs()
+		addrStrings := make([]string, 0)
+		for _, addr := range addrs {
+			addrStrings = append(addrStrings, addr.String())
+		}
+
+		attachedInterfaces = append(attachedInterfaces, api.InterfaceInfo{
+			Name:       iface.Name,
+			Index:      iface.Index,
+			MAC:        iface.HardwareAddr.String(),
+			Addresses:  addrStrings,
+			IsUp:       true,
+			IsLoopback: false,
+			MTU:        iface.MTU,
+			Attached:   true,
+		})
 	}
 
 	if attachedCount == 0 {
@@ -119,6 +154,25 @@ func main() {
 
 	fmt.Println("Monitoring network traffic... Press Ctrl+C to exit")
 	fmt.Println("Stats will be printed every 60 seconds")
+
+	// Initialize and start API server
+	apiServer := api.NewServer(mon)
+	apiServer.SetInterfaces(attachedInterfaces)
+
+	// Start API server in background
+	go func() {
+		apiAddr := os.Getenv("API_ADDR")
+		if apiAddr == "" {
+			apiAddr = ":8080"
+		}
+		if err := apiServer.Start(apiAddr); err != nil {
+			log.Printf("API server error: %v", err)
+		}
+	}()
+
+	fmt.Println("\n🌐 API Server started on http://localhost:8080")
+	fmt.Println("📚 Swagger UI: http://localhost:8080/swagger/index.html")
+	fmt.Println("")
 
 	// Debug ticker to show we're alive
 	debugTicker := time.NewTicker(10 * time.Second)
@@ -214,6 +268,11 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
+
+	fmt.Println("\n\nShutting down API server...")
+	if err := apiServer.Shutdown(); err != nil {
+		log.Printf("Error shutting down API server: %v", err)
+	}
 
 	fmt.Println("\n\nFinal Statistics:")
 	mon.PrintStats()

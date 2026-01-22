@@ -1,0 +1,885 @@
+openapi: 3.0.3
+info:
+  title: Cerberus Network Monitor API
+  description: |
+    REST API for Cerberus - a high-performance network monitoring tool built with eBPF.
+    
+    This API provides endpoints for:
+    - Real-time network statistics and packet counts
+    - Device discovery and information
+    - Communication pattern tracking
+    - Layer 7 protocol analysis (DNS, HTTP, TLS)
+    - Service and vendor lookups
+    
+    **Note:** This API specification is a starting point for building a UI. 
+    The actual HTTP server implementation needs to be added to the Go codebase.
+  version: 1.0.0
+  contact:
+    name: Cerberus Project
+    url: https://github.com/zrougamed/cerberus
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+
+tags:
+  - name: Statistics
+    description: Network statistics and packet counters
+  - name: Devices
+    description: Discovered network devices
+  - name: Patterns
+    description: Communication patterns and traffic flows
+  - name: Events
+    description: Real-time network events (WebSocket/SSE)
+  - name: Interfaces
+    description: Network interface management
+  - name: Lookup
+    description: Vendor and service lookup utilities
+
+paths:
+  /stats:
+    get:
+      tags:
+        - Statistics
+      summary: Get overall network statistics
+      description: Returns aggregate packet counts and network statistics
+      operationId: getStats
+      responses:
+        '200':
+          description: Network statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkStats'
+
+  /stats/history:
+    get:
+      tags:
+        - Statistics
+      summary: Get historical statistics
+      description: Returns time-series statistics data for charts
+      operationId: getStatsHistory
+      parameters:
+        - name: from
+          in: query
+          description: Start timestamp (RFC3339)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: End timestamp (RFC3339)
+          schema:
+            type: string
+            format: date-time
+        - name: interval
+          in: query
+          description: Aggregation interval
+          schema:
+            type: string
+            enum: [1m, 5m, 15m, 1h, 1d]
+            default: 5m
+      responses:
+        '200':
+          description: Historical statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsHistory'
+
+  /devices:
+    get:
+      tags:
+        - Devices
+      summary: List all discovered devices
+      description: Returns all devices discovered on the network
+      operationId: listDevices
+      parameters:
+        - name: vendor
+          in: query
+          description: Filter by vendor name (partial match)
+          schema:
+            type: string
+        - name: ip
+          in: query
+          description: Filter by IP address (exact or subnet)
+          schema:
+            type: string
+        - name: active
+          in: query
+          description: Filter by activity status (seen within last N minutes)
+          schema:
+            type: integer
+            default: 5
+        - name: sort
+          in: query
+          description: Sort field
+          schema:
+            type: string
+            enum: [mac, ip, vendor, last_seen, first_seen, tcp_connections]
+            default: last_seen
+        - name: order
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: limit
+          in: query
+          description: Maximum number of devices to return
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Offset for pagination
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of devices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceList'
+
+  /devices/{mac}:
+    get:
+      tags:
+        - Devices
+      summary: Get device details
+      description: Returns detailed information about a specific device
+      operationId: getDevice
+      parameters:
+        - name: mac
+          in: path
+          required: true
+          description: MAC address (format XX:XX:XX:XX:XX:XX)
+          schema:
+            type: string
+            pattern: '^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$'
+      responses:
+        '200':
+          description: Device details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceInfo'
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /devices/{mac}/patterns:
+    get:
+      tags:
+        - Devices
+        - Patterns
+      summary: Get device communication patterns
+      description: Returns all communication patterns for a specific device
+      operationId: getDevicePatterns
+      parameters:
+        - name: mac
+          in: path
+          required: true
+          description: MAC address
+          schema:
+            type: string
+        - name: protocol
+          in: query
+          description: Filter by protocol
+          schema:
+            type: string
+            enum: [ARP, TCP, UDP, ICMP, DNS, HTTP, TLS]
+        - name: from
+          in: query
+          description: Start timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Device patterns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatternList'
+
+  /devices/{mac}/dns:
+    get:
+      tags:
+        - Devices
+      summary: Get DNS domains queried by device
+      description: Returns DNS domains queried by a specific device with counts
+      operationId: getDeviceDNS
+      parameters:
+        - name: mac
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: DNS domains
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DNSDomainList'
+
+  /devices/{mac}/services:
+    get:
+      tags:
+        - Devices
+      summary: Get services accessed by device
+      description: Returns services/ports accessed by a specific device
+      operationId: getDeviceServices
+      parameters:
+        - name: mac
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Services accessed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccessList'
+
+  /patterns:
+    get:
+      tags:
+        - Patterns
+      summary: List all communication patterns
+      description: Returns recent unique communication patterns across all devices
+      operationId: listPatterns
+      parameters:
+        - name: protocol
+          in: query
+          description: Filter by protocol
+          schema:
+            type: string
+            enum: [ARP, TCP, UDP, ICMP, DNS, HTTP, TLS]
+        - name: traffic_type
+          in: query
+          description: Filter by traffic type
+          schema:
+            type: string
+        - name: src_ip
+          in: query
+          description: Filter by source IP
+          schema:
+            type: string
+        - name: dst_ip
+          in: query
+          description: Filter by destination IP
+          schema:
+            type: string
+        - name: dst_port
+          in: query
+          description: Filter by destination port
+          schema:
+            type: integer
+        - name: interface
+          in: query
+          description: Filter by network interface
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: Start timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        '200':
+          description: Communication patterns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatternList'
+
+  /patterns/stream:
+    get:
+      tags:
+        - Patterns
+        - Events
+      summary: Stream new patterns (SSE)
+      description: |
+        Server-Sent Events stream of new communication patterns.
+        Connect with EventSource to receive real-time updates.
+      operationId: streamPatterns
+      parameters:
+        - name: protocol
+          in: query
+          description: Filter by protocol
+          schema:
+            type: string
+            enum: [ARP, TCP, UDP, ICMP, DNS, HTTP, TLS]
+      responses:
+        '200':
+          description: SSE stream of patterns
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: pattern
+                  data: {"src_mac":"00:11:22:33:44:55","src_ip":"192.168.1.100","dst_ip":"8.8.8.8","dst_port":53,"protocol":"UDP","traffic_type":"UDP_DNS"}
+
+  /events/stream:
+    get:
+      tags:
+        - Events
+      summary: Stream all network events (WebSocket)
+      description: |
+        WebSocket endpoint for streaming all network events in real-time.
+        Upgrade connection to WebSocket to receive events.
+      operationId: streamEvents
+      responses:
+        '101':
+          description: WebSocket upgrade
+
+  /interfaces:
+    get:
+      tags:
+        - Interfaces
+      summary: List monitored network interfaces
+      description: Returns all network interfaces being monitored
+      operationId: listInterfaces
+      responses:
+        '200':
+          description: List of interfaces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterfaceList'
+
+  /interfaces/{name}:
+    get:
+      tags:
+        - Interfaces
+      summary: Get interface details
+      description: Returns details and statistics for a specific interface
+      operationId: getInterface
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Interface name (e.g., eth0, wlan0)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Interface details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterfaceInfo'
+        '404':
+          description: Interface not found
+
+  /lookup/vendor/{mac}:
+    get:
+      tags:
+        - Lookup
+      summary: Lookup MAC vendor
+      description: Returns vendor information for a MAC address using IEEE OUI database
+      operationId: lookupVendor
+      parameters:
+        - name: mac
+          in: path
+          required: true
+          description: MAC address or OUI prefix (XX:XX:XX)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Vendor information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorInfo'
+        '404':
+          description: Vendor not found
+
+  /lookup/service/{port}:
+    get:
+      tags:
+        - Lookup
+      summary: Lookup service by port
+      description: Returns service information for a port number
+      operationId: lookupService
+      parameters:
+        - name: port
+          in: path
+          required: true
+          description: Port number
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+        - name: protocol
+          in: query
+          description: Protocol (TCP or UDP)
+          schema:
+            type: string
+            enum: [TCP, UDP]
+            default: TCP
+      responses:
+        '200':
+          description: Service information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceInfo'
+        '404':
+          description: Service not found
+
+  /health:
+    get:
+      tags:
+        - Statistics
+      summary: Health check
+      description: Returns service health status
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  uptime:
+                    type: integer
+                    description: Uptime in seconds
+                  version:
+                    type: string
+                    example: 1.0.0
+                  interfaces_monitored:
+                    type: integer
+
+components:
+  schemas:
+    NetworkStats:
+      type: object
+      properties:
+        total_packets:
+          type: integer
+          format: int64
+          description: Total packets processed
+        arp_packets:
+          type: integer
+          format: int64
+        tcp_packets:
+          type: integer
+          format: int64
+        udp_packets:
+          type: integer
+          format: int64
+        icmp_packets:
+          type: integer
+          format: int64
+        dns_packets:
+          type: integer
+          format: int64
+        http_packets:
+          type: integer
+          format: int64
+        tls_packets:
+          type: integer
+          format: int64
+        total_devices:
+          type: integer
+          description: Number of unique devices discovered
+        active_devices:
+          type: integer
+          description: Devices seen in last 5 minutes
+        unique_patterns:
+          type: integer
+          description: Unique communication patterns
+        interfaces_monitored:
+          type: integer
+        uptime_seconds:
+          type: integer
+          format: int64
+      example:
+        total_packets: 1542890
+        arp_packets: 12543
+        tcp_packets: 987234
+        udp_packets: 432567
+        icmp_packets: 1234
+        dns_packets: 45678
+        http_packets: 23456
+        tls_packets: 89012
+        total_devices: 47
+        active_devices: 23
+        unique_patterns: 1892
+        interfaces_monitored: 2
+        uptime_seconds: 86400
+
+    StatsHistory:
+      type: object
+      properties:
+        interval:
+          type: string
+        data_points:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              total_packets:
+                type: integer
+              tcp_packets:
+                type: integer
+              udp_packets:
+                type: integer
+              devices_active:
+                type: integer
+
+    DeviceList:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of devices matching filter
+        limit:
+          type: integer
+        offset:
+          type: integer
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceInfo'
+
+    DeviceInfo:
+      type: object
+      properties:
+        mac:
+          type: string
+          description: MAC address
+          example: "00:11:22:33:44:55"
+        ip:
+          type: string
+          description: Last known IP address
+          example: "192.168.1.100"
+        vendor:
+          type: string
+          description: Device vendor from OUI lookup
+          example: "Apple, Inc."
+        interface:
+          type: string
+          description: Network interface where device was seen
+          example: "eth0"
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        request_count:
+          type: integer
+          description: ARP requests sent
+        reply_count:
+          type: integer
+          description: ARP replies sent
+        tcp_connections:
+          type: integer
+        udp_connections:
+          type: integer
+        icmp_packets:
+          type: integer
+        dns_queries:
+          type: integer
+        http_requests:
+          type: integer
+        tls_connections:
+          type: integer
+        targets:
+          type: array
+          items:
+            type: string
+          description: Recent destination IPs
+        services:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Service name to access count mapping
+          example:
+            "HTTP": 234
+            "DNS": 156
+            "HTTPS": 89
+        dns_domains:
+          type: object
+          additionalProperties:
+            type: integer
+          description: DNS domain to query count mapping
+        http_hosts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: HTTP host to request count mapping
+        tls_snis:
+          type: object
+          additionalProperties:
+            type: integer
+          description: TLS SNI to connection count mapping
+        traffic_type_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Traffic type to count mapping
+          example:
+            "TCP_SYN": 45
+            "TCP_ACK": 234
+            "UDP_DNS": 156
+
+    CommunicationPattern:
+      type: object
+      properties:
+        src_mac:
+          type: string
+          example: "00:11:22:33:44:55"
+        src_ip:
+          type: string
+          example: "192.168.1.100"
+        dst_ip:
+          type: string
+          example: "8.8.8.8"
+        dst_port:
+          type: integer
+          example: 53
+        protocol:
+          type: string
+          enum: [ARP, TCP, UDP, ICMP, DNS, HTTP, TLS]
+        traffic_type:
+          $ref: '#/components/schemas/TrafficType'
+        service:
+          type: string
+          description: Resolved service name
+          example: "DNS"
+        timestamp:
+          type: string
+          format: date-time
+        l7_info:
+          type: string
+          description: Layer 7 payload info (DNS domain, HTTP path, TLS SNI)
+          example: "google.com"
+        interface:
+          type: string
+          description: Network interface name
+          example: "eth0"
+
+    PatternList:
+      type: object
+      properties:
+        total:
+          type: integer
+        patterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommunicationPattern'
+
+    TrafficType:
+      type: string
+      enum:
+        # ARP
+        - ARP_REQUEST
+        - ARP_REPLY
+        - ARP_PROBE
+        - ARP_ANNOUNCE
+        - ARP_SCAN
+        # TCP
+        - TCP_SYN
+        - TCP_SYNACK
+        - TCP_ACK
+        - TCP_FIN
+        - TCP_RST
+        - TCP_HTTP
+        - TCP_HTTPS
+        - TCP_SSH
+        - TCP_CUSTOM
+        # UDP
+        - UDP_DNS
+        - UDP_DHCP
+        - UDP_NTP
+        - UDP_SNMP
+        - UDP_CUSTOM
+        # ICMP
+        - ICMP_ECHO_REQUEST
+        - ICMP_ECHO_REPLY
+        - ICMP_DEST_UNREACHABLE
+        - ICMP_TIME_EXCEEDED
+        - ICMP_REDIRECT
+        - ICMP_CUSTOM
+        # DNS
+        - DNS_QUERY
+        - DNS_RESPONSE
+        # HTTP
+        - HTTP_GET
+        - HTTP_POST
+        - HTTP_REQUEST
+        # TLS
+        - TLS_CLIENT_HELLO
+        - TLS_SERVER_HELLO
+        - TLS_HANDSHAKE
+        # Direction
+        - LOCAL_TO_LOCAL
+        - LOCAL_TO_EXTERNAL
+        - EXTERNAL_TO_LOCAL
+
+    DNSDomainList:
+      type: object
+      properties:
+        mac:
+          type: string
+        total_queries:
+          type: integer
+        domains:
+          type: array
+          items:
+            type: object
+            properties:
+              domain:
+                type: string
+                example: "google.com"
+              count:
+                type: integer
+              first_seen:
+                type: string
+                format: date-time
+              last_seen:
+                type: string
+                format: date-time
+
+    ServiceAccessList:
+      type: object
+      properties:
+        mac:
+          type: string
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              service:
+                type: string
+                example: "HTTPS"
+              port:
+                type: integer
+                example: 443
+              protocol:
+                type: string
+                example: "TCP"
+              count:
+                type: integer
+
+    InterfaceList:
+      type: object
+      properties:
+        interfaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/InterfaceInfo'
+
+    InterfaceInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "eth0"
+        index:
+          type: integer
+        mac:
+          type: string
+        addresses:
+          type: array
+          items:
+            type: string
+          description: IP addresses assigned to interface
+        is_up:
+          type: boolean
+        is_loopback:
+          type: boolean
+        mtu:
+          type: integer
+        packets_captured:
+          type: integer
+          format: int64
+        attached:
+          type: boolean
+          description: Whether eBPF program is attached
+
+    VendorInfo:
+      type: object
+      properties:
+        oui:
+          type: string
+          description: OUI prefix (first 3 octets)
+          example: "00:11:22"
+        vendor:
+          type: string
+          example: "Apple, Inc."
+        address:
+          type: string
+          description: Vendor address (if available)
+
+    ServiceInfo:
+      type: object
+      properties:
+        port:
+          type: integer
+          example: 443
+        protocol:
+          type: string
+          example: "TCP"
+        service:
+          type: string
+          example: "https"
+        description:
+          type: string
+          example: "HTTP over TLS/SSL"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+      required:
+        - error
