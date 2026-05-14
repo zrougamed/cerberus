@@ -154,6 +154,12 @@ jobs:
             type=raw,value=${{ env.RELEASE_TAG }}
             type=raw,value=latest
 
+      - name: Compute build metadata
+        id: build_meta
+        run: |
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -163,5 +169,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            COMMIT=${{ steps.build_meta.outputs.commit }}
+            BUILD_DATE=${{ steps.build_meta.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

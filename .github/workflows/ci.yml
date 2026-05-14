@@ -231,7 +231,12 @@ jobs:
 
       - name: Build production Docker image
         run: |
-          docker build -t cerberus:test .
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          docker build \
+            --build-arg COMMIT="${COMMIT}" \
+            --build-arg BUILD_DATE="${BUILD_DATE}" \
+            -t cerberus:test .
 
       - name: Verify image
         run: |

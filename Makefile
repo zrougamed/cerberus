@@ -10,6 +10,13 @@ BPF_SRC := ebpf/cerberus_tc.c
 GO_SRC := cmd/cerberus/main.go
 BUILD_DIR := build
 
+# Build metadata stamped into the binary via -ldflags -X. Falls back to "unknown"
+# when git is unavailable (e.g. tarball builds).
+VERSION_PKG := github.com/zrougamed/cerberus/internal/version
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X $(VERSION_PKG).Commit=$(COMMIT) -X $(VERSION_PKG).Date=$(BUILD_DATE)
+
 .PHONY: all clean build bpf run deps ci ci-build ci-test docker-build docker-run docker-up docker-down docker-logs docker-web help
 
 all: bpf build
@@ -24,7 +31,7 @@ $(BPF_OBJ): $(BPF_SRC)
 
 # Build Go binary
 build: bpf
-	CGO_ENABLED=0 $(GO) build -ldflags="-s -w" -o build/$(BINARY) $(GO_SRC)
+	CGO_ENABLED=0 $(GO) build -ldflags="$(LDFLAGS)" -o build/$(BINARY) $(GO_SRC)
 
 # Run the program (requires sudo)
 run: all
@@ -42,7 +49,10 @@ deps:
 
 # Docker build
 docker-build:
-	docker build -t cerberus:latest .
+	docker build \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t cerberus:latest .
 
 # Docker run (privileged for BPF)
 docker-run:

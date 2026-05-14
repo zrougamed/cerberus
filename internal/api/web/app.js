@@ -623,8 +623,29 @@ function setupRouter() {
   });
 }
 
+// Build info only needs to be fetched once — the binary's version is static
+// for the life of the page.
+async function renderBuildInfo() {
+  const el = document.getElementById("build-info");
+  if (!el) return;
+  try {
+    const res = await fetch("/api/v1/version", { headers: { Accept: "application/json" } });
+    if (!res.ok) {
+      el.textContent = "Build: unknown";
+      return;
+    }
+    const v = await res.json();
+    const commit = v && v.commit ? v.commit : "unknown";
+    const date = v && v.date ? v.date : "unknown";
+    el.textContent = `Build: ${commit} (${date})`;
+  } catch {
+    el.textContent = "Build: unknown";
+  }
+}
+
 setupThemeToggle();
 setupPauseToggle();
 setupRouter();
+renderBuildInfo();
 tick();
 setInterval(tick, 3000);

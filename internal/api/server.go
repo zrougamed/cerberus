@@ -12,6 +12,7 @@ import (
 
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
+	"github.com/zrougamed/cerberus/internal/version"
 )
 
 //go:embed web/*
@@ -32,6 +33,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/v1/devices", s.handleDevices)
 	mux.HandleFunc("/api/v1/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/v1/anomalies", s.handleAnomalies)
+	mux.HandleFunc("/api/v1/version", s.handleVersion)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 
 	staticSub, err := fs.Sub(webFS, "web")
@@ -190,6 +192,14 @@ func (s *Server) handleAnomalies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.monitor.GetAnomalySnapshot())
 }
 
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, version.Get())
+}
+
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -200,6 +210,11 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	pkt := s.monitor.SnapshotPacketStats()
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+
+	v := version.Get()
+	fmt.Fprintln(w, "# HELP cerberus_build_info Build metadata (commit, build date). Always 1.")
+	fmt.Fprintln(w, "# TYPE cerberus_build_info gauge")
+	fmt.Fprintf(w, "cerberus_build_info{commit=\"%s\",date=\"%s\"} 1\n\n", escapeLabelValue(v.Commit), escapeLabelValue(v.Date))
 
 	fmt.Fprintln(w, "# HELP cerberus_packets_total Total observed packets by protocol.")
 	fmt.Fprintln(w, "# TYPE cerberus_packets_total counter")

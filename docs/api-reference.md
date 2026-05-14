@@ -12,6 +12,7 @@ Base URL is whatever host/port `CERBERUS_HTTP_ADDR` binds to (default `http://12
 | `GET /api/v1/devices` | Array of full per-MAC `DeviceInfo`-compatible objects (JSON-tagged fields only). |
 | `GET /api/v1/alerts` | Array of recent rule-based `AlertEvent` objects (threshold monitor). |
 | `GET /api/v1/anomalies` | Single **anomaly snapshot** object: model status, scores, last features, recent alerts with `summary` (plain) and `detail` (technical), `last_summary` / `last_summary_detail` / `last_contributions`, etc. |
+| `GET /api/v1/version` | `{ "commit": "<short-sha>", "date": "<RFC3339>" }` build metadata stamped at compile time via `-ldflags -X`. Both fields are `"unknown"` for builds without git or ldflags. |
 
 Errors: non-GET returns **405** with plain text body `method not allowed`.
 
@@ -19,7 +20,7 @@ Errors: non-GET returns **405** with plain text body `method not allowed`.
 
 | Path | Description |
 |------|-------------|
-| `GET /metrics` | Prometheus text exposition format; scrapes monitor packet counters and related gauges/counters. |
+| `GET /metrics` | Prometheus text exposition format; scrapes monitor packet counters and related gauges/counters. Includes `cerberus_build_info{commit="…",date="…"} 1` for build provenance. |
 
 ## Static assets (Control Room)
 

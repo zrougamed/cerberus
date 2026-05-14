@@ -19,9 +19,12 @@ import (
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/utils"
+	"github.com/zrougamed/cerberus/internal/version"
 )
 
 func main() {
+	fmt.Printf("Cerberus %s\n", version.String())
+
 	// Clean up any existing TC hooks
 	utils.CleanCards()
 

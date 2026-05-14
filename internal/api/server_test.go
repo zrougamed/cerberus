@@ -12,6 +12,7 @@ import (
 
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
+	"github.com/zrougamed/cerberus/internal/version"
 )
 
 func TestTopMapOrdersAndLimits(t *testing.T) {
@@ -93,6 +94,7 @@ func TestMetricsEndpointIncludesCoreCounters(t *testing.T) {
 
 	body := rr.Body.String()
 	mustContain := []string{
+		`cerberus_build_info{commit=`,
 		`cerberus_packets_total{protocol="total"} 12`,
 		`cerberus_packets_total{protocol="dns"} 4`,
 		`cerberus_devices_total 1`,
@@ -170,6 +172,41 @@ func TestAlertsEndpointReturnsRecentAlertsFirst(t *testing.T) {
 		if out[i-1].ObservedAt.Before(out[i].ObservedAt) {
 			t.Fatalf("expected alerts in descending order by observed_at")
 		}
+	}
+}
+
+func TestVersionEndpointReturnsBuildInfo(t *testing.T) {
+	prevCommit, prevDate := version.Commit, version.Date
+	version.Commit = "abc1234"
+	version.Date = "2026-05-14T12:00:00Z"
+	t.Cleanup(func() {
+		version.Commit = prevCommit
+		version.Date = prevDate
+	})
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	mon, err := monitor.NewNetworkMonitor(10, dbPath)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	defer func() {
+		_ = mon.Close()
+		_ = os.Remove(dbPath)
+	}()
+
+	srv := NewServer(mon)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	rr := httptest.NewRecorder()
+	srv.handleVersion(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var out version.Info
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if out.Commit != "abc1234" || out.Date != "2026-05-14T12:00:00Z" {
+		t.Fatalf("unexpected version payload: %+v", out)
 	}
 }
 
