@@ -33,7 +33,7 @@ type NetworkMonitor struct {
 	baselines      *securityBaselines
 	anomaly        *anomalyDetector
 	geoipDB        *geoip2.Reader
-	localSubnet    *net.IPNet
+	topology       *network.NetworkTopology
 	Stats          struct {
 		TotalPackets uint64
 		ArpPackets   uint64
@@ -73,7 +73,10 @@ func NewNetworkMonitor(cacheSize int, dbPath string) (*NetworkMonitor, error) {
 	db.CreateIndex("mac", "*", buntdb.IndexJSON("mac"))
 	db.CreateIndex("last_seen", "*", buntdb.IndexJSON("last_seen"))
 
-	localSubnet := network.DetectLocalSubnet()
+	topology, err := network.DetectNetworkTopology()
+	if err != nil {
+		topology = nil
+	}
 
 	online := databases.OnlineDB()
 	oui, _ := databases.NewOUIDatabase(online)
@@ -94,8 +97,8 @@ func NewNetworkMonitor(cacheSize int, dbPath string) (*NetworkMonitor, error) {
 			// Targets keeps at most 20 unique dst IPs per device; threshold must be < 20 or target_spread never fires.
 			MaxUniqueTargets: 18,
 		},
-		anomaly:     newAnomalyDetector(),
-		localSubnet: localSubnet,
+		anomaly:  newAnomalyDetector(),
+		topology: topology,
 	}
 	nm.baselines = newSecurityBaselines(nm.alertConfig)
 
@@ -267,6 +270,61 @@ func isGeoIPEligible(ipStr string) bool {
 		return false
 	}
 	return true
+}
+
+// updateDeviceIP keeps device.IP pinned to a real LAN address even when a
+// gateway forwards packets whose L3 source is some other host. ARP events are
+// trusted (the eBPF parser puts the ARP sender protocol address in SrcIP);
+// non-ARP IPv4 events only overwrite when srcIP is on a local subnet,
+// otherwise the device is flagged as a gateway and the count bumped.
+func (nm *NetworkMonitor) updateDeviceIP(device *models.DeviceInfo, evt *models.NetworkEvent, srcIP string) {
+	if device == nil || srcIP == "" || srcIP == "0.0.0.0" {
+		return
+	}
+
+	if evt.EventType == models.EVENT_TYPE_ARP {
+		if device.IP != srcIP {
+			device.IP = srcIP
+		}
+		return
+	}
+
+	if evt.IsIPv6 == 1 {
+		if device.IP == "" {
+			device.IP = srcIP
+		}
+		return
+	}
+
+	parsed := net.ParseIP(srcIP)
+	if parsed == nil {
+		return
+	}
+	if nm.isLocalIPv4(parsed) {
+		if device.IP != srcIP {
+			device.IP = srcIP
+		}
+		return
+	}
+
+	device.IsGateway = true
+	device.ForwardedSourceCount++
+}
+
+// isLocalIPv4 reports whether ip belongs to one of the host's directly
+// attached IPv4 subnets. Falls back to net.IP.IsPrivate when topology
+// detection failed at startup so the rule still works on minimal hosts.
+func (nm *NetworkMonitor) isLocalIPv4(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if nm.topology != nil && nm.topology.IsLocalIP(ip) {
+		return true
+	}
+	if nm.topology == nil {
+		return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()
+	}
+	return false
 }
 
 func (nm *NetworkMonitor) updateGeoForIP(device *models.DeviceInfo, ipStr string) {
@@ -448,9 +506,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 
 	// Update device info
 	device.LastSeen = time.Now()
-	if device.IP != srcIP && srcIP != "0.0.0.0" {
-		device.IP = srcIP
-	}
+	nm.updateDeviceIP(device, evt, srcIP)
 	nm.updateGeoForIP(device, srcIP)
 
 	device.TrafficTypeCounts[trafficType]++

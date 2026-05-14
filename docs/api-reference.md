@@ -9,7 +9,7 @@ Base URL is whatever host/port `CERBERUS_HTTP_ADDR` binds to (default `http://12
 | Path | Description |
 |------|-------------|
 | `GET /api/v1/summary` | Fleet snapshot: packet counters, device count, ranked services/vendors/DNS stats, recent devices, encrypted DNS / TLS version aggregates where computed, correlated-domain hints, **and** fields the Control Room overview expects. Implementation aggregates from current in-memory devices. |
-| `GET /api/v1/devices` | Array of full per-MAC `DeviceInfo`-compatible objects (JSON-tagged fields only). |
+| `GET /api/v1/devices` | Array of full per-MAC `DeviceInfo`-compatible objects (JSON-tagged fields only). Includes `is_gateway` (true once the MAC is observed sourcing IPv4 packets with a non-local source IP) and `forwarded_source_count` (number of such forwarded packets). |
 | `GET /api/v1/alerts` | Array of recent rule-based `AlertEvent` objects (threshold monitor). |
 | `GET /api/v1/anomalies` | Single **anomaly snapshot** object: model status, scores, last features, recent alerts with `summary` (plain) and `detail` (technical), `last_summary` / `last_summary_detail` / `last_contributions`, etc. |
 | `GET /api/v1/version` | `{ "commit": "<short-sha>", "date": "<RFC3339>" }` build metadata stamped at compile time via `-ldflags -X`. Both fields are `"unknown"` for builds without git or ldflags. |

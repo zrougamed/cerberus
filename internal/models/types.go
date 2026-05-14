@@ -201,37 +201,44 @@ type AnomalySnapshot struct {
 }
 
 type DeviceInfo struct {
-	MAC                string                `json:"mac"`
-	IP                 string                `json:"ip"`
-	Vendor             string                `json:"vendor"`
-	GeoCountry         string                `json:"geo_country,omitempty"`
-	GeoCountryCode     string                `json:"geo_country_code,omitempty"`
-	GeoCity            string                `json:"geo_city,omitempty"`
-	Interface          string                `json:"interface,omitempty"` // Network interface name (e.g., eth0, wlan0)
-	FirstSeen          time.Time             `json:"first_seen"`
-	LastSeen           time.Time             `json:"last_seen"`
-	RequestCount       int                   `json:"request_count"`
-	ReplyCount         int                   `json:"reply_count"`
-	TCPConnections     int                   `json:"tcp_connections"`
-	UDPConnections     int                   `json:"udp_connections"`
-	ICMPPackets        int                   `json:"icmp_packets"`
-	DNSQueries         int                   `json:"dns_queries"`
-	HTTPRequests       int                   `json:"http_requests"`
-	TLSConnections     int                   `json:"tls_connections"`
-	Targets            []string              `json:"targets"`
-	Services           map[string]int        `json:"services"` // service -> count
-	DNSDomains         map[string]int        `json:"dns_domains,omitempty"`
-	DNSResponseDomains map[string]int        `json:"dns_response_domains,omitempty"`
-	DNSQueryTypes      map[string]int        `json:"dns_query_types,omitempty"`
-	DNSResponseCodes   map[string]int        `json:"dns_response_codes,omitempty"`
-	EncryptedDNS       map[string]int        `json:"encrypted_dns,omitempty"`
-	DNSCorrelated      int                   `json:"dns_correlated_connections,omitempty"`
-	CorrelatedDomains  map[string]int        `json:"correlated_domains,omitempty"`
-	HTTPHosts          map[string]int        `json:"http_hosts,omitempty"`
-	TLSSNIs            map[string]int        `json:"tls_snis,omitempty"`
-	TLSVersions        map[string]int        `json:"tls_versions,omitempty"`
-	RecentDNSQueries   map[string]time.Time  `json:"-"`
-	SeenPatterns       map[string]bool       `json:"-"`
-	TrafficTypeCounts  map[TrafficType]int   `json:"traffic_type_counts"`
-	FlowStats          map[string]*FlowStats `json:"-"` // flowKey -> stats
+	MAC            string `json:"mac"`
+	IP             string `json:"ip"`
+	Vendor         string `json:"vendor"`
+	GeoCountry     string `json:"geo_country,omitempty"`
+	GeoCountryCode string `json:"geo_country_code,omitempty"`
+	GeoCity        string `json:"geo_city,omitempty"`
+	Interface      string `json:"interface,omitempty"` // Network interface name (e.g., eth0, wlan0)
+	// IsGateway is true once we observe this MAC sourcing IPv4 packets whose
+	// L3 source IP is outside any local subnet, i.e. forwarded/NATed traffic.
+	IsGateway bool `json:"is_gateway,omitempty"`
+	// ForwardedSourceCount counts non-ARP IPv4 packets seen from this MAC
+	// whose source IP is not on a local subnet. A non-zero value implies the
+	// device is acting as a router/NAT, not the originator of those packets.
+	ForwardedSourceCount int                   `json:"forwarded_source_count,omitempty"`
+	FirstSeen            time.Time             `json:"first_seen"`
+	LastSeen             time.Time             `json:"last_seen"`
+	RequestCount         int                   `json:"request_count"`
+	ReplyCount           int                   `json:"reply_count"`
+	TCPConnections       int                   `json:"tcp_connections"`
+	UDPConnections       int                   `json:"udp_connections"`
+	ICMPPackets          int                   `json:"icmp_packets"`
+	DNSQueries           int                   `json:"dns_queries"`
+	HTTPRequests         int                   `json:"http_requests"`
+	TLSConnections       int                   `json:"tls_connections"`
+	Targets              []string              `json:"targets"`
+	Services             map[string]int        `json:"services"` // service -> count
+	DNSDomains           map[string]int        `json:"dns_domains,omitempty"`
+	DNSResponseDomains   map[string]int        `json:"dns_response_domains,omitempty"`
+	DNSQueryTypes        map[string]int        `json:"dns_query_types,omitempty"`
+	DNSResponseCodes     map[string]int        `json:"dns_response_codes,omitempty"`
+	EncryptedDNS         map[string]int        `json:"encrypted_dns,omitempty"`
+	DNSCorrelated        int                   `json:"dns_correlated_connections,omitempty"`
+	CorrelatedDomains    map[string]int        `json:"correlated_domains,omitempty"`
+	HTTPHosts            map[string]int        `json:"http_hosts,omitempty"`
+	TLSSNIs              map[string]int        `json:"tls_snis,omitempty"`
+	TLSVersions          map[string]int        `json:"tls_versions,omitempty"`
+	RecentDNSQueries     map[string]time.Time  `json:"-"`
+	SeenPatterns         map[string]bool       `json:"-"`
+	TrafficTypeCounts    map[TrafficType]int   `json:"traffic_type_counts"`
+	FlowStats            map[string]*FlowStats `json:"-"` // flowKey -> stats
 }

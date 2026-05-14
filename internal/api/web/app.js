@@ -160,15 +160,16 @@ function renderRecentDevices(items) {
     return;
   }
   root.innerHTML = items
-    .map(
-      (d) => `
+    .map((d) => {
+      const gw = d.is_gateway ? ' <span class="badge gateway-badge" title="Acts as a gateway/NAT">GW</span>' : "";
+      return `
       <article class="device">
-        <strong><a href="${deviceHref(d.mac)}">${escapeHtml(d.ip)} · ${escapeHtml(d.vendor || "Unknown")}</a></strong>
+        <strong><a href="${deviceHref(d.mac)}">${escapeHtml(d.ip)} · ${escapeHtml(d.vendor || "Unknown")}</a>${gw}</strong>
         <div class="line"><span>MAC ${escapeHtml(d.mac)}</span><span>DNS ${d.dns_queries}</span></div>
         <div class="line"><span>HTTP ${d.http_requests}</span><span>TLS ${d.tls}</span></div>
       </article>
-    `,
-    )
+    `;
+    })
     .join("");
 }
 
@@ -355,8 +356,9 @@ function renderDevicesPage() {
   const rows = sortedDevices
     .map((d) => {
       const mac = escapeHtml(d.mac);
+      const gw = d.is_gateway ? ' <span class="badge gateway-badge" title="Acts as a gateway/NAT">GW</span>' : "";
       return `<tr>
-        <td><a href="${deviceHref(d.mac)}">${mac}</a></td>
+        <td><a href="${deviceHref(d.mac)}">${mac}</a>${gw}</td>
         <td>${escapeHtml(d.ip || "")}</td>
         <td>${escapeHtml(d.vendor || "")}</td>
         <td>${d.dns_queries ?? 0}</td>
@@ -411,6 +413,8 @@ function renderDevicePage(mac) {
     ["MAC", d.mac],
     ["IP", d.ip],
     ["Vendor", d.vendor],
+    ["Acts as gateway", d.is_gateway ? "Yes" : ""],
+    ["Forwarded packets", d.forwarded_source_count],
     ["Interface", d.interface],
     ["Geo country", d.geo_country],
     ["Geo code", d.geo_country_code],
