@@ -1,0 +1,57 @@
+# Full schema reference — values match built-in defaults.
+# Copy and edit, or start from a more specific example in this directory.
+#
+#   cp configs/alerts.example.yaml configs/alerts.yaml
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.yaml sudo ./build/cerberus
+#
+# See configs/README.md for the other scenario-oriented examples.
+
+target_history_size: 20
+
+thresholds:
+  - id: dns_query_volume
+    enabled: true
+    metric: dns_queries
+    op: gt
+    value: 200
+    severity: high
+    message: DNS queries exceeded threshold
+
+  - id: tcp_connection_volume
+    enabled: true
+    metric: tcp_connections
+    op: gt
+    value: 500
+    severity: high
+    message: TCP connections exceeded threshold
+
+  - id: target_spread
+    enabled: true
+    metric: unique_targets
+    op: gt
+    value: 18
+    severity: medium
+    message: Unique targets exceeded threshold
+
+# Known metrics: dns_queries, tcp_connections, udp_connections, unique_targets,
+#                icmp_packets, http_requests, tls_connections, dns_correlated
+# Ops: gt, gte, lt, lte, eq | Severity: low, medium, high
+
+baselines:
+  rogue_dhcp_server:
+    enabled: true
+    # Non-empty known_good enables strict mode (anything else alerts).
+    known_good: []
+  rogue_ipv6_ra_source:
+    enabled: true
+    known_good: []
+  gateway_mac_changed:
+    enabled: true
+
+anomaly:
+  enabled: true
+  window_seconds: 30
+  baseline_windows: 20
+  score_threshold: 3.5
+  max_history: 120
+  max_alerts: 100

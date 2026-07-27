@@ -4,14 +4,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/models"
 )
 
-func newTestMonitor(cfg models.AlertRuleConfig) *NetworkMonitor {
+func defaultBaselines() alerts.BaselineConfig {
+	return alerts.DefaultConfig().Baselines
+}
+
+func newTestMonitor(cfg alerts.BaselineConfig) *NetworkMonitor {
 	nm := &NetworkMonitor{
 		alerts:         make([]models.AlertEvent, 0),
 		alertRuleState: make(map[string]bool),
-		alertConfig:    cfg,
+		alertConfig:    alerts.DefaultConfig(),
 	}
 	nm.baselines = newSecurityBaselines(cfg)
 	return nm
@@ -24,7 +29,7 @@ func dhcpReplyPayload() [models.L7PayloadSize]byte {
 }
 
 func TestRogueDHCPLearningMode(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 
 	first := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 	rogue := &models.DeviceInfo{MAC: "bb:bb:bb:bb:bb:02"}
@@ -46,9 +51,9 @@ func TestRogueDHCPLearningMode(t *testing.T) {
 }
 
 func TestRogueDHCPStrictMode(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{
-		KnownGoodDHCPServers: []string{"192.168.1.1"},
-	})
+	cfg := defaultBaselines()
+	cfg.RogueDHCPServer.KnownGood = []string{"192.168.1.1"}
+	nm := newTestMonitor(cfg)
 
 	good := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 	rogue := &models.DeviceInfo{MAC: "bb:bb:bb:bb:bb:02"}
@@ -66,8 +71,24 @@ func TestRogueDHCPStrictMode(t *testing.T) {
 	}
 }
 
+func TestRogueDHCPDisabled(t *testing.T) {
+	cfg := defaultBaselines()
+	cfg.RogueDHCPServer.Enabled = false
+	nm := newTestMonitor(cfg)
+
+	first := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
+	rogue := &models.DeviceInfo{MAC: "bb:bb:bb:bb:bb:02"}
+	evt := &models.NetworkEvent{EventType: models.EVENT_TYPE_UDP, L7Payload: dhcpReplyPayload()}
+
+	nm.baselines.checkDHCP(nm, first, evt, "192.168.1.1")
+	nm.baselines.checkDHCP(nm, rogue, evt, "192.168.1.99")
+	if len(nm.alerts) != 0 {
+		t.Fatalf("disabled rogue_dhcp_server must not alert, got %+v", nm.alerts)
+	}
+}
+
 func TestDHCPClientRequestIgnored(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 
 	device := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 	var clientReq [models.L7PayloadSize]byte
@@ -86,7 +107,7 @@ func TestDHCPClientRequestIgnored(t *testing.T) {
 }
 
 func TestRogueIPv6RouterAdvertisement(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 
 	router := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 	rogue := &models.DeviceInfo{MAC: "bb:bb:bb:bb:bb:02"}
@@ -110,7 +131,7 @@ func TestRogueIPv6RouterAdvertisement(t *testing.T) {
 }
 
 func TestRouterAdvertNonType134Ignored(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 	device := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 
 	evt := &models.NetworkEvent{
@@ -127,7 +148,7 @@ func TestRouterAdvertNonType134Ignored(t *testing.T) {
 }
 
 func TestGatewayMACChanged(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 
 	server := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 	dhcpEvt := &models.NetworkEvent{EventType: models.EVENT_TYPE_UDP, L7Payload: dhcpReplyPayload()}
@@ -158,7 +179,7 @@ func TestGatewayMACChanged(t *testing.T) {
 }
 
 func TestGatewayMACChangedIgnoresUnknownIP(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 	device := &models.DeviceInfo{MAC: "cc:cc:cc:cc:cc:03"}
 
 	evt := &models.NetworkEvent{
@@ -173,7 +194,7 @@ func TestGatewayMACChangedIgnoresUnknownIP(t *testing.T) {
 }
 
 func TestDHCPServerMACChangeFiresGatewayAlert(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 
 	original := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 	imposter := &models.DeviceInfo{MAC: "cc:cc:cc:cc:cc:03"}
@@ -197,7 +218,7 @@ func TestDHCPServerMACChangeFiresGatewayAlert(t *testing.T) {
 }
 
 func TestRogueDHCPDedup(t *testing.T) {
-	nm := newTestMonitor(models.AlertRuleConfig{})
+	nm := newTestMonitor(defaultBaselines())
 	good := &models.DeviceInfo{MAC: "aa:aa:aa:aa:aa:01"}
 	rogue := &models.DeviceInfo{MAC: "bb:bb:bb:bb:bb:02"}
 	evt := &models.NetworkEvent{EventType: models.EVENT_TYPE_UDP, L7Payload: dhcpReplyPayload()}

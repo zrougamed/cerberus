@@ -1,0 +1,30 @@
+# Anomaly-focused — behavioral window scoring + infra baselines; no volume rules.
+# Prefer this when counter thresholds are noisy but you still want ML-lite scoring
+# and rogue DHCP/RA / gateway MAC detection.
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.anomaly-focused.yaml sudo ./build/cerberus
+
+thresholds:
+  - id: dns_query_volume
+    enabled: false
+  - id: tcp_connection_volume
+    enabled: false
+  - id: target_spread
+    enabled: false
+
+baselines:
+  rogue_dhcp_server:
+    enabled: true
+  rogue_ipv6_ra_source:
+    enabled: true
+  gateway_mac_changed:
+    enabled: true
+
+anomaly:
+  enabled: true
+  window_seconds: 30
+  baseline_windows: 20
+  # Slightly stricter than default (3.5) — fewer low-severity anomaly rows.
+  score_threshold: 4.0
+  max_history: 120
+  max_alerts: 100

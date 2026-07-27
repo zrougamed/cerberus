@@ -15,6 +15,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 
+	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/api"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
@@ -34,8 +35,17 @@ func main() {
 		log.Fatalf("failed to create data directory: %v", err)
 	}
 
-	// Initialize monitor
-	mon, err := monitor.NewNetworkMonitor(1000, "./data/network.db")
+	// Initialize monitor (optional CERBERUS_ALERTS_CONFIG for declarative rules)
+	alertCfg := alerts.DefaultConfig()
+	if alertsPath := os.Getenv("CERBERUS_ALERTS_CONFIG"); alertsPath != "" {
+		loaded, err := alerts.LoadFile(alertsPath)
+		if err != nil {
+			log.Fatalf("alerts config: %v", err)
+		}
+		alertCfg = loaded
+		fmt.Printf("Loaded alerts config from %s\n", alertsPath)
+	}
+	mon, err := monitor.NewNetworkMonitorWithAlerts(1000, "./data/network.db", alertCfg)
 	if err != nil {
 		panic(err)
 	}

@@ -8,6 +8,8 @@ services:
       - /sys/kernel/debug:/sys/kernel/debug:rw
       - /sys/fs/bpf:/sys/fs/bpf:rw
       - ./data:/app/data
+      # Optional declarative alerts (copy configs/alerts.example.yaml first):
+      # - ./configs/alerts.yaml:/app/configs/alerts.yaml:ro
     cap_add:
       - SYS_ADMIN
       - NET_ADMIN
@@ -18,4 +20,5 @@ services:
     environment:
       - DEBIAN_FRONTEND=noninteractive
       - CERBERUS_HTTP_ADDR=0.0.0.0:8080
+      # - CERBERUS_ALERTS_CONFIG=/app/configs/alerts.yaml
     restart: unless-stopped

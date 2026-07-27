@@ -1,0 +1,19 @@
+# Busy LAN / office — fewer false positives from chatty clients and scanners.
+# Addresses github.com/zrougamed/cerberus/issues/13 (target history filling fast).
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.busy-lan.yaml sudo ./build/cerberus
+
+target_history_size: 40
+
+thresholds:
+  - id: target_spread
+    value: 32
+    severity: medium
+
+  - id: dns_query_volume
+    value: 400
+
+  - id: tcp_connection_volume
+    value: 1000
+
+# Baselines and anomaly keep defaults (enabled).

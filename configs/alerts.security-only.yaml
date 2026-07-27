@@ -1,0 +1,24 @@
+# Security baselines only — no volume thresholds, no anomaly scoring.
+# Useful when you care about rogue DHCP / RA / gateway MAC spoofing and
+# want to ignore chatty per-device counters.
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.security-only.yaml sudo ./build/cerberus
+
+thresholds:
+  - id: dns_query_volume
+    enabled: false
+  - id: tcp_connection_volume
+    enabled: false
+  - id: target_spread
+    enabled: false
+
+baselines:
+  rogue_dhcp_server:
+    enabled: true
+  rogue_ipv6_ra_source:
+    enabled: true
+  gateway_mac_changed:
+    enabled: true
+
+anomaly:
+  enabled: false

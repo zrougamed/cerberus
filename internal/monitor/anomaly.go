@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/models"
 )
 
@@ -60,14 +61,18 @@ type anomalyDetector struct {
 	lastRate       float64
 }
 
-func newAnomalyDetector() *anomalyDetector {
+func newAnomalyDetector(cfg alerts.AnomalyConfig) *anomalyDetector {
+	if !cfg.Enabled {
+		return nil
+	}
+	window := time.Duration(cfg.WindowSeconds) * time.Second
 	now := time.Now()
 	return &anomalyDetector{
-		window:         30 * time.Second,
-		baselineNeeded: 20,
-		threshold:      3.5,
-		maxHistory:     120,
-		maxAlerts:      100,
+		window:         window,
+		baselineNeeded: cfg.BaselineWindows,
+		threshold:      cfg.ScoreThreshold,
+		maxHistory:     cfg.MaxHistory,
+		maxAlerts:      cfg.MaxAlerts,
 		cur: windowAccumulator{
 			start:         now,
 			uniqueDevices: make(map[string]struct{}),
@@ -75,7 +80,7 @@ func newAnomalyDetector() *anomalyDetector {
 		},
 		latest: models.AnomalySnapshot{
 			Status:        "warming_up",
-			WindowSeconds: int((30 * time.Second).Seconds()),
+			WindowSeconds: cfg.WindowSeconds,
 		},
 	}
 }
