@@ -166,8 +166,10 @@ func DefaultConfig() Config {
 
 // LoadFile reads a YAML or JSON alerts config and merges it onto DefaultConfig.
 // Omitted sections keep defaults; invalid configs return an error (fail-closed).
+// path is an operator-supplied filesystem path (e.g. CERBERUS_ALERTS_CONFIG), not request input.
 func LoadFile(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	path = filepath.Clean(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path from trusted operator config (CERBERUS_ALERTS_CONFIG), not attacker-controlled input
 	if err != nil {
 		return Config{}, fmt.Errorf("read alerts config: %w", err)
 	}
