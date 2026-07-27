@@ -40,15 +40,15 @@ RUN if command -v apt-get > /dev/null 2>&1; then \
             iproute2; \
     fi
 
-# Install Go 1.25
+# Install Go 1.26.5 (latest stable as of July 2026)
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then GOARCH="amd64"; \
     elif [ "$ARCH" = "aarch64" ]; then GOARCH="arm64"; \
     elif [ "$ARCH" = "armv7l" ]; then GOARCH="armv6l"; \
     else GOARCH="amd64"; fi && \
-    wget -q https://go.dev/dl/go1.25.4.linux-${GOARCH}.tar.gz && \
-    tar -C /usr/local -xzf go1.25.4.linux-${GOARCH}.tar.gz && \
-    rm go1.25.4.linux-${GOARCH}.tar.gz
+    wget -q https://go.dev/dl/go1.26.5.linux-${GOARCH}.tar.gz && \
+    tar -C /usr/local -xzf go1.26.5.linux-${GOARCH}.tar.gz && \
+    rm go1.26.5.linux-${GOARCH}.tar.gz
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/go"

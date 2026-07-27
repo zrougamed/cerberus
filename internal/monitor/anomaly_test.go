@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/models"
 )
 
 func TestAnomalyDetectorEmitsAnomalyAfterBaseline(t *testing.T) {
-	ad := newAnomalyDetector()
+	ad := newAnomalyDetector(alerts.DefaultConfig().Anomaly)
 	ad.window = 50 * time.Millisecond
 	ad.baselineNeeded = 3
 	start := time.Now()

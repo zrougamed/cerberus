@@ -1,0 +1,23 @@
+# Quiet / staging — disable every built-in alert kind.
+# Use temporarily while validating capture, dashboards, or GeoIP without noise.
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.quiet.yaml sudo ./build/cerberus
+
+thresholds:
+  - id: dns_query_volume
+    enabled: false
+  - id: tcp_connection_volume
+    enabled: false
+  - id: target_spread
+    enabled: false
+
+baselines:
+  rogue_dhcp_server:
+    enabled: false
+  rogue_ipv6_ra_source:
+    enabled: false
+  gateway_mac_changed:
+    enabled: false
+
+anomaly:
+  enabled: false

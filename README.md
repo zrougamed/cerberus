@@ -1,6 +1,6 @@
 # Cerberus
 
-![Go Version](https://img.shields.io/badge/go-1.25-blue)
+![Go Version](https://img.shields.io/badge/go-1.26-blue)
 ![Ubuntu 22.04](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Ubuntu%2022.04)
 ![Ubuntu 24.04](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Ubuntu%2024.04)
 ![Debian 12](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Debian%2012)
@@ -144,7 +144,7 @@ flowchart TD
 ## Prerequisites
 
 - Linux kernel 5.10+ (with eBPF support)
-- Go 1.24+
+- Go 1.26+
 - Clang/LLVM
 - Root/sudo privileges (for eBPF and TC hooks)
 
@@ -355,6 +355,17 @@ struct network_event {
 ```
 
 ## Configuration
+
+### Declarative alerts
+
+Thresholds, security baselines, and anomaly detector settings live in a YAML/JSON file (optional). Without a file, built-in defaults match the former hardcoded values. Scenario examples live under **[`configs/`](configs/README.md)**.
+
+```bash
+cp configs/alerts.busy-lan.yaml configs/alerts.yaml   # or alerts.example.yaml
+CERBERUS_ALERTS_CONFIG=./configs/alerts.yaml sudo ./build/cerberus
+```
+
+See **[`docs/how-to-alerts.md`](docs/how-to-alerts.md)** and **[`docs/configuration.md`](docs/configuration.md)**.
 
 ### GeoIP Location Tracking
 

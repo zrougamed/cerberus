@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/databases"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/network"
@@ -29,7 +30,7 @@ type NetworkMonitor struct {
 	newPatternChan chan *models.CommunicationPattern
 	alerts         []models.AlertEvent
 	alertRuleState map[string]bool
-	alertConfig    models.AlertRuleConfig
+	alertConfig    alerts.Config
 	baselines      *securityBaselines
 	anomaly        *anomalyDetector
 	geoipDB        *geoip2.Reader
@@ -59,7 +60,18 @@ var knownDoHEndpoints = map[string]struct{}{
 	"94.140.15.15":    {},
 }
 
+// NewNetworkMonitor creates a monitor with built-in default alert config.
 func NewNetworkMonitor(cacheSize int, dbPath string) (*NetworkMonitor, error) {
+	return NewNetworkMonitorWithAlerts(cacheSize, dbPath, alerts.DefaultConfig())
+}
+
+// NewNetworkMonitorWithAlerts creates a monitor using the provided declarative alert config.
+// cfg should already be validated (alerts.LoadFile / DefaultConfig + Validate).
+func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config) (*NetworkMonitor, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("alert config: %w", err)
+	}
+
 	cache, err := lru.New[string, *models.DeviceInfo](cacheSize)
 	if err != nil {
 		return nil, err
@@ -91,16 +103,11 @@ func NewNetworkMonitor(cacheSize int, dbPath string) (*NetworkMonitor, error) {
 		newPatternChan: make(chan *models.CommunicationPattern, 1000),
 		alerts:         make([]models.AlertEvent, 0, 128),
 		alertRuleState: make(map[string]bool),
-		alertConfig: models.AlertRuleConfig{
-			MaxDNSQueriesPerDevice: 200,
-			MaxTCPConnections:      500,
-			// Targets keeps at most 20 unique dst IPs per device; threshold must be < 20 or target_spread never fires.
-			MaxUniqueTargets: 18,
-		},
-		anomaly:  newAnomalyDetector(),
-		topology: topology,
+		alertConfig:    cfg,
+		anomaly:        newAnomalyDetector(cfg.Anomaly),
+		topology:       topology,
 	}
-	nm.baselines = newSecurityBaselines(nm.alertConfig)
+	nm.baselines = newSecurityBaselines(cfg.Baselines)
 
 	go nm.persistWorker()
 	go nm.newDeviceNotifier()
@@ -567,11 +574,15 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 		}
 	}
 
-	// Track targets
+	// Track targets (rolling unique dst IPs; size from alert config)
 	if dstIP != "0.0.0.0" && !utils.Contains(device.Targets, dstIP) {
 		device.Targets = append(device.Targets, dstIP)
-		if len(device.Targets) > 20 {
-			device.Targets = device.Targets[1:]
+		hist := nm.alertConfig.TargetHistorySize
+		if hist < 1 {
+			hist = 20
+		}
+		if len(device.Targets) > hist {
+			device.Targets = device.Targets[len(device.Targets)-hist:]
 		}
 	}
 
@@ -612,7 +623,9 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	nm.Cache.Add(srcMAC, device)
 	nm.evaluateAlerts(device)
 	nm.checkSecurityBaselines(device, evt, srcIP, trafficType)
-	nm.anomaly.observe(time.Now(), evt, srcMAC)
+	if nm.anomaly != nil {
+		nm.anomaly.observe(time.Now(), evt, srcMAC)
+	}
 
 	// Notify if new device
 	// TODO: add to syslog or alerting system
@@ -649,12 +662,9 @@ func (nm *NetworkMonitor) evaluateAlerts(device *models.DeviceInfo) {
 	if device == nil {
 		return
 	}
-	nm.fireAlertIfNeeded(device, "dns_query_volume", device.DNSQueries > nm.alertConfig.MaxDNSQueriesPerDevice,
-		"high", fmt.Sprintf("DNS queries exceeded threshold (%d > %d)", device.DNSQueries, nm.alertConfig.MaxDNSQueriesPerDevice))
-	nm.fireAlertIfNeeded(device, "tcp_connection_volume", device.TCPConnections > nm.alertConfig.MaxTCPConnections,
-		"high", fmt.Sprintf("TCP connections exceeded threshold (%d > %d)", device.TCPConnections, nm.alertConfig.MaxTCPConnections))
-	nm.fireAlertIfNeeded(device, "target_spread", len(device.Targets) > nm.alertConfig.MaxUniqueTargets,
-		"medium", fmt.Sprintf("Unique targets exceeded threshold (%d > %d)", len(device.Targets), nm.alertConfig.MaxUniqueTargets))
+	for _, result := range alerts.EvaluateThresholds(nm.alertConfig, device) {
+		nm.fireAlertIfNeeded(device, result.Rule.ID, result.Triggered, result.Rule.Severity, result.Message)
+	}
 }
 
 func (nm *NetworkMonitor) fireAlertIfNeeded(device *models.DeviceInfo, rule string, triggered bool, severity, message string) {

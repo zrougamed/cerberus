@@ -1,12 +1,13 @@
 module github.com/zrougamed/cerberus
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/cilium/ebpf v0.20.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/tidwall/buntdb v1.3.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

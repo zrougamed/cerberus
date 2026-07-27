@@ -3,66 +3,96 @@
 Cerberus exposes **two kinds** of alerts in the API and Control Room:
 
 | Kind | Where in UI | Endpoint | What fires them |
-|------|-------------|----------|------------------|
-| **Rule-based** | **Rule alerts** | `GET /api/v1/alerts` | Per-device thresholds on DNS count, TCP connection count, and unique target count |
+|------|-------------|----------|-----------------|
+| **Rule-based** | **Rule alerts** | `GET /api/v1/alerts` | Declarative **threshold** rules (DNS/TCP/target spread by default) plus **security baselines** (rogue DHCP/RA, gateway MAC) |
 | **Anomaly (ML-lite)** | **Anomalies** | `GET /api/v1/anomalies` | Global 30-second windows vs a learned baseline (combined score ≥ threshold) |
+
+Policy is loaded from **`CERBERUS_ALERTS_CONFIG`** (YAML/JSON) or built-in defaults. See [`configs/`](../configs/README.md) for scenario examples, [`configs/alerts.example.yaml`](../configs/alerts.example.yaml) for the full schema, and [configuration.md](configuration.md).
 
 ---
 
-## 1. Rule-based alerts (`AlertEvent`)
+## 1. Threshold alerts (`AlertEvent`)
 
-Evaluation runs whenever a device is updated (`evaluateAlerts` in `internal/monitor`). Defaults are set in `NewNetworkMonitor` (not environment variables today):
+Evaluation runs whenever a device is updated (`evaluateAlerts` in `internal/monitor`). Defaults (when no config file is set):
 
-| Rule ID | Condition | Default threshold |
-|---------|-----------|---------------------|
-| `dns_query_volume` | `DNSQueries` for that MAC | **> 200** |
-| `tcp_connection_volume` | `TCPConnections` for that MAC | **> 500** |
-| `target_spread` | `len(Targets)` — rolling list of **up to 20** unique destination IPs per device | **> 18** (i.e. **19+** distinct IPs seen in the windowed list) |
+| Rule ID | Metric | Condition | Default |
+|---------|--------|-----------|---------|
+| `dns_query_volume` | `dns_queries` | `gt` | **200** |
+| `tcp_connection_volume` | `tcp_connections` | `gt` | **500** |
+| `target_spread` | `unique_targets` | `gt` | **18** |
 
-**Deduplication:** For each `(device MAC, rule)` pair, Cerberus emits **one** alert the first time the condition becomes true. It does **not** spam a new row on every packet while the condition stays true. When the condition **clears** (counts fall back under the threshold), the internal latch resets; crossing again can produce a **new** alert.
+`unique_targets` is the length of a rolling list of destination IPs per device (`target_history_size`, default **20**). The threshold value must stay **below** that size or the rule never fires.
+
+**Deduplication:** For each `(device MAC, rule)` pair, Cerberus emits **one** alert the first time the condition becomes true. It does **not** spam a new row on every packet while the condition stays true. When the condition **clears**, the internal latch resets; crossing again can produce a **new** alert.
+
+### Tune or disable without rebuilding
+
+```yaml
+# configs/alerts.yaml — overlay only what you need
+target_history_size: 40
+thresholds:
+  - id: target_spread
+    value: 30          # raise for busy LANs
+  # or silence false positives:
+  # - id: target_spread
+  #   enabled: false
+```
+
+```bash
+CERBERUS_ALERTS_CONFIG=./configs/alerts.yaml sudo ./build/cerberus
+```
+
+Invalid configs **fail startup** (fail-closed).
 
 ### How to trigger them (testing / demos)
 
-1. **`dns_query_volume`**  
-   From one host on the monitored LAN, generate **more than 200 DNS queries** while Cerberus is running (e.g. scripted `dig`/`nslookup` in a loop to many names). Easiest if that host is the **same MAC** Cerberus attributes traffic to.
+1. **`dns_query_volume`** — From one MAC, generate more DNS queries than the configured threshold.
+2. **`tcp_connection_volume`** — Open more TCP connections than the threshold from one source MAC.
+3. **`target_spread`** — Contact more distinct destination IPs than the threshold (within the rolling history window).
 
-2. **`tcp_connection_volume`**  
-   Open **more than 500 TCP connections** from one source MAC (e.g. many parallel `curl`/`nc` to different ports or hosts). Tools like connection stress tests or port scanners can hit this on a busy client.
+**View:** Control Room → **Rule alerts**, or `curl -s http://127.0.0.1:8080/api/v1/alerts`.
 
-3. **`target_spread`**  
-   From one MAC, connect toward **19+ different destination IPs** (Cerberus keeps a rolling list of the last **20** unique `dstIP` values per device). Port scans or many short parallel curls to different addresses can trigger this once the list fills past the threshold.
+### Adding a threshold rule
 
-**View:** Control Room → **Rule alerts**, or `curl -s http://127.0.0.1:8080/api/v1/alerts` (adjust bind address if needed).
+Append a new `id` under `thresholds` using a known metric (`dns_queries`, `tcp_connections`, `udp_connections`, `unique_targets`, `icmp_packets`, `http_requests`, `tls_connections`, `dns_correlated`) and an op (`gt`, `gte`, `lt`, `lte`, `eq`). No rebuild required for policy changes; new **metrics** still need code.
 
-**Lowering thresholds for lab use:** Change `alertConfig` in `internal/monitor/monitor.go` inside `NewNetworkMonitor` (e.g. `MaxDNSQueriesPerDevice: 50`), rebuild, and rerun.
+### Security baselines
+
+Also appear as rule alerts. Configure under `baselines:` — enable/disable and optional `known_good` IP lists (non-empty → strict mode).
+
+| Rule ID | Meaning |
+|---------|---------|
+| `rogue_dhcp_server` | Unexpected DHCP server reply |
+| `rogue_ipv6_ra_source` | Unexpected IPv6 Router Advertisement |
+| `gateway_mac_changed` | DHCP-server IP claimed by a new MAC |
 
 ---
 
 ## 2. Anomaly alerts (`AnomalyAlert`)
 
-The detector needs **20 completed 30-second baseline windows** (~10 minutes of operation) before it enters **active** scoring. Then each new window gets a **score**; if **score ≥ 3.5**, an anomaly alert is recorded for that window.
+Configured under `anomaly:` (window, baseline window count, score threshold). Defaults: **20** completed 30-second windows (~10 minutes), then score ≥ **3.5** records an alert. Set `enabled: false` to turn the detector off.
 
 ### How to trigger them (testing / demos)
 
 - **SYN / port-scan style traffic:** Many SYN packets, high SYN rate, many uncommon destination ports, or sharp jumps in overall event rate vs baseline (e.g. `hping3`, `nmap -sS`, or lab SYN flood tools **only on networks you own**).
-- **Volume spikes:** Sudden bulk DNS, HTTP, or mixed traffic that pushes `packet_rate`, per-protocol rates, or **packet_rate_slope** far from the first 20 windows.
+- **Volume spikes:** Sudden bulk DNS, HTTP, or mixed traffic that pushes `packet_rate`, per-protocol rates, or **packet_rate_slope** far from the first baseline windows.
 
-**View:** Control Room → **Anomalies**, or `GET /api/v1/anomalies`. Plain-language **summary** and **technical detail** explain which features moved.
+**View:** Control Room → **Anomalies**, or `GET /api/v1/anomalies`.
 
 **Warm-up:** Until baseline is ready, you will see `warming_up` and no anomaly scores for alerting.
 
-See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) for what these signals *mean*, and [ml-anomaly-detection.md](ml-anomaly-detection.md) for math and limits.
+See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) and [ml-anomaly-detection.md](ml-anomaly-detection.md).
 
 ### SYN floods and DDoS (short version)
 
-- There is **no** separate “SYN flood” or “DDoS” rule ID. Both usually appear as **anomaly alerts** when **`tcp_syn_rate`**, **`packet_rate`**, and related features jump vs baseline (SYN-heavy traffic), or when total volume/spikes dominate the score (DDoS-like conditions).
-- Cerberus **does not block** or **mitigate** traffic; it **observes** and **scores**. For nuance (SYN flood vs scan vs distributed flood), read the **SYN flood** and **DDoS** subsections in [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md).
+- There is **no** separate “SYN flood” or “DDoS” rule ID. Both usually appear as **anomaly alerts** when related features jump vs baseline.
+- Cerberus **does not block** traffic; it **observes** and **scores**.
 
 ---
 
 ## 3. Prometheus (optional)
 
-`GET /metrics` exposes packet and device counters. You can **route Prometheus alerts** on those series (e.g. rate of `cerberus_packets_total`) for ops-level paging—outside Cerberus’s built-in alert list.
+`GET /metrics` exposes packet and device counters. You can **route Prometheus alerts** on those series for ops-level paging—outside Cerberus’s built-in alert list.
 
 ---
 
@@ -70,10 +100,11 @@ See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) for what th
 
 | Goal | Action |
 |------|--------|
-| See rule alerts | Exceed DNS / TCP / target thresholds **from one device**, then open **Rule alerts** |
-| See anomaly alerts | Wait for baseline, then generate traffic very different from the first ~10 minutes |
+| See rule alerts | Exceed configured DNS / TCP / target thresholds from one device, then open **Rule alerts** |
+| Silence `target_spread` | `enabled: false` (or raise `value` / `target_history_size`) in alerts config |
+| See anomaly alerts | Wait for baseline, then generate traffic very different from the first warm-up windows |
 | Reset rule latch | Let counts drop under threshold; next crossing can alert again |
-| No alerts at all | Normal quiet traffic; thresholds never crossed; anomaly score stays &lt; 3.5 |
+| No alerts at all | Quiet traffic; or disable rules / anomaly in config |
 
 ---
 
@@ -81,4 +112,4 @@ See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) for what th
 
 - [api-reference.md](api-reference.md) — JSON shapes  
 - [web-ui.md](web-ui.md) — where alerts appear in the Control Room  
-- [configuration.md](configuration.md) — `CERBERUS_HTTP_ADDR`, etc.  
+- [configuration.md](configuration.md) — `CERBERUS_*` including `CERBERUS_ALERTS_CONFIG`  

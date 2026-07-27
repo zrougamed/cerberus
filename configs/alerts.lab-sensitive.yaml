@@ -1,0 +1,33 @@
+# Lab / demo — low thresholds so rule alerts are easy to trigger on purpose.
+# Not for production monitoring.
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.lab-sensitive.yaml sudo ./build/cerberus
+
+target_history_size: 20
+
+thresholds:
+  - id: dns_query_volume
+    value: 20
+    severity: medium
+
+  - id: tcp_connection_volume
+    value: 30
+    severity: medium
+
+  - id: target_spread
+    value: 5
+    severity: low
+
+  # Extra lab rule: flag devices that open many HTTP requests quickly.
+  - id: http_request_volume
+    enabled: true
+    metric: http_requests
+    op: gt
+    value: 40
+    severity: low
+    message: HTTP requests exceeded lab threshold
+
+anomaly:
+  # Faster warm-up for short lab sessions (~2.5 minutes at 30s windows).
+  baseline_windows: 5
+  score_threshold: 2.5

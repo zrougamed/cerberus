@@ -122,19 +122,6 @@ type FlowStats struct {
 	LastSeen    time.Time `json:"last_seen"`
 }
 
-type AlertRuleConfig struct {
-	MaxDNSQueriesPerDevice int `json:"max_dns_queries_per_device"`
-	MaxTCPConnections      int `json:"max_tcp_connections"`
-	MaxUniqueTargets       int `json:"max_unique_targets"`
-	// KnownGoodDHCPServers seeds the rogue-DHCP baseline with legitimate server IPs
-	// (HA pairs, dual-stack routers). Any DHCP reply from a source not in this list
-	// and not the first-seen server triggers a rogue_dhcp_server alert.
-	KnownGoodDHCPServers []string `json:"known_good_dhcp_servers,omitempty"`
-	// KnownGoodRARouters seeds the rogue-RA baseline with legitimate IPv6 router
-	// link-local addresses. Same first-seen-wins logic as DHCP otherwise.
-	KnownGoodRARouters []string `json:"known_good_ra_routers,omitempty"`
-}
-
 type AlertEvent struct {
 	ID         string    `json:"id"`
 	DeviceMAC  string    `json:"device_mac"`

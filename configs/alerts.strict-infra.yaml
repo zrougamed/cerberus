@@ -1,0 +1,29 @@
+# Strict infrastructure baselines — seed known-good DHCP / IPv6 RA sources.
+# Replace the placeholder addresses with your real gateway / HA pair before use.
+#
+# Strict mode: any DHCP reply or RA from an address not in known_good alerts.
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.strict-infra.yaml sudo ./build/cerberus
+
+thresholds:
+  # Keep volume rules; tune separately if needed.
+  - id: target_spread
+    value: 18
+
+baselines:
+  rogue_dhcp_server:
+    enabled: true
+    known_good:
+      - "192.168.1.1"   # primary DHCP / gateway — CHANGE ME
+      # - "192.168.1.2" # HA peer
+
+  rogue_ipv6_ra_source:
+    enabled: true
+    known_good:
+      - "fe80::1"       # link-local router — CHANGE ME
+
+  gateway_mac_changed:
+    enabled: true
+
+anomaly:
+  enabled: true
