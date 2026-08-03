@@ -26,6 +26,7 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Persistent Storage**: Local database for historical data with Redis migration path
 - **Control Room (Web UI)**: Hash-routed dashboard for summary, devices, rule alerts, anomalies, and raw JSON
 - **Behavioral anomaly & abuse-style signals**: ML-lite windows highlight SYN-heavy, high-volume, and unusual-port patterns (consistent with scans/floods); rule alerts flag DNS/TCP/target spread; see **[`docs/threat-and-anomaly-patterns.md`](docs/threat-and-anomaly-patterns.md)** for scope and limits (not a full IDS; no dedicated reverse-tunnel classifier)
+- **Outbound notifications**: Optional Slack, Microsoft Teams, generic webhook, and syslog for rule alerts, anomalies, and new devices ([`docs/notifications.md`](docs/notifications.md))
 
 Full system behavior, data flow, and UI breakdown live in **[`docs/`](docs/README.md)**. Step-by-step **how to trigger alerts** (rule vs anomaly) is in **[`docs/how-to-alerts.md`](docs/how-to-alerts.md)**.
 
@@ -556,7 +557,8 @@ curl https://zrouga.email
 - [x] Export to Prometheus/Grafana
 - [x] Custom alerting rules
 - [x] GeoIP location tracking
-
+- [x] Outbound alert notifications (webhook / Slack / Teams / syslog)
+- [x] Accurate IEEE OUI lookup (MA-L/MA-M/MA-S, stale-cache prefer, virtualization OUIs)
 ## Performance
 
 - **Zero-copy packet processing** using eBPF ring buffers

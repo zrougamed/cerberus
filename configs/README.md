@@ -16,5 +16,6 @@
 | [`alerts.security-only.yaml`](alerts.security-only.yaml) | Want DHCP/RA/ARP spoof signals only | Disables volume thresholds + anomaly |
 | [`alerts.anomaly-focused.yaml`](alerts.anomaly-focused.yaml) | Behavioral scoring over counters | Disables volume thresholds; keeps anomaly + baselines |
 | [`alerts.quiet.yaml`](alerts.quiet.yaml) | Temporary silence / staging | Disables all alert kinds |
+| [`alerts.notifications.yaml`](alerts.notifications.yaml) | Push alerts off-box | Enables Slack / Teams / webhook / syslog sinks (edit URLs) |
 
-Edit placeholders in `alerts.strict-infra.yaml` (DHCP/RA addresses) before using in production.
+Edit placeholders in `alerts.strict-infra.yaml` (DHCP/RA addresses) and `alerts.notifications.yaml` (Slack/Teams/webhook URLs) before using in production.
