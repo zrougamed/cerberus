@@ -12,5 +12,6 @@ High-level reference for how the project fits together. The code remains the sou
 | [ml-anomaly-detection.md](ml-anomaly-detection.md) | “ML-lite” anomaly detector: windows, features, robust z-scores, centroid score, thresholds, API fields, limitations |
 | [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) | SYN/SYN-flood-style signals, DDoS-like spikes, probing; what is observed vs blocked; distributed vs per-device alerts |
 | [how-to-alerts.md](how-to-alerts.md) | How to trigger rule alerts vs anomaly alerts, default thresholds, deduplication, testing tips |
+| [notifications.md](notifications.md) | Outbound sinks: generic webhook, Slack Incoming Webhooks, Microsoft Teams Adaptive Card / MessageCard, syslog |
 
 The root [README.md](../README.md) covers install, prerequisites, troubleshooting, and a compact Control Room wireframe.

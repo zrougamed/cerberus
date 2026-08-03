@@ -13,6 +13,7 @@ import (
 	"github.com/zrougamed/cerberus/internal/databases"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/network"
+	"github.com/zrougamed/cerberus/internal/notify"
 	"github.com/zrougamed/cerberus/internal/utils"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -33,6 +34,7 @@ type NetworkMonitor struct {
 	alertConfig    alerts.Config
 	baselines      *securityBaselines
 	anomaly        *anomalyDetector
+	notifier       *notify.Dispatcher
 	geoipDB        *geoip2.Reader
 	topology       *network.NetworkTopology
 	Stats          struct {
@@ -94,6 +96,12 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 	oui, _ := databases.NewOUIDatabase(online)
 	svc, _ := databases.NewServiceDatabase(online)
 
+	dispatcher, err := notify.New(cfg.Notifications)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("notifications: %w", err)
+	}
+
 	nm := &NetworkMonitor{
 		Cache:          cache,
 		db:             db,
@@ -105,9 +113,13 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		alertRuleState: make(map[string]bool),
 		alertConfig:    cfg,
 		anomaly:        newAnomalyDetector(cfg.Anomaly),
+		notifier:       dispatcher,
 		topology:       topology,
 	}
 	nm.baselines = newSecurityBaselines(cfg.Baselines)
+	if nm.anomaly != nil {
+		nm.anomaly.onAlert = nm.notifyAnomaly
+	}
 
 	go nm.persistWorker()
 	go nm.newDeviceNotifier()
@@ -119,6 +131,9 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 func (nm *NetworkMonitor) Close() error {
 	close(nm.newDeviceChan)
 	close(nm.newPatternChan)
+	if nm.notifier != nil {
+		nm.notifier.Close()
+	}
 	if nm.geoipDB != nil {
 		_ = nm.geoipDB.Close()
 	}
@@ -628,7 +643,6 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	}
 
 	// Notify if new device
-	// TODO: add to syslog or alerting system
 	if isNew {
 		select {
 		case nm.newDeviceChan <- device:
@@ -688,9 +702,62 @@ func (nm *NetworkMonitor) fireAlertIfNeeded(device *models.DeviceInfo, rule stri
 		if len(nm.alerts) > 500 {
 			nm.alerts = nm.alerts[len(nm.alerts)-500:]
 		}
+		nm.notifyRule(alert)
 		return
 	}
 	delete(nm.alertRuleState, key)
+}
+
+func (nm *NetworkMonitor) notifyRule(alert models.AlertEvent) {
+	if nm.notifier == nil {
+		return
+	}
+	nm.notifier.Notify(notify.Event{
+		Kind:       notify.KindRule,
+		Severity:   alert.Severity,
+		Title:      fmt.Sprintf("Rule alert: %s", alert.Rule),
+		Message:    alert.Message,
+		DeviceMAC:  alert.DeviceMAC,
+		DeviceIP:   alert.DeviceIP,
+		Vendor:     alert.Vendor,
+		Rule:       alert.Rule,
+		ObservedAt: alert.ObservedAt,
+	})
+}
+
+func (nm *NetworkMonitor) notifyAnomaly(a models.AnomalyAlert) {
+	if nm.notifier == nil {
+		return
+	}
+	msg := a.Summary
+	if msg == "" {
+		msg = a.Reason
+	}
+	nm.notifier.Notify(notify.Event{
+		Kind:       notify.KindAnomaly,
+		Severity:   a.Severity,
+		Title:      "Traffic anomaly detected",
+		Message:    msg,
+		Score:      a.Score,
+		ObservedAt: a.ObservedAt,
+	})
+}
+
+func (nm *NetworkMonitor) notifyNewDevice(device *models.DeviceInfo) {
+	if nm.notifier == nil || device == nil {
+		return
+	}
+	nm.notifier.Notify(notify.Event{
+		Kind:       notify.KindNewDevice,
+		Severity:   "medium",
+		Title:      "New device detected",
+		Message:    fmt.Sprintf("New device %s (%s) vendor=%s", device.MAC, device.IP, device.Vendor),
+		DeviceMAC:  device.MAC,
+		DeviceIP:   device.IP,
+		Vendor:     device.Vendor,
+		Rule:       "new_device",
+		ObservedAt: device.FirstSeen,
+	})
 }
 
 func (nm *NetworkMonitor) GetAlerts() []models.AlertEvent {
@@ -745,6 +812,7 @@ func (nm *NetworkMonitor) newDeviceNotifier() {
 		fmt.Printf("   IP:      %s\n", device.IP)
 		fmt.Printf("   Vendor:  %s\n", device.Vendor)
 		fmt.Printf("   First Seen: %s\n\n", device.FirstSeen.Format("2006-01-02 15:04:05"))
+		nm.notifyNewDevice(device)
 	}
 }
 

@@ -1,0 +1,35 @@
+# Outbound notifications — generic webhook, Slack, Teams, and/or syslog.
+# Copy and set the URLs you need (leave unused sinks empty / omit them).
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.notifications.yaml sudo ./build/cerberus
+#
+# Slack: Incoming Webhook URL from https://api.slack.com/messaging/webhooks
+# Teams: Workflow / Incoming Webhook URL (adaptive card by default; use format: message_card for legacy connectors)
+
+notifications:
+  enabled: true
+  min_severity: medium
+  kinds:
+    - rule
+    - anomaly
+    - new_device
+
+  # Generic HTTP POST of the raw Event JSON
+  webhook:
+    url: ""
+    timeout_seconds: 5
+
+  # Slack Incoming Webhook (Block Kit)
+  slack:
+    webhook_url: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
+
+  # Microsoft Teams (Adaptive Card by default)
+  teams:
+    webhook_url: https://prod-00.westus.logic.azure.com:443/workflows/xxxxxxxx/triggers/manual/paths/invoke
+    format: adaptive # adaptive | message_card
+
+  # Optional syslog
+  syslog:
+    network: udp
+    address: ""
+    tag: cerberus

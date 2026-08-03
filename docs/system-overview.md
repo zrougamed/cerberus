@@ -29,6 +29,7 @@ Core responsibilities:
 | **Patterns** | New communication patterns deduplicated and optionally logged; channel for downstream use. |
 | **Rule alerts** | Threshold-based `AlertEvent` list (e.g. DNS rate, TCP fan-out, unique targets) with configurable limits. |
 | **Anomaly detector** | Time-windowed “ML-lite” scoring over a feature vector (robust statistics + centroid distance); emits `AnomalyAlert` entries with human-readable summary and per-feature contributions; snapshot exposed to API. See [ml-anomaly-detection.md](ml-anomaly-detection.md). For SYN/flood/scan-style interpretations of those features (and limits), see [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md). |
+| **Outbound notifications** | Optional generic webhook, Slack Incoming Webhook, Microsoft Teams (Adaptive Card / MessageCard), and/or syslog (`notifications:` in alerts config). See [notifications.md](notifications.md). |
 | **Persistence** | BuntDB under configurable path (default `./data/network.db` from main); periodic persistence worker. |
 
 Optional **MaxMind GeoLite2** enrichment: set `CERBERUS_GEOIP_DB` to a `.mmdb` path; public IPs on devices can receive country/city fields.
@@ -37,7 +38,7 @@ Optional **MaxMind GeoLite2** enrichment: set `CERBERUS_GEOIP_DB` to a `.mmdb` p
 
 | Database | Purpose |
 |----------|---------|
-| **OUI** | MA-L vendor strings; cache file under `CERBERUS_DATA_DIR` (default `./data`); optional refresh when `CERBERUS_DB_ONLINE` is set. |
+| **OUI** | MA-L / MA-M / MA-S vendor strings; cache under `CERBERUS_DATA_DIR` (default `./data`); stale cache preferred over tiny fallback; optional refresh when `CERBERUS_DB_ONLINE` is set. Locally administered MACs resolve known virtualization prefixes (QEMU, Docker) before the privacy-MAC label. |
 | **Services** | IANA service-name / port assignments (TCP/UDP); CSV cache with quoted-field parsing and modest port-range expansion. |
 
 These are **offline-first**: embedded fallbacks work without downloads.

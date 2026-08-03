@@ -14,18 +14,19 @@ Interface selection and LRU size are currently set in code (`cmd/cerberus` / `mo
 
 ## Alerts config (declarative)
 
-Three typed rule kinds live in one file:
+Three typed rule kinds live in one file (plus optional outbound sinks):
 
 1. **`thresholds`** — device metrics (`dns_queries`, `unique_targets`, …) with `op` / `value` / `severity` / `enabled`
 2. **`baselines`** — rogue DHCP / IPv6 RA / gateway MAC change (enable + optional `known_good` lists)
 3. **`anomaly`** — window size, baseline window count, score threshold, enable
+4. **`notifications`** — optional webhook, Slack, Microsoft Teams, and/or syslog for rule alerts, anomalies, and new devices (disabled by default). See [notifications.md](notifications.md).
 
 Omitted sections keep defaults. Overlay threshold rules **by `id`** (e.g. only disable `target_spread` without re-listing every rule).
 
 ```bash
 cp configs/alerts.example.yaml configs/alerts.yaml
-# edit thresholds / disable noisy rules
+# edit thresholds / disable noisy rules / enable notifications
 CERBERUS_ALERTS_CONFIG=./configs/alerts.yaml sudo ./build/cerberus
 ```
 
-Scenario-oriented examples (busy LAN, lab, strict infra, security-only, anomaly-focused, quiet) are catalogued in [`configs/README.md`](../configs/README.md).
+Scenario-oriented examples (busy LAN, lab, strict infra, security-only, anomaly-focused, quiet, notifications) are catalogued in [`configs/README.md`](../configs/README.md).

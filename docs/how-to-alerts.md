@@ -90,13 +90,33 @@ See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) and [ml-ano
 
 ---
 
-## 3. Prometheus (optional)
+## 3. Outbound notifications (webhook / Slack / Teams / syslog)
+
+Optional sinks under `notifications:` push the same events off-box. Disabled by default.
+
+| Sink | Config | Notes |
+|------|--------|-------|
+| Generic webhook | `webhook.url` | `POST` raw Event JSON |
+| **Slack** | `slack.webhook_url` | Incoming Webhook + Block Kit |
+| **Microsoft Teams** | `teams.webhook_url` | Adaptive Card (default) or `format: message_card` |
+| Syslog | `syslog.address` | e.g. `127.0.0.1:514` with `network: udp` |
+
+Shared filters: `min_severity`, `kinds` (`rule` / `anomaly` / `new_device`).
+
+Full setup (Slack app URL, Teams Workflow URL, payload shapes): **[notifications.md](notifications.md)**.  
+Example: [`configs/alerts.notifications.yaml`](../configs/alerts.notifications.yaml).
+
+Delivery is asynchronous (never blocks packet processing). Full buffers drop events with a log line.
+
+---
+
+## 4. Prometheus (optional)
 
 `GET /metrics` exposes packet and device counters. You can **route Prometheus alerts** on those series for ops-level paging—outside Cerberus’s built-in alert list.
 
 ---
 
-## 4. Quick checklist
+## 5. Quick checklist
 
 | Goal | Action |
 |------|--------|
@@ -105,6 +125,7 @@ See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) and [ml-ano
 | See anomaly alerts | Wait for baseline, then generate traffic very different from the first warm-up windows |
 | Reset rule latch | Let counts drop under threshold; next crossing can alert again |
 | No alerts at all | Quiet traffic; or disable rules / anomaly in config |
+| Webhook / Slack / Teams | Enable `notifications` and set `webhook.url`, `slack.webhook_url`, and/or `teams.webhook_url` — see [notifications.md](notifications.md) |
 
 ---
 
@@ -112,4 +133,5 @@ See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) and [ml-ano
 
 - [api-reference.md](api-reference.md) — JSON shapes  
 - [web-ui.md](web-ui.md) — where alerts appear in the Control Room  
+- [notifications.md](notifications.md) — Slack / Teams / webhook / syslog  
 - [configuration.md](configuration.md) — `CERBERUS_*` including `CERBERUS_ALERTS_CONFIG`  

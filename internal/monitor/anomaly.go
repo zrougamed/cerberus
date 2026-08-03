@@ -59,6 +59,7 @@ type anomalyDetector struct {
 	alerts         []models.AnomalyAlert
 	latest         models.AnomalySnapshot
 	lastRate       float64
+	onAlert        func(models.AnomalyAlert)
 }
 
 func newAnomalyDetector(cfg alerts.AnomalyConfig) *anomalyDetector {
@@ -165,7 +166,7 @@ func (ad *anomalyDetector) finalizeLocked(now time.Time) {
 		score = (0.72 * z) + (0.28 * centNorm)
 		isAnomaly = score >= ad.threshold
 		if isAnomaly {
-			ad.alerts = append(ad.alerts, models.AnomalyAlert{
+			alert := models.AnomalyAlert{
 				ObservedAt:    now,
 				Score:         score,
 				Severity:      severityFromScore(score),
@@ -174,9 +175,13 @@ func (ad *anomalyDetector) finalizeLocked(now time.Time) {
 				Detail:        buildAnomalySummary(contributions),
 				Features:      features,
 				Contributions: contributions,
-			})
+			}
+			ad.alerts = append(ad.alerts, alert)
 			if len(ad.alerts) > ad.maxAlerts {
 				ad.alerts = ad.alerts[len(ad.alerts)-ad.maxAlerts:]
+			}
+			if ad.onAlert != nil {
+				ad.onAlert(alert)
 			}
 		}
 	}

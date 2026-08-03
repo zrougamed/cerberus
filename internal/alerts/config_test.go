@@ -168,6 +168,70 @@ func TestEvaluateSkipsDisabled(t *testing.T) {
 	}
 }
 
+func TestParseNotificationsOverlay(t *testing.T) {
+	yaml := []byte(`
+notifications:
+  enabled: true
+  min_severity: high
+  kinds: [rule, anomaly]
+  webhook:
+    url: https://hooks.example.com/x
+    timeout_seconds: 3
+`)
+	cfg, err := Parse(yaml, ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Notifications.Enabled {
+		t.Fatal("expected notifications enabled")
+	}
+	if cfg.Notifications.MinSeverity != "high" {
+		t.Fatalf("min_severity: %q", cfg.Notifications.MinSeverity)
+	}
+	if cfg.Notifications.Webhook.URL != "https://hooks.example.com/x" {
+		t.Fatalf("webhook url: %q", cfg.Notifications.Webhook.URL)
+	}
+	if cfg.Notifications.Webhook.TimeoutSeconds != 3 {
+		t.Fatalf("timeout: %d", cfg.Notifications.Webhook.TimeoutSeconds)
+	}
+	if len(cfg.Notifications.Kinds) != 2 {
+		t.Fatalf("kinds: %+v", cfg.Notifications.Kinds)
+	}
+}
+
+func TestParseSlackAndTeamsOverlay(t *testing.T) {
+	yaml := []byte(`
+notifications:
+  enabled: true
+  slack:
+    webhook_url: https://hooks.slack.com/services/T00/B00/XXX
+  teams:
+    webhook_url: https://prod.outlook.office.com/webhook/xxx
+    format: message_card
+`)
+	cfg, err := Parse(yaml, ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Notifications.Slack.WebhookURL == "" || cfg.Notifications.Teams.WebhookURL == "" {
+		t.Fatalf("expected slack+teams urls: %+v", cfg.Notifications)
+	}
+	if cfg.Notifications.Teams.Format != "message_card" {
+		t.Fatalf("teams format: %q", cfg.Notifications.Teams.Format)
+	}
+}
+
+func TestParseRejectsNotificationsWithoutSink(t *testing.T) {
+	yaml := []byte(`
+notifications:
+  enabled: true
+`)
+	_, err := Parse(yaml, ".yaml")
+	if err == nil {
+		t.Fatal("expected error when enabled without sink")
+	}
+}
+
 func TestAllExampleConfigFiles(t *testing.T) {
 	dir := filepath.Join("..", "..", "configs")
 	entries, err := os.ReadDir(dir)

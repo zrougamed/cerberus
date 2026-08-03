@@ -55,3 +55,21 @@ anomaly:
   score_threshold: 3.5
   max_history: 120
   max_alerts: 100
+
+# Optional outbound sinks (disabled by default). Enable and set at least one sink.
+notifications:
+  enabled: false
+  min_severity: low          # low | medium | high
+  kinds: []                  # empty = all; or [rule, anomaly, new_device]
+  webhook:
+    url: ""                  # generic POST of Event JSON
+    timeout_seconds: 5
+  slack:
+    webhook_url: ""          # Slack Incoming Webhook URL
+  teams:
+    webhook_url: ""          # Teams Workflow / Incoming Webhook URL
+    format: adaptive         # adaptive (default) | message_card
+  syslog:
+    network: udp             # udp | tcp | unix | unixgram
+    address: ""              # e.g. 127.0.0.1:514
+    tag: cerberus
