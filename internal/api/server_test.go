@@ -235,3 +235,51 @@ func TestAnomaliesEndpointReturnsSnapshot(t *testing.T) {
 		t.Fatalf("expected positive window size, got %d", out.WindowSeconds)
 	}
 }
+
+func TestHandler_SetsSecurityHeaders(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	mon, err := monitor.NewNetworkMonitor(10, dbPath)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	t.Cleanup(func() { _ = mon.Close() })
+
+	handler, err := NewServer(mon).Handler()
+	if err != nil {
+		t.Fatalf("failed to build handler: %v", err)
+	}
+
+	common := map[string]string{
+		"Content-Security-Policy": "frame-ancestors 'none'",
+		"X-Frame-Options":         "DENY",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "no-referrer",
+	}
+	tests := []struct {
+		path      string
+		wantCache string
+	}{
+		{path: "/", wantCache: ""},
+		{path: "/api/v1/summary", wantCache: "no-store"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s: status %d", tc.path, rr.Code)
+			}
+			for name, want := range common {
+				if got := rr.Header().Get(name); got != want {
+					t.Errorf("%s: got %q, want %q", name, got, want)
+				}
+			}
+			if !strings.Contains(rr.Header().Get("Permissions-Policy"), "camera=()") {
+				t.Errorf("Permissions-Policy missing camera=(): %q", rr.Header().Get("Permissions-Policy"))
+			}
+			if got := rr.Header().Get("Cache-Control"); got != tc.wantCache {
+				t.Errorf("Cache-Control: got %q, want %q", got, tc.wantCache)
+			}
+		})
+	}
+}

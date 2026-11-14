@@ -42,7 +42,26 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	return mux, nil
+	return securityHeaders(mux), nil
+}
+
+// securityHeaders sets browser hardening headers on every response. The
+// dashboard is never meant to be framed, and the API carries the device
+// inventory, so responses are not cached either.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			h.Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type summaryResponse struct {
