@@ -43,7 +43,11 @@ type NetworkMonitor struct {
 	watchlists     *alerts.WatchlistMatcher
 	watchlistHits  map[string]uint64
 	watchlistLast  map[string]time.Time // device|list|remote -> last alert
-	Stats          struct {
+	// industrialRules maps "<protocol>|<class>" to its alert rule.
+	industrialRules  map[string]*industrialRule
+	industrialLast   map[string]time.Time // device|rule|target|unit -> last alert
+	industrialCounts map[IndustrialCountKey]uint64
+	Stats            struct {
 		TotalPackets uint64
 		ArpPackets   uint64
 		TcpPackets   uint64
@@ -125,21 +129,24 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 	}
 
 	nm := &NetworkMonitor{
-		Cache:          cache,
-		db:             db,
-		ouiDB:          oui,
-		serviceDB:      svc,
-		newDeviceChan:  make(chan *models.DeviceInfo, 100),
-		newPatternChan: make(chan *models.CommunicationPattern, 1000),
-		alerts:         make([]models.AlertEvent, 0, 128),
-		alertRuleState: make(map[string]bool),
-		alertConfig:    cfg,
-		anomaly:        newAnomalyDetector(cfg.Anomaly),
-		notifier:       dispatcher,
-		topology:       topology,
-		watchlists:     watchlists,
-		watchlistHits:  watchlistHits,
-		watchlistLast:  make(map[string]time.Time),
+		Cache:            cache,
+		db:               db,
+		ouiDB:            oui,
+		serviceDB:        svc,
+		newDeviceChan:    make(chan *models.DeviceInfo, 100),
+		newPatternChan:   make(chan *models.CommunicationPattern, 1000),
+		alerts:           make([]models.AlertEvent, 0, 128),
+		alertRuleState:   make(map[string]bool),
+		alertConfig:      cfg,
+		anomaly:          newAnomalyDetector(cfg.Anomaly),
+		notifier:         dispatcher,
+		topology:         topology,
+		watchlists:       watchlists,
+		watchlistHits:    watchlistHits,
+		watchlistLast:    make(map[string]time.Time),
+		industrialRules:  newIndustrialRules(cfg.Industrial),
+		industrialLast:   make(map[string]time.Time),
+		industrialCounts: make(map[IndustrialCountKey]uint64),
 	}
 	nm.baselines = newSecurityBaselines(cfg.Baselines)
 	if nm.anomaly != nil {
@@ -670,6 +677,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 		nm.checkWatchlists(device, srcIP, dstIP, time.Now())
 	}
 	nm.checkSecurityBaselines(device, evt, srcIP, trafficType)
+	nm.trackIndustrial(device, evt, srcIP, dstIP, time.Now())
 	if nm.anomaly != nil {
 		nm.anomaly.observe(time.Now(), evt, srcMAC)
 	}
@@ -730,11 +738,7 @@ func (nm *NetworkMonitor) fireAlertIfNeeded(device *models.DeviceInfo, rule stri
 			Message:    message,
 			ObservedAt: time.Now(),
 		}
-		nm.alerts = append(nm.alerts, alert)
-		if len(nm.alerts) > 500 {
-			nm.alerts = nm.alerts[len(nm.alerts)-500:]
-		}
-		nm.notifyRule(alert)
+		nm.appendAlert(alert)
 		return
 	}
 	delete(nm.alertRuleState, key)
@@ -781,11 +785,7 @@ func (nm *NetworkMonitor) checkWatchlists(device *models.DeviceInfo, srcIP, dstI
 			Message:    fmt.Sprintf("%s (%s, list %s)", msg, remote, hit.List.ID),
 			ObservedAt: now,
 		}
-		nm.alerts = append(nm.alerts, alert)
-		if len(nm.alerts) > 500 {
-			nm.alerts = nm.alerts[len(nm.alerts)-500:]
-		}
-		nm.notifyRule(alert)
+		nm.appendAlert(alert)
 	}
 }
 
@@ -819,9 +819,18 @@ func (nm *NetworkMonitor) RecordAlert(alert models.AlertEvent) {
 	if alert.ID == "" {
 		alert.ID = fmt.Sprintf("%d-%s-%s", alert.ObservedAt.UnixNano(), alert.DeviceMAC, alert.Rule)
 	}
+	nm.appendAlert(alert)
+}
+
+// maxAlerts bounds the in-memory rule alert history.
+const maxAlerts = 500
+
+// appendAlert stores a rule alert and hands it to the notifiers. Caller
+// holds nm.mu.
+func (nm *NetworkMonitor) appendAlert(alert models.AlertEvent) {
 	nm.alerts = append(nm.alerts, alert)
-	if len(nm.alerts) > 500 {
-		nm.alerts = nm.alerts[len(nm.alerts)-500:]
+	if len(nm.alerts) > maxAlerts {
+		nm.alerts = nm.alerts[len(nm.alerts)-maxAlerts:]
 	}
 	nm.notifyRule(alert)
 }
@@ -1069,6 +1078,7 @@ func cloneDeviceInfo(d *models.DeviceInfo) *models.DeviceInfo {
 	c.TLSSNIs = cloneStringIntMap(d.TLSSNIs)
 	c.TLSVersions = cloneStringIntMap(d.TLSVersions)
 	c.TrafficTypeCounts = cloneTrafficTypeIntMap(d.TrafficTypeCounts)
+	c.Industrial = cloneIndustrial(d.Industrial)
 	c.RecentDNSQueries = nil
 	c.SeenPatterns = nil
 	c.FlowStats = nil

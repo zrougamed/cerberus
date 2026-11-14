@@ -144,6 +144,17 @@ start. Example: [`configs/alerts.watchlists.yaml`](../configs/alerts.watchlists.
 
 ---
 
+## 4b. Industrial protocol alerts
+
+`modbus_write` and `modbus_diagnostic` fire when a device sends a Modbus
+write or diagnostic request and its IP is not in the rule's
+`allowed_sources`. They re-alert per source, target and unit after
+`realert_seconds` (default one hour). To test, point any Modbus client at a
+simulator on port 502 and write a register. Configuration and limits:
+[industrial-protocols.md](industrial-protocols.md).
+
+---
+
 ## 5. Prometheus (optional)
 
 `GET /metrics` exposes packet and device counters. You can **route Prometheus alerts** on those series for ops-level paging—outside Cerberus’s built-in alert list.
@@ -160,6 +171,7 @@ start. Example: [`configs/alerts.watchlists.yaml`](../configs/alerts.watchlists.
 | Reset rule latch | Let counts drop under threshold; next crossing can alert again |
 | No alerts at all | Quiet traffic; or disable rules / anomaly in config |
 | Flag traffic to known-bad ranges | Add a `watchlists:` entry; watch `watchlist:<id>` alerts and `cerberus_watchlist_hits_total` |
+| Silence Modbus writes from the SCADA server | Add its IP to `industrial.modbus_write.allowed_sources` |
 | Webhook / Slack / Teams | Enable `notifications` and set `webhook.url`, `slack.webhook_url`, and/or `teams.webhook_url` — see [notifications.md](notifications.md) |
 
 ---

@@ -13,7 +13,19 @@ export type DeviceSummary = {
   http_requests?: number
   tls?: number
   tls_connections?: number
+  industrial?: Record<string, IndustrialStats>
   [key: string]: unknown
+}
+
+/** Per-protocol counters from the industrial decoders (see internal/models). */
+export type IndustrialStats = {
+  requests: number
+  responses: number
+  exceptions: number
+  operations?: Record<string, number>
+  functions?: Record<string, number>
+  peers?: string[]
+  last_seen?: string
 }
 
 export type Summary = {

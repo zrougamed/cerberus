@@ -48,6 +48,10 @@ change in the audit trail.
 |------|-------------|
 | `GET /metrics` | Prometheus text exposition format; scrapes monitor packet counters and related gauges/counters. Includes `cerberus_build_info{commit="…",date="…"} 1` for build provenance. |
 
+`cerberus_industrial_messages_total{protocol,class,direction}` counts decoded
+industrial messages (see [industrial-protocols.md](industrial-protocols.md)).
+The series appear once the first message is decoded.
+
 ### Kernel-side counters
 
 The TC classifier keeps its own per-CPU counters (the `counters` map in

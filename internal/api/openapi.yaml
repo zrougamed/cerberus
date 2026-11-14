@@ -23,7 +23,10 @@ paths:
       tags: [Monitor]
       responses:
         "200":
-          description: Array of DeviceInfo objects
+          description: >-
+            Array of DeviceInfo objects. Devices that speak an industrial
+            protocol carry an `industrial` object keyed by protocol
+            (requests, responses, exceptions, operations, functions, peers).
   /api/v1/alerts:
     get:
       summary: Rule-based alerts

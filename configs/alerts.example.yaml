@@ -56,6 +56,20 @@ anomaly:
   max_history: 120
   max_alerts: 100
 
+# Industrial protocol alerts. allowed_sources (IPs or CIDRs) are counted but
+# never alerted on; list the SCADA server and engineering workstations.
+industrial:
+  modbus_write:
+    enabled: true
+    severity: high
+    allowed_sources: []
+    realert_seconds: 3600
+  modbus_diagnostic:
+    enabled: true
+    severity: high
+    allowed_sources: []
+    realert_seconds: 3600
+
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:
   enabled: false
