@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,82 @@ func (s *Server) registerPolicyRoutes(mux *http.ServeMux) {
 	mux.Handle("PUT /api/v1/policy/mode", s.requireToken(http.HandlerFunc(s.handlePolicyMode)))
 	mux.Handle("POST /api/v1/policy/rules", s.requireToken(http.HandlerFunc(s.handlePolicyAdd)))
 	mux.Handle("DELETE /api/v1/policy/rules/{id}", s.requireToken(http.HandlerFunc(s.handlePolicyDelete)))
+
+	mux.HandleFunc("GET /api/v1/policy/log", s.handlePolicyLog)
+	mux.Handle("POST /api/v1/policy/filters", s.requireToken(http.HandlerFunc(s.handleFilterAdd)))
+	mux.Handle("DELETE /api/v1/policy/filters/{id}", s.requireToken(http.HandlerFunc(s.handleFilterDelete)))
+	mux.Handle("PUT /api/v1/policy/filters/{id}/position", s.requireToken(http.HandlerFunc(s.handleFilterMove)))
+	mux.Handle("PUT /api/v1/policy/filters/{id}/enabled", s.requireToken(http.HandlerFunc(s.handleFilterEnabled)))
+}
+
+func (s *Server) handlePolicyLog(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 500 {
+			writeError(w, http.StatusBadRequest, "limit must be between 1 and 500")
+			return
+		}
+		limit = n
+	}
+	writeJSON(w, http.StatusOK, s.policy.Logs(limit))
+}
+
+func (s *Server) handleFilterAdd(w http.ResponseWriter, r *http.Request) {
+	var in policy.FilterInput
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	rule, err := s.policy.AddFilter(in, actor(r))
+	if err != nil {
+		writePolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, rule)
+}
+
+func (s *Server) handleFilterDelete(w http.ResponseWriter, r *http.Request) {
+	if err := s.policy.RemoveFilter(r.PathValue("id"), actor(r)); err != nil {
+		writePolicyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleFilterMove(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Position *int `json:"position"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Position == nil {
+		writeError(w, http.StatusBadRequest, "position is required")
+		return
+	}
+	if err := s.policy.MoveFilter(r.PathValue("id"), *body.Position, actor(r)); err != nil {
+		writePolicyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleFilterEnabled(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "enabled is required")
+		return
+	}
+	if err := s.policy.SetFilterEnabled(r.PathValue("id"), *body.Enabled, actor(r)); err != nil {
+		writePolicyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type policyStatusResponse struct {

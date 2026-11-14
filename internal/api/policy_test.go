@@ -211,3 +211,63 @@ func TestPolicyAPI_NotRegisteredWithoutEngine(t *testing.T) {
 		t.Fatalf("expected 404 without engine, got %d", rr.Code)
 	}
 }
+
+func TestFilterAPI_Lifecycle(t *testing.T) {
+	h, eng := newPolicyHandler(t, testToken)
+
+	if rr := do(t, h, http.MethodPost, "/api/v1/policy/filters", "", `{"verdict":"accept"}`); rr.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: %d", rr.Code)
+	}
+	body := `{"id":"ssh-drop","verdict":"drop","log":true,"match":{"protocol":"tcp","dst":"10.0.0.5","dst_port":"22"}}`
+	rr := do(t, h, http.MethodPost, "/api/v1/policy/filters", testToken, body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rr.Code, rr.Body)
+	}
+	if rr := do(t, h, http.MethodPost, "/api/v1/policy/filters", testToken, `{"id":"top","verdict":"accept","position":0,"match":{"protocol":"tcp","src":"10.0.0.99"}}`); rr.Code != http.StatusCreated {
+		t.Fatalf("create at top: %d %s", rr.Code, rr.Body)
+	}
+	cases := []struct {
+		name, method, path, body string
+		want                     int
+	}{
+		{"broad drop needs force", http.MethodPost, "/api/v1/policy/filters", `{"verdict":"drop","match":{"protocol":"udp","dst_port":"53"}}`, http.StatusUnprocessableEntity},
+		{"invalid matcher", http.MethodPost, "/api/v1/policy/filters", `{"verdict":"accept","match":{"protocol":"icmp","dst_port":"80"}}`, http.StatusBadRequest},
+		{"unknown match field", http.MethodPost, "/api/v1/policy/filters", `{"verdict":"accept","match":{"ttl":4}}`, http.StatusBadRequest},
+		{"duplicate id", http.MethodPost, "/api/v1/policy/filters", `{"id":"top","verdict":"accept"}`, http.StatusConflict},
+		{"move", http.MethodPut, "/api/v1/policy/filters/ssh-drop/position", `{"position":0}`, http.StatusNoContent},
+		{"move missing position", http.MethodPut, "/api/v1/policy/filters/ssh-drop/position", `{}`, http.StatusBadRequest},
+		{"move out of range", http.MethodPut, "/api/v1/policy/filters/ssh-drop/position", `{"position":7}`, http.StatusBadRequest},
+		{"move unknown", http.MethodPut, "/api/v1/policy/filters/nope/position", `{"position":0}`, http.StatusNotFound},
+		{"disable", http.MethodPut, "/api/v1/policy/filters/top/enabled", `{"enabled":false}`, http.StatusNoContent},
+		{"enabled missing", http.MethodPut, "/api/v1/policy/filters/top/enabled", `{}`, http.StatusBadRequest},
+		{"bad log limit", http.MethodGet, "/api/v1/policy/log?limit=0", ``, http.StatusBadRequest},
+		{"log", http.MethodGet, "/api/v1/policy/log?limit=5", ``, http.StatusOK},
+	}
+	for _, tc := range cases {
+		if rr := do(t, h, tc.method, tc.path, testToken, tc.body); rr.Code != tc.want {
+			t.Errorf("%s: got %d %s, want %d", tc.name, rr.Code, rr.Body, tc.want)
+		}
+	}
+
+	var st policyStatusResponse
+	rr = do(t, h, http.MethodGet, "/api/v1/policy", "", "")
+	if err := json.Unmarshal(rr.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Filters) != 2 || st.Filters[0].ID != "ssh-drop" || st.Filters[1].Enabled || st.MaxFilters != policy.MaxFilterRules {
+		t.Fatalf("status filters: %+v", st.Filters)
+	}
+	if st.Filters[0].Summary != "ipv4 tcp dst 10.0.0.5/32 dport 22" {
+		t.Fatalf("summary: %q", st.Filters[0].Summary)
+	}
+
+	if rr := do(t, h, http.MethodDelete, "/api/v1/policy/filters/ssh-drop", testToken, ""); rr.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rr.Code)
+	}
+	if rr := do(t, h, http.MethodDelete, "/api/v1/policy/filters/ssh-drop", testToken, ""); rr.Code != http.StatusNotFound {
+		t.Fatalf("second delete: %d", rr.Code)
+	}
+	if n := len(eng.Status().Filters); n != 1 {
+		t.Fatalf("filters left: %d", n)
+	}
+}

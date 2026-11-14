@@ -132,6 +132,14 @@ func main() {
 	stopPolicy := make(chan struct{})
 	defer close(stopPolicy)
 	go policyLoop(policyEngine, mon, stopPolicy)
+	if logMap := coll.Maps["filter_log"]; logMap != nil {
+		logReader, err := ringbuf.NewReader(logMap)
+		if err != nil {
+			log.Fatalf("filter log ring buffer: %v", err)
+		}
+		defer logReader.Close()
+		go readFilterLog(logReader, policyEngine)
+	}
 
 	if countersMap := coll.Maps["counters"]; countersMap != nil {
 		apiServer.SetKernelStats(kstats.NewReader(countersMap).Read)
@@ -346,7 +354,27 @@ func policyLoop(e *policy.Engine, mon *monitor.NetworkMonitor, stop <-chan struc
 	}
 }
 
+// readFilterLog feeds filter "log" events to the engine until the reader is
+// closed at shutdown.
+func readFilterLog(r *ringbuf.Reader, e *policy.Engine) {
+	for {
+		rec, err := r.Read()
+		if err != nil {
+			if errors.Is(err, ringbuf.ErrClosed) {
+				return
+			}
+			continue
+		}
+		if err := e.RecordLog(rec.RawSample); err != nil {
+			fmt.Printf("filter log: %v\n", err)
+		}
+	}
+}
+
 func policyHitAlert(h policy.Hit) models.AlertEvent {
+	if h.Filter != nil {
+		return filterHitAlert(h)
+	}
 	target := h.Rule.CIDR
 	if h.Rule.MAC != "" {
 		target = "MAC " + h.Rule.MAC
@@ -364,5 +392,25 @@ func policyHitAlert(h policy.Hit) models.AlertEvent {
 		Severity:  severity,
 		Message: fmt.Sprintf("Policy rule %s %s %d packet(s) for %s (total %d)",
 			h.Rule.ID, verb, h.Delta.Packets, target, h.Total.Packets),
+	}
+}
+
+func filterHitAlert(h policy.Hit) models.AlertEvent {
+	f := h.Filter
+	verb, severity := "matched", "low"
+	switch {
+	case h.Enforced:
+		verb, severity = "dropped", "high"
+	case f.Verdict == policy.VerdictDrop:
+		verb, severity = "would have dropped (monitor mode)", "medium"
+	case f.Verdict == policy.VerdictAccept:
+		verb = "allowed"
+	}
+	return models.AlertEvent{
+		DeviceMAC: f.Match.SrcMAC,
+		Rule:      "filter:" + f.ID,
+		Severity:  severity,
+		Message: fmt.Sprintf("Filter %s %s %d packet(s) matching %s (total %d)",
+			f.ID, verb, h.Delta.Packets, f.Match.Summary(), h.Total.Packets),
 	}
 }
