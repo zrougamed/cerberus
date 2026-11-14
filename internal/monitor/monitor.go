@@ -47,7 +47,10 @@ type NetworkMonitor struct {
 	industrialRules  map[string]*industrialRule
 	industrialLast   map[string]time.Time // device|rule|target|unit -> last alert
 	industrialCounts map[IndustrialCountKey]uint64
-	flowBaseline     *flowBaseline // nil when disabled
+	flowBaseline     *flowBaseline        // nil when disabled
+	zones            *alerts.ZoneMatcher  // nil without zones
+	zoneLast         map[string]time.Time // from|to|src|dst -> last alert
+	zoneViolations   map[string]uint64    // "from>to" -> packets
 	Stats            struct {
 		TotalPackets uint64
 		ArpPackets   uint64
@@ -123,6 +126,12 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		}
 	}
 
+	zones, err := alerts.NewZoneMatcher(cfg.Segmentation)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("segmentation: %w", err)
+	}
+
 	dispatcher, err := notify.New(cfg.Notifications)
 	if err != nil {
 		_ = db.Close()
@@ -148,6 +157,9 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		industrialRules:  newIndustrialRules(cfg.Industrial),
 		industrialLast:   make(map[string]time.Time),
 		industrialCounts: make(map[IndustrialCountKey]uint64),
+		zones:            zones,
+		zoneLast:         make(map[string]time.Time),
+		zoneViolations:   make(map[string]uint64),
 	}
 	nm.baselines = newSecurityBaselines(cfg.Baselines)
 	nm.flowBaseline = newFlowBaseline(cfg.FlowBaseline, db, time.Now())
@@ -667,6 +679,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	nm.evaluateAlerts(device)
 	if evt.EventType != models.EVENT_TYPE_ARP {
 		nm.checkWatchlists(device, srcIP, dstIP, time.Now())
+		nm.checkZones(device, evt, srcIP, dstIP, protocol, time.Now())
 	}
 	nm.checkSecurityBaselines(device, evt, srcIP, trafficType)
 	nm.trackIndustrial(device, evt, srcIP, dstIP, time.Now())

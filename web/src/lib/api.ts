@@ -8,6 +8,7 @@ import type {
   AlertEvent,
   AssetEntry,
   BaselineState,
+  ZoneSummary,
 } from './types'
 import { getToken, setToken } from './token'
 
@@ -43,6 +44,10 @@ export function fetchAssets() {
 
 export function fetchBaseline() {
   return getJSON<BaselineState>('/api/v1/baseline?limit=2000')
+}
+
+export function fetchZones() {
+  return getJSON<ZoneSummary>('/api/v1/zones')
 }
 
 export function fetchPolicy() {

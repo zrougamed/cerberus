@@ -103,6 +103,14 @@ switch to `enforce`.
   source, destination or device at all also needs `force`, since it matches
   traffic from every host. `0.0.0.0/0`, `::/0` and
   broadcast/multicast MACs are always refused.
+- Industrial zones are watch-only (see
+  [industrial-protocols.md](industrial-protocols.md#zones-and-conduits)): a
+  drop blocklist entry or a filter **Block** whose address overlaps a zone
+  marked `industrial` (and not `enforce: true`) is refused without `force`.
+  A negated side (`src_not` / `dst_not`) counts as overlapping unless its
+  prefix contains the whole zone. Count rules are always allowed. The check
+  runs when a rule is added; rules that existed before the zone was
+  configured are kept.
 - `ttl_seconds` makes a rule temporary; it is removed automatically.
 - At most 64 filter rules and 1024 blocklist entries. An address cannot
   appear in two blocklist entries; ids are unique across both.

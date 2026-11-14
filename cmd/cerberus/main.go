@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -74,7 +75,7 @@ func main() {
 
 	// Active response: the policy is loaded now (so the API can serve it)
 	// and pushed to the kernel once the BPF collection exists.
-	policyEngine, err := openPolicy()
+	policyEngine, err := openPolicy(alertCfg.Segmentation.WatchOnlyPrefixes())
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -323,15 +324,15 @@ func main() {
 
 // openPolicy loads the persisted policy from CERBERUS_POLICY_FILE (default
 // <data dir>/policy.json) and protects this host's and the gateway's
-// addresses from accidental blocking.
-func openPolicy() (*policy.Engine, error) {
+// addresses, and watch-only zones, from accidental blocking.
+func openPolicy(watchOnly map[string][]netip.Prefix) (*policy.Engine, error) {
 	path := os.Getenv("CERBERUS_POLICY_FILE")
 	if path == "" {
 		path = filepath.Join(databases.DataDir(), "policy.json")
 	}
 	topology, _ := network.DetectNetworkTopology()
 	addrs, macs := network.ProtectedTargets(topology)
-	return policy.Open(policy.Options{StatePath: path, Protected: addrs, ProtectedMAC: macs})
+	return policy.Open(policy.Options{StatePath: path, Protected: addrs, ProtectedMAC: macs, WatchOnly: watchOnly})
 }
 
 // policyLoop expires temporary rules and turns rule counter growth into
