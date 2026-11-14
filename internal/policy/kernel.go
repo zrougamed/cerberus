@@ -120,13 +120,16 @@ func (b *BPFMaps) WriteChain(rules []filterValue) error {
 		return fmt.Errorf("chain has %d rules, max %d", len(rules), MaxFilterRules)
 	}
 	next := 1 - b.activeHalf
-	base := next * MaxFilterRules
-	for i, r := range rules {
-		if err := b.filterRules.Update(base+uint32(i), r, ebpf.UpdateAny); err != nil {
-			return fmt.Errorf("write filter rule %d: %w", i, err)
+	idx := next * MaxFilterRules
+	var n uint32
+	for _, r := range rules {
+		if err := b.filterRules.Update(idx, r, ebpf.UpdateAny); err != nil {
+			return fmt.Errorf("write filter rule %d: %w", n, err)
 		}
+		idx++
+		n++
 	}
-	cfg := next<<16 | uint32(len(rules))
+	cfg := next<<16 | n
 	if err := b.filterCfg.Update(uint32(0), cfg, ebpf.UpdateAny); err != nil {
 		return fmt.Errorf("publish filter chain: %w", err)
 	}
