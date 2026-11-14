@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -17,8 +18,12 @@ import (
 
 	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/api"
+	"github.com/zrougamed/cerberus/internal/databases"
+	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
+	"github.com/zrougamed/cerberus/internal/network"
+	"github.com/zrougamed/cerberus/internal/policy"
 	"github.com/zrougamed/cerberus/internal/utils"
 	"github.com/zrougamed/cerberus/internal/version"
 )
@@ -26,11 +31,13 @@ import (
 func main() {
 	fmt.Printf("Cerberus %s\n", version.String())
 
-	// Clean up any existing TC hooks
-	utils.CleanCards()
+	// No startup TC/XDP cleanup: TCX links are owned by this process and the
+	// kernel detaches them when it exits, so nothing is left behind. The old
+	// cleanup deleted every interface's clsact/ingress qdisc and XDP program,
+	// breaking other TC users (Cilium, tc-based shapers, other BPF tools).
 
 	// Ensure the data directory exists
-	err := os.MkdirAll("./data", 0755)
+	err := os.MkdirAll("./data", 0o750)
 	if err != nil {
 		log.Fatalf("failed to create data directory: %v", err)
 	}
@@ -64,6 +71,21 @@ func main() {
 		apiAddr = "127.0.0.1:8080"
 	}
 	apiServer := api.NewServer(mon)
+
+	// Active response: the policy is loaded now (so the API can serve it)
+	// and pushed to the kernel once the BPF collection exists.
+	policyEngine, err := openPolicy()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	apiServer.SetPolicy(policyEngine)
+	if err := apiServer.SetAPIToken(os.Getenv("CERBERUS_API_TOKEN")); err != nil {
+		log.Fatalf("CERBERUS_API_TOKEN: %v", err)
+	}
+	if os.Getenv("CERBERUS_API_TOKEN") == "" {
+		fmt.Println("Policy changes disabled: set CERBERUS_API_TOKEN to manage rules from the console/API")
+	}
+
 	apiHandler, err := apiServer.Handler()
 	if err != nil {
 		panic(fmt.Errorf("failed to create API handler: %w", err))
@@ -72,6 +94,9 @@ func main() {
 		Addr:              apiAddr,
 		Handler:           apiHandler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
 		fmt.Printf("Dashboard available at http://%s\n", apiAddr)
@@ -95,6 +120,33 @@ func main() {
 	}
 	defer coll.Close()
 
+	policyMaps, err := policy.NewBPFMaps(coll.Maps)
+	if err != nil {
+		log.Fatalf("policy: %v", err)
+	}
+	if err := policyEngine.Bind(policyMaps); err != nil {
+		log.Fatalf("%v", err)
+	}
+	st := policyEngine.Status()
+	fmt.Printf("Policy loaded: %d rule(s), mode=%s\n", len(st.Rules), st.Mode)
+	stopPolicy := make(chan struct{})
+	defer close(stopPolicy)
+	go policyLoop(policyEngine, mon, stopPolicy)
+	if logMap := coll.Maps["filter_log"]; logMap != nil {
+		logReader, err := ringbuf.NewReader(logMap)
+		if err != nil {
+			log.Fatalf("filter log ring buffer: %v", err)
+		}
+		defer logReader.Close()
+		go readFilterLog(logReader, policyEngine)
+	}
+
+	if countersMap := coll.Maps["counters"]; countersMap != nil {
+		apiServer.SetKernelStats(kstats.NewReader(countersMap).Read)
+	} else {
+		fmt.Println("BPF object has no 'counters' map; kernel counters disabled")
+	}
+
 	// Get the classifier program
 	prog := coll.Programs["xdp_arp_monitor"]
 	if prog == nil {
@@ -109,15 +161,16 @@ func main() {
 
 	fmt.Println("Scanning for network interfaces...")
 
+	// CERBERUS_INTERFACES narrows the attach set (names/globs, "!" excludes).
+	ifaceFilter, err := network.ParseInterfaceFilter(os.Getenv("CERBERUS_INTERFACES"))
+	if err != nil {
+		log.Fatalf("CERBERUS_INTERFACES: %v", err)
+	}
+
 	var links []link.Link
 	attachedCount := 0
 
-	for _, iface := range ifaces {
-		// Skip loopback and down interfaces
-		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-
+	for _, iface := range ifaceFilter.Select(ifaces) {
 		fmt.Printf("Attaching to %s...\n", iface.Name)
 
 		// Attach using TCX (modern TC hook mechanism)
@@ -266,4 +319,98 @@ func main() {
 	fmt.Println("\n\nFinal Statistics:")
 	mon.PrintStats()
 	fmt.Println("Shutting down...")
+}
+
+// openPolicy loads the persisted policy from CERBERUS_POLICY_FILE (default
+// <data dir>/policy.json) and protects this host's and the gateway's
+// addresses from accidental blocking.
+func openPolicy() (*policy.Engine, error) {
+	path := os.Getenv("CERBERUS_POLICY_FILE")
+	if path == "" {
+		path = filepath.Join(databases.DataDir(), "policy.json")
+	}
+	topology, _ := network.DetectNetworkTopology()
+	addrs, macs := network.ProtectedTargets(topology)
+	return policy.Open(policy.Options{StatePath: path, Protected: addrs, ProtectedMAC: macs})
+}
+
+// policyLoop expires temporary rules and turns rule counter growth into
+// alerts (at most one per rule per 10 minutes).
+func policyLoop(e *policy.Engine, mon *monitor.NetworkMonitor, stop <-chan struct{}) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+		}
+		for _, r := range e.Expire() {
+			fmt.Printf("Policy rule %s expired\n", r.ID)
+		}
+		for _, h := range e.PollHits() {
+			mon.RecordAlert(policyHitAlert(h))
+		}
+	}
+}
+
+// readFilterLog feeds filter "log" events to the engine until the reader is
+// closed at shutdown.
+func readFilterLog(r *ringbuf.Reader, e *policy.Engine) {
+	for {
+		rec, err := r.Read()
+		if err != nil {
+			if errors.Is(err, ringbuf.ErrClosed) {
+				return
+			}
+			continue
+		}
+		if err := e.RecordLog(rec.RawSample); err != nil {
+			fmt.Printf("filter log: %v\n", err)
+		}
+	}
+}
+
+func policyHitAlert(h policy.Hit) models.AlertEvent {
+	if h.Filter != nil {
+		return filterHitAlert(h)
+	}
+	target := h.Rule.CIDR
+	if h.Rule.MAC != "" {
+		target = "MAC " + h.Rule.MAC
+	}
+	verb, severity := "matched", "low"
+	switch {
+	case h.Enforced:
+		verb, severity = "dropped", "high"
+	case h.Rule.Action == policy.ActionDrop:
+		verb, severity = "would have dropped (monitor mode)", "medium"
+	}
+	return models.AlertEvent{
+		DeviceMAC: h.Rule.MAC,
+		Rule:      "policy:" + h.Rule.ID,
+		Severity:  severity,
+		Message: fmt.Sprintf("Policy rule %s %s %d packet(s) for %s (total %d)",
+			h.Rule.ID, verb, h.Delta.Packets, target, h.Total.Packets),
+	}
+}
+
+func filterHitAlert(h policy.Hit) models.AlertEvent {
+	f := h.Filter
+	verb, severity := "matched", "low"
+	switch {
+	case h.Enforced:
+		verb, severity = "dropped", "high"
+	case f.Verdict == policy.VerdictDrop:
+		verb, severity = "would have dropped (monitor mode)", "medium"
+	case f.Verdict == policy.VerdictAccept:
+		verb = "allowed"
+	}
+	return models.AlertEvent{
+		DeviceMAC: f.Match.SrcMAC,
+		Rule:      "filter:" + f.ID,
+		Severity:  severity,
+		Message: fmt.Sprintf("Filter %s %s %d packet(s) matching %s (total %d)",
+			f.ID, verb, h.Delta.Packets, f.Match.Summary(), h.Total.Packets),
+	}
 }

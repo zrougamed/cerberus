@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -86,20 +88,23 @@ func LoadServiceDatabase() map[uint16]*models.ServiceInfo {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 	out := make(map[uint16]*models.ServiceInfo, len(db.services))
-	for k, v := range db.services {
-		out[k] = v
-	}
+	maps.Copy(out, db.services)
 	return out
 }
 
 // downloadIANADatabase downloads the official IANA service registry
 func (db *ServiceDatabase) downloadIANADatabase() error {
-	if err := os.MkdirAll(DataDir(), 0755); err != nil {
+	if err := os.MkdirAll(DataDir(), 0o750); err != nil {
 		return err
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(IANA_SERVICES_URL)
+	req, err := http.NewRequest(http.MethodGet, IANA_SERVICES_URL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", userAgent())
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -109,21 +114,13 @@ func (db *ServiceDatabase) downloadIANADatabase() error {
 		return fmt.Errorf("download failed: status %d", resp.StatusCode)
 	}
 
-	// Save to cache
-	cacheFile, err := os.Create(db.dbPath)
+	// Read the whole body before touching the cache so a failed or oversized
+	// download leaves the previous cache intact.
+	body, err := readLimited(resp.Body, maxRegistryBody)
 	if err != nil {
 		return err
 	}
-	defer cacheFile.Close()
-
-	// Parse CSV format
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	// Write to cache
-	if _, err := cacheFile.Write(body); err != nil {
+	if err := os.WriteFile(db.dbPath, body, 0o600); err != nil {
 		return err
 	}
 
@@ -172,12 +169,16 @@ func expandIANAPortField(portField string) ([]uint16, bool) {
 		if err1 != nil || err2 != nil || lo > hi {
 			return nil, false
 		}
+		loP, hiP := portFrom(lo), portFrom(hi)
 		if hi-lo > maxIANAPortRangeSpan {
-			return []uint16{uint16(lo)}, true
+			return []uint16{loP}, true
 		}
 		out := make([]uint16, 0, hi-lo+1)
-		for p := lo; p <= hi; p++ {
-			out = append(out, uint16(p))
+		for p := loP; ; p++ {
+			out = append(out, p)
+			if p == hiP {
+				break
+			}
 		}
 		return out, true
 	}
@@ -185,7 +186,16 @@ func expandIANAPortField(portField string) ([]uint16, bool) {
 	if err != nil {
 		return nil, false
 	}
-	return []uint16{uint16(v)}, true
+	return []uint16{portFrom(v)}, true
+}
+
+// portFrom narrows a value parsed with strconv.ParseUint(..., 16); the
+// check makes the bound explicit.
+func portFrom(v uint64) uint16 {
+	if v > math.MaxUint16 {
+		return math.MaxUint16
+	}
+	return uint16(v)
 }
 
 func ianaDisplayName(serviceName string, port uint16, protocol string) string {

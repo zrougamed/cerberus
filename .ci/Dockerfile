@@ -11,7 +11,7 @@ ENV TERM=linux
 RUN if command -v apt-get > /dev/null 2>&1; then \
         # Debian/Ubuntu
         apt-get update && \
-        apt-get install -y \
+        apt-get install -y --no-install-recommends \
             clang \
             llvm \
             make \
@@ -40,15 +40,21 @@ RUN if command -v apt-get > /dev/null 2>&1; then \
             iproute2; \
     fi
 
-# Install Go 1.26.5 (latest stable as of July 2026)
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then GOARCH="amd64"; \
-    elif [ "$ARCH" = "aarch64" ]; then GOARCH="arm64"; \
-    elif [ "$ARCH" = "armv7l" ]; then GOARCH="armv6l"; \
-    else GOARCH="amd64"; fi && \
-    wget -q https://go.dev/dl/go1.26.5.linux-${GOARCH}.tar.gz && \
-    tar -C /usr/local -xzf go1.26.5.linux-${GOARCH}.tar.gz && \
-    rm go1.26.5.linux-${GOARCH}.tar.gz
+# Install Go from go.dev, verified against the published SHA-256.
+ARG GO_VERSION=1.27.4
+ARG GO_SHA256_AMD64=7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
+ARG GO_SHA256_ARM64=3392582988a273a87ab5043ee1b2c9c17a2c3c00580bf9326c47a2e0aaaeac92
+RUN set -e; ARCH=$(uname -m); \
+    case "$ARCH" in \
+        x86_64) GOARCH=amd64; SUM=$GO_SHA256_AMD64 ;; \
+        aarch64) GOARCH=arm64; SUM=$GO_SHA256_ARM64 ;; \
+        *) echo "unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    TARBALL="go${GO_VERSION}.linux-${GOARCH}.tar.gz"; \
+    wget -q "https://go.dev/dl/${TARBALL}"; \
+    echo "${SUM}  ${TARBALL}" | sha256sum -c -; \
+    tar -C /usr/local -xzf "${TARBALL}"; \
+    rm "${TARBALL}"
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/go"
@@ -58,6 +64,6 @@ WORKDIR /workspace
 
 # Pre-download Go dependencies to cache them
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod verify
 
 CMD ["/bin/sh"]

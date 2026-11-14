@@ -1,0 +1,23 @@
+# Weekly update PRs for Go modules, pinned GitHub Actions and Docker base images.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories: ["/", "/.ci"]
+    schedule:
+      interval: weekly

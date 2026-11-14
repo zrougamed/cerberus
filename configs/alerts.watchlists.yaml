@@ -1,0 +1,33 @@
+# Watchlists: alert when devices talk to listed IPv4/IPv6 ranges.
+# Addresses below are documentation ranges (RFC 5737 / RFC 3849); replace
+# them with your own threat-intel or policy ranges.
+#
+#   CERBERUS_ALERTS_CONFIG=./configs/alerts.watchlists.yaml sudo ./build/cerberus
+#
+# Every match increments cerberus_watchlist_hits_total{list="<id>"} on
+# /metrics. Alerts appear as rule "watchlist:<id>" and go through the
+# notification sinks like any other rule alert.
+watchlists:
+  - id: known-c2
+    direction: dst
+    severity: high
+    message: "Outbound connection to a known C2 range"
+    cidrs:
+      - 203.0.113.0/24
+      - 2001:db8:bad::/48
+
+  - id: scanners
+    direction: src
+    severity: medium
+    message: "Traffic from a known scanner"
+    realert_seconds: 3600
+    cidrs:
+      - 198.51.100.0/24
+
+  - id: guest-to-mgmt
+    direction: dst
+    severity: low
+    message: "Device reached the management network"
+    realert_seconds: 0
+    cidrs:
+      - 192.0.2.0/28

@@ -106,11 +106,15 @@ MA-S,AABBCCDEF,Example MA-S Corp,
 	}
 }
 
-func TestOUIStaleCachePreferredOverFallback(t *testing.T) {
+// An old downloaded cache no longer marks the database stale (the embedded
+// snapshot is newer), but entries only it knows are still used.
+func TestOUIOldCacheAddsEntriesMissingFromSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CERBERUS_DATA_DIR", dir)
 	path := filepath.Join(dir, ouiCacheCSV)
-	body := []byte("Registry,Assignment,Organization Name,Organization Address\nMA-L,AABBCC,Stale Vendor Corp,\n")
+	body := []byte("Registry,Assignment,Organization Name,Organization Address\n" +
+		"MA-L,AABBCC,Stale Vendor Corp,\n" +
+		"MA-L,B48C9D,Old Name For AzureWave,\n")
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -122,10 +126,10 @@ func TestOUIStaleCachePreferredOverFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !db.stale {
-		t.Fatal("expected stale flag")
-	}
 	if got := db.Lookup("AA:BB:CC:00:00:01"); got != "Stale Vendor Corp" {
-		t.Fatalf("stale cache should still resolve: got %q", got)
+		t.Fatalf("entry missing from snapshot should come from the cache: got %q", got)
+	}
+	if got := db.Lookup("B4:8C:9D:00:00:01"); got != "AzureWave Technology Inc." {
+		t.Fatalf("older cache must not override the snapshot: got %q", got)
 	}
 }

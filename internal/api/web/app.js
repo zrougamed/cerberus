@@ -49,7 +49,8 @@ function escapeHtml(s) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function parseRoute() {
@@ -67,6 +68,18 @@ function parseRoute() {
   }
   if (segs[0] === "alerts") return { page: "alerts" };
   if (segs[0] === "anomalies") return { page: "anomalies" };
+  if (segs[0] === "policy") {
+    // #/policy/mac/<mac> or #/policy/ip/<addr> prefill the add-rule form.
+    let prefill = null;
+    if ((segs[1] === "mac" || segs[1] === "ip") && segs[2]) {
+      try {
+        prefill = { kind: segs[1] === "mac" ? "mac" : "cidr", value: decodeURIComponent(segs[2]) };
+      } catch {
+        prefill = null;
+      }
+    }
+    return { page: "policy", prefill };
+  }
   if (segs[0] === "raw") return { page: "raw", raw: segs[1] || "summary" };
   return { page: "overview" };
 }
@@ -84,12 +97,13 @@ function activateNav() {
       ((page === "devices" || page === "device") && href === "#/devices") ||
       (page === "alerts" && href === "#/alerts") ||
       (page === "anomalies" && href === "#/anomalies") ||
+      (page === "policy" && href === "#/policy") ||
       (page === "raw" && href.startsWith("#/raw"));
     a.classList.toggle("is-active", !!active);
   });
   if (page === "raw") {
     const sel = document.getElementById("raw-endpoint");
-    if (sel && ["summary", "devices", "alerts", "anomalies"].includes(raw)) {
+    if (sel && ["summary", "devices", "alerts", "anomalies", "policy", "policylog"].includes(raw)) {
       sel.value = raw;
     }
   }
@@ -119,6 +133,9 @@ function renderCurrentRoute() {
   } else if (r.page === "anomalies") {
     showPage("anomalies");
     renderAnomaliesPage();
+  } else if (r.page === "policy") {
+    showPage("policy");
+    renderPolicyPage(r.prefill);
   } else if (r.page === "raw") {
     showPage("raw");
     renderRawPage(r.raw);
@@ -298,7 +315,7 @@ function renderMapTable(title, obj) {
   const rows = entries
     .map(
       ([k, v]) =>
-        `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${escapeHtml(String(v))}</td></tr>`,
+        `<tr><td>${escapeHtml(k)}</td><td class="num">${escapeHtml(String(v))}</td></tr>`,
     )
     .join("");
   return `<h3>${escapeHtml(title)}</h3><table class="map-table"><thead><tr><th>Name</th><th>Count</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -342,6 +359,7 @@ function renderDevicesPage() {
     ["tls_connections", "TLS"],
     ["last_seen", "Last seen"],
   ];
+  const actionsHeader = '<th scope="col">Response</th>';
 
   const sortedDevices = sortDevices(devices);
 
@@ -365,12 +383,15 @@ function renderDevicesPage() {
         <td>${d.http_requests ?? 0}</td>
         <td>${d.tls_connections ?? 0}</td>
         <td>${d.last_seen ? new Date(d.last_seen).toLocaleString() : ""}</td>
+        <td><span class="row-actions"><a href="#/policy/mac/${encodeURIComponent(d.mac)}" aria-label="Quarantine ${mac}">Quarantine</a>${
+          d.ip ? `<a href="#/policy/ip/${encodeURIComponent(d.ip)}" aria-label="Block IP ${escapeHtml(d.ip)}">Block IP</a>` : ""
+        }</span></td>
       </tr>`;
     })
     .join("");
 
   root.innerHTML = `<table class="device-table sortable-table">
-    <thead><tr>${headers}</tr></thead>
+    <thead><tr>${headers}${actionsHeader}</tr></thead>
     <tbody>${rows}</tbody></table>`;
 
   // Wire up header clicks for sorting
@@ -457,8 +478,12 @@ function renderDevicePage(mac) {
     renderMapTable("TLS SNIs / labels", d.tls_snis) +
     renderMapTable("TLS versions", d.tls_versions) +
     renderMapTable("Traffic type counts", d.traffic_type_counts);
-  root.innerHTML = `<div class="kv-grid">${kv}</div>${targets}<div style="margin-top:18px">${maps}</div>
-    <p class="muted" style="margin-top:16px"><a href="#/raw/devices">View raw device JSON</a></p>`;
+  const actions = `<p class="device-actions">
+      <a href="#/policy/mac/${encodeURIComponent(d.mac)}">Quarantine this device…</a>
+      ${d.ip ? `<a href="#/policy/ip/${encodeURIComponent(d.ip)}">Block its IP address…</a>` : ""}
+    </p>`;
+  root.innerHTML = `${actions}<div class="kv-grid">${kv}</div>${targets}<div class="section-gap">${maps}</div>
+    <p class="muted section-gap"><a href="#/raw/devices">View raw device JSON</a></p>`;
 }
 
 function renderAlertsPage() {
@@ -483,11 +508,16 @@ function renderAlertsPage() {
         <td>${escapeHtml(a.device_mac || "")}</td>
         <td>${escapeHtml(a.device_ip || "")}</td>
         <td>${escapeHtml(a.message || "")}</td>
+        <td>${
+          a.device_mac
+            ? `<span class="row-actions"><a href="#/policy/mac/${encodeURIComponent(a.device_mac)}" aria-label="Quarantine ${escapeHtml(a.device_mac)}">Quarantine</a></span>`
+            : ""
+        }</td>
       </tr>`;
     })
     .join("");
   root.innerHTML = `<table class="device-table">
-    <thead><tr><th>Time</th><th>Severity</th><th>Rule</th><th>Device MAC</th><th>Device IP</th><th>Message</th></tr></thead>
+    <thead><tr><th>Time</th><th>Severity</th><th>Rule</th><th>Device MAC</th><th>Device IP</th><th>Message</th><th>Response</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 
@@ -541,7 +571,11 @@ async function renderRawPage(endpoint) {
         ? "/api/v1/devices"
         : ep === "alerts"
           ? "/api/v1/alerts"
-          : "/api/v1/anomalies";
+          : ep === "policy"
+            ? "/api/v1/policy"
+            : ep === "policylog"
+              ? "/api/v1/policy/log?limit=100"
+              : "/api/v1/anomalies";
   pre.textContent = "Loading…";
   try {
     const res = await fetch(path, { headers: { Accept: "application/json" } });
@@ -561,20 +595,28 @@ async function renderRawPage(endpoint) {
 }
 
 async function refreshData() {
-  const [sRes, dRes, aRes, mRes] = await Promise.all([
+  const [sRes, dRes, aRes, mRes, pRes] = await Promise.all([
     fetch("/api/v1/summary", { headers: { Accept: "application/json" } }),
     fetch("/api/v1/devices", { headers: { Accept: "application/json" } }),
     fetch("/api/v1/alerts", { headers: { Accept: "application/json" } }),
     fetch("/api/v1/anomalies", { headers: { Accept: "application/json" } }),
+    fetch("/api/v1/policy", { headers: { Accept: "application/json" } }).catch(() => null),
   ]);
   if (sRes.ok) cache.summary = await sRes.json();
   if (dRes.ok) cache.devices = await dRes.json();
   if (aRes.ok) cache.alerts = await aRes.json();
   if (mRes.ok) cache.anomalies = await mRes.json();
+  if (pRes && pRes.ok) {
+    cache.policy = await pRes.json();
+    cache.policyError = null;
+  } else {
+    cache.policyError = pRes ? `The server answered ${pRes.status} when loading the policy.` : "The server could not be reached.";
+  }
 }
 
 async function tick() {
   await refreshData();
+  if (parseRoute().page === "policy") await refreshPolicyLog();
   if (!paused) {
     renderCurrentRoute();
   }
@@ -583,6 +625,8 @@ async function tick() {
 function updatePausedIndicators() {
   const devNote = document.getElementById("devices-paused-note");
   const anomNote = document.getElementById("anomalies-paused-note");
+  const polNote = document.getElementById("policy-paused-note");
+  if (polNote) polNote.hidden = !paused;
   if (devNote) devNote.hidden = !paused;
   if (anomNote) anomNote.hidden = !paused;
 }
@@ -647,9 +691,648 @@ async function renderBuildInfo() {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Policy (active response)
+// ---------------------------------------------------------------------------
+
+const TOKEN_KEY = "cerberus.apiToken";
+let memoryToken = "";
+let lastPrefill = "";
+
+// The token lives in sessionStorage (this tab only, cleared on close), with
+// an in-memory fallback when storage is unavailable.
+function getToken() {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) || memoryToken;
+  } catch {
+    return memoryToken;
+  }
+}
+
+function setToken(t) {
+  memoryToken = t;
+  try {
+    if (t) sessionStorage.setItem(TOKEN_KEY, t);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage blocked: memory only */
+  }
+}
+
+async function policyWrite(method, path, body) {
+  const headers = { Accept: "application/json", Authorization: `Bearer ${getToken()}` };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  let res;
+  try {
+    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  } catch {
+    return { ok: false, status: 0, error: "The server could not be reached. Check that Cerberus is running." };
+  }
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (res.status === 401) {
+    setToken("");
+    renderPolicyAccess();
+    return { ok: false, status: 401, error: "The API token was not accepted. Enter it again to make changes." };
+  }
+  if (!res.ok) {
+    return { ok: false, status: res.status, error: (data && data.error) || `The server answered ${res.status}.` };
+  }
+  return { ok: true, status: res.status, data };
+}
+
+function formatBytes(n) {
+  if (!n) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+function directionLabel(dir) {
+  return dir === "src" ? "From it" : dir === "dst" ? "To it" : "To or from it";
+}
+
+function renderPolicyMode() {
+  const banner = document.getElementById("policy-mode");
+  const title = document.getElementById("policy-mode-title");
+  const text = document.getElementById("policy-mode-text");
+  const btn = document.getElementById("policy-mode-toggle");
+  const st = cache.policy;
+  if (!banner || !title || !text || !btn) return;
+  banner.classList.remove("is-monitor", "is-enforce");
+  if (!st) {
+    title.textContent = "Policy";
+    text.textContent = cache.policyError || "Loading policy…";
+    btn.hidden = true;
+    return;
+  }
+  const enforcing = st.mode === "enforce";
+  banner.classList.add(enforcing ? "is-enforce" : "is-monitor");
+  title.textContent = enforcing ? "Enforcing" : "Dry run";
+  let msg = enforcing
+    ? "Block rules are dropping matching traffic in the kernel."
+    : "Rules count matching traffic, but nothing is dropped. Switch to enforcing when the counts look right.";
+  if (!st.kernel_attached) msg += " The classifier is not attached yet, so counts are not available.";
+  text.textContent = msg;
+  btn.hidden = !st.writes_enabled || !getToken();
+  btn.textContent = enforcing ? "Switch to dry run" : "Start enforcing";
+  btn.classList.toggle("danger", !enforcing);
+}
+
+function renderPolicyAccess() {
+  const note = document.getElementById("policy-access-note");
+  const form = document.getElementById("policy-unlock");
+  const unlocked = document.getElementById("policy-locked-actions");
+  const submit = document.getElementById("policy-add-submit");
+  const filterSubmit = document.getElementById("filter-add-submit");
+  const st = cache.policy;
+  if (!note || !form || !unlocked || !submit) return;
+  if (filterSubmit) filterSubmit.disabled = !(st && st.writes_enabled && getToken());
+  if (!st) {
+    form.hidden = true;
+    unlocked.hidden = true;
+    submit.disabled = true;
+    return;
+  }
+  if (!st.writes_enabled) {
+    note.textContent =
+      "This server does not accept policy changes. Restart Cerberus with CERBERUS_API_TOKEN set (16 characters or more) to manage rules here.";
+    form.hidden = true;
+    unlocked.hidden = true;
+    submit.disabled = true;
+  } else if (getToken()) {
+    note.textContent = "You can add and remove rules and change the mode. Every change is recorded below.";
+    form.hidden = true;
+    unlocked.hidden = false;
+    submit.disabled = false;
+  } else {
+    note.textContent = "Enter the API token to add or remove rules. Viewing the policy needs no token.";
+    form.hidden = false;
+    unlocked.hidden = true;
+    submit.disabled = true;
+  }
+  renderPolicyMode();
+}
+
+function renderPolicyRules() {
+  const root = document.getElementById("policy-rules");
+  const err = document.getElementById("policy-rules-error");
+  const st = cache.policy;
+  if (!root || !err) return;
+  err.hidden = !cache.policyError || !st;
+  err.textContent = cache.policyError ? `${cache.policyError} Showing the last known rules.` : "";
+  if (!st) {
+    root.innerHTML = `<p class="muted">${escapeHtml(cache.policyError || "Loading…")}</p>`;
+    return;
+  }
+  if (!st.rules.length) {
+    root.innerHTML =
+      "<p class='muted'>No rules yet. Add one above, or open a device and choose “Quarantine this device”.</p>";
+    return;
+  }
+  const canEdit = st.writes_enabled && !!getToken();
+  const rows = st.rules
+    .map((r) => {
+      const target = r.mac ? `Device <code>${escapeHtml(r.mac)}</code>` : `<code>${escapeHtml(r.cidr)}</code>`;
+      const dir = r.mac ? "From it" : directionLabel(r.direction);
+      const verdict =
+        r.action === "drop"
+          ? `<span class="verdict verdict-drop">Block</span>`
+          : `<span class="verdict verdict-log">Count only</span>`;
+      const c = r.counters || { packets: 0, bytes: 0 };
+      const expires = r.expires_at ? new Date(r.expires_at).toLocaleString() : "Never";
+      const remove = canEdit
+        ? `<button type="button" class="rule-remove" data-id="${escapeHtml(r.id)}" aria-label="Remove rule ${escapeHtml(r.id)}">Remove</button>`
+        : "";
+      return `<tr>
+        <td data-label="Rule"><span><code class="rule-id">${escapeHtml(r.id)}</code></span></td>
+        <td data-label="Target"><span>${target}</span></td>
+        <td data-label="Direction"><span>${dir}</span></td>
+        <td data-label="Action"><span>${verdict}</span></td>
+        <td data-label="Matches" class="num"><span>${c.packets.toLocaleString()} <span class="muted">(${formatBytes(c.bytes)})</span></span></td>
+        <td data-label="Expires"><span>${escapeHtml(expires)}</span></td>
+        <td data-label="Reason"><span>${escapeHtml(r.comment || "")}</span></td>
+        <td class="rule-actions">${remove}</td>
+      </tr>`;
+    })
+    .join("");
+  root.innerHTML = `<table class="device-table rules-table">
+    <caption class="muted">${st.rules.length} of ${st.max_rules} rules in use</caption>
+    <thead><tr><th scope="col">Rule</th><th scope="col">Target</th><th scope="col">Direction</th><th scope="col">Action</th>
+    <th scope="col" class="num">Matches</th><th scope="col">Expires</th><th scope="col">Reason</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function renderPolicyAudit() {
+  const root = document.getElementById("policy-audit");
+  const st = cache.policy;
+  if (!root) return;
+  if (!st || !st.audit.length) {
+    root.innerHTML = "<li class='muted'>No changes since Cerberus started.</li>";
+    return;
+  }
+  root.innerHTML = st.audit
+    .slice()
+    .reverse()
+    .slice(0, 50)
+    .map(
+      (a) => `<li><span>${escapeHtml(a.detail)}</span>
+        <span class="audit-meta">${escapeHtml(a.action)}${a.rule_id ? ` ${escapeHtml(a.rule_id)}` : ""} by ${escapeHtml(a.actor)}, ${escapeHtml(new Date(a.at).toLocaleString())}</span></li>`,
+    )
+    .join("");
+}
+
+function setTargetKind(kind) {
+  const target = document.getElementById("policy-target");
+  const help = document.getElementById("policy-target-help");
+  const dirField = document.getElementById("policy-direction-field");
+  const label = document.querySelector('label[for="policy-target"]');
+  if (!target || !help || !dirField || !label) return;
+  const mac = kind === "mac";
+  label.textContent = mac ? "MAC address" : "Address";
+  help.textContent = mac
+    ? "For example 3c:22:fb:10:aa:01. Every frame from this device is matched, including ARP."
+    : "For example 203.0.113.0/24, 198.51.100.7 or 2001:db8::/48.";
+  dirField.hidden = mac;
+  document.querySelectorAll('#policy-add input[name="kind"]').forEach((r) => {
+    /** @type {HTMLInputElement} */ (r).checked = r.value === kind;
+  });
+}
+
+function applyPrefill(prefill) {
+  const key = prefill ? `${prefill.kind}:${prefill.value}` : "";
+  if (!prefill || key === lastPrefill) return;
+  lastPrefill = key;
+  setTargetKind(prefill.kind);
+  const target = /** @type {HTMLInputElement} */ (document.getElementById("policy-target"));
+  if (target) {
+    target.value = prefill.value;
+    target.focus();
+  }
+}
+
+function renderPolicyPage(prefill) {
+  renderPolicyMode();
+  renderPolicyAccess();
+  renderPolicyFilters();
+  renderPolicyLog();
+  renderPolicyRules();
+  renderPolicyAudit();
+  renderInterfaceOptions();
+  applyPrefill(prefill);
+}
+
+function showFormMessage(id, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.hidden = !text;
+}
+
+async function reloadPolicy() {
+  try {
+    const res = await fetch("/api/v1/policy", { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      cache.policy = await res.json();
+      cache.policyError = null;
+    }
+  } catch {
+    /* the next tick retries */
+  }
+  if (parseRoute().page === "policy") renderPolicyPage(null);
+}
+
+function setupPolicy() {
+  document.querySelectorAll('#policy-add input[name="kind"]').forEach((r) => {
+    r.addEventListener("change", (e) => {
+      setTargetKind(/** @type {HTMLInputElement} */ (e.target).value);
+      showFormMessage("policy-add-error", "");
+      document.getElementById("policy-target")?.removeAttribute("aria-invalid");
+    });
+  });
+
+  document.getElementById("policy-unlock")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = /** @type {HTMLInputElement} */ (document.getElementById("policy-token"));
+    const value = input.value.trim();
+    const note = document.getElementById("policy-access-note");
+    if (value.length < 16) {
+      input.setAttribute("aria-invalid", "true");
+      if (note) note.textContent = "The token is at least 16 characters long.";
+      input.focus();
+      return;
+    }
+    setToken(value);
+    // Setting the mode to its current value checks the token without
+    // changing anything (and without an audit entry).
+    const res = await policyWrite("PUT", "/api/v1/policy/mode", { mode: cache.policy ? cache.policy.mode : "monitor" });
+    if (!res.ok) {
+      setToken("");
+      input.setAttribute("aria-invalid", "true");
+      renderPolicyAccess();
+      if (note) note.textContent = res.error;
+      input.focus();
+      return;
+    }
+    input.value = "";
+    input.removeAttribute("aria-invalid");
+    renderPolicyPage(null);
+  });
+
+  document.getElementById("policy-lock")?.addEventListener("click", () => {
+    setToken("");
+    renderPolicyPage(null);
+    document.getElementById("policy-token")?.focus();
+  });
+
+  document.getElementById("policy-mode-toggle")?.addEventListener("click", async (e) => {
+    const btn = /** @type {HTMLButtonElement} */ (e.currentTarget);
+    const next = cache.policy && cache.policy.mode === "enforce" ? "monitor" : "enforce";
+    if (
+      next === "enforce" &&
+      !window.confirm("Start enforcing? Block rules will drop matching traffic on every monitored interface.")
+    ) {
+      return;
+    }
+    btn.disabled = true;
+    const res = await policyWrite("PUT", "/api/v1/policy/mode", { mode: next });
+    btn.disabled = false;
+    if (!res.ok) {
+      showFormMessage("policy-rules-error", res.error);
+      return;
+    }
+    await reloadPolicy();
+  });
+
+  document.getElementById("policy-add")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = /** @type {HTMLFormElement} */ (e.currentTarget);
+    const submit = /** @type {HTMLButtonElement} */ (document.getElementById("policy-add-submit"));
+    const target = /** @type {HTMLInputElement} */ (document.getElementById("policy-target"));
+    showFormMessage("policy-add-error", "");
+    showFormMessage("policy-add-ok", "");
+    const fd = new FormData(form);
+    const kind = fd.get("kind");
+    const value = String(fd.get("target") || "").trim();
+    if (!value) {
+      target.setAttribute("aria-invalid", "true");
+      showFormMessage("policy-add-error", kind === "mac" ? "Enter the device's MAC address." : "Enter an IP address or range.");
+      target.focus();
+      return;
+    }
+    const body = {
+      action: String(fd.get("action")),
+      ttl_seconds: Number(fd.get("ttl")) || 0,
+      comment: String(fd.get("comment") || "").trim(),
+      force: fd.get("force") === "on",
+    };
+    if (kind === "mac") body.mac = value;
+    else {
+      body.cidr = value;
+      body.direction = String(fd.get("direction"));
+    }
+    submit.disabled = true;
+    const res = await policyWrite("POST", "/api/v1/policy/rules", body);
+    submit.disabled = false;
+    if (!res.ok) {
+      if (res.status === 400 || res.status === 409 || res.status === 422) target.setAttribute("aria-invalid", "true");
+      const hint = res.status === 422 ? " Tick “Allow rules that cover this host or the gateway” if you mean it." : "";
+      showFormMessage("policy-add-error", res.error + hint);
+      return;
+    }
+    target.removeAttribute("aria-invalid");
+    target.value = "";
+    /** @type {HTMLInputElement} */ (document.getElementById("policy-comment")).value = "";
+    /** @type {HTMLInputElement} */ (document.getElementById("policy-force")).checked = false;
+    if (parseRoute().prefill) history.replaceState(null, "", "#/policy");
+    lastPrefill = "";
+    const verb = res.data.action === "drop" ? "Block" : "Count-only";
+    const mode = cache.policy && cache.policy.mode === "enforce" ? "" : " It is counting only until you start enforcing.";
+    showFormMessage("policy-add-ok", `${verb} rule ${res.data.id} added.${res.data.action === "drop" ? mode : ""}`);
+    await reloadPolicy();
+  });
+
+  document.getElementById("policy-target")?.addEventListener("input", (e) => {
+    /** @type {HTMLInputElement} */ (e.target).removeAttribute("aria-invalid");
+    showFormMessage("policy-add-error", "");
+    showFormMessage("policy-add-ok", "");
+  });
+
+  document.getElementById("policy-rules")?.addEventListener("click", async (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest(".rule-remove");
+    if (!btn) return;
+    const id = btn.getAttribute("data-id") || "";
+    if (!window.confirm(`Remove rule ${id}? Matching traffic will no longer be blocked or counted.`)) return;
+    /** @type {HTMLButtonElement} */ (btn).disabled = true;
+    const res = await policyWrite("DELETE", `/api/v1/policy/rules/${encodeURIComponent(id)}`);
+    if (!res.ok) {
+      /** @type {HTMLButtonElement} */ (btn).disabled = false;
+      showFormMessage("policy-rules-error", res.error);
+      return;
+    }
+    showFormMessage("policy-rules-error", "");
+    await reloadPolicy();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Filter chain (bpfilter-style ordered rules)
+// ---------------------------------------------------------------------------
+
+const VERDICT_LABEL = { drop: "Block", accept: "Allow", continue: "Count" };
+
+function verdictBadge(v) {
+  const cls = v === "drop" ? "verdict-drop" : v === "accept" ? "verdict-accept" : "verdict-log";
+  return `<span class="verdict ${cls}">${VERDICT_LABEL[v] || escapeHtml(v)}</span>`;
+}
+
+function renderPolicyFilters() {
+  const root = document.getElementById("policy-filters");
+  const st = cache.policy;
+  if (!root) return;
+  if (!st) {
+    root.innerHTML = `<p class="muted">${escapeHtml(cache.policyError || "Loading…")}</p>`;
+    return;
+  }
+  const filters = st.filters || [];
+  if (!filters.length) {
+    root.innerHTML =
+      "<p class='muted'>No filter rules yet. Add one below, for example: block TCP to port 23 from anywhere except your admin network.</p>";
+    return;
+  }
+  const canEdit = st.writes_enabled && !!getToken();
+  const rows = filters
+    .map((f, i) => {
+      const c = f.counters || { packets: 0, bytes: 0 };
+      const expires = f.expires_at ? new Date(f.expires_at).toLocaleString() : "Never";
+      const log = f.log ? `Yes${f.log_every_seconds ? `, every ${f.log_every_seconds}s` : ""}` : "No";
+      const id = escapeHtml(f.id);
+      const controls = canEdit
+        ? `<span class="row-controls">
+            <button type="button" data-act="up" data-id="${id}" aria-label="Move rule ${id} up" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" data-act="down" data-id="${id}" aria-label="Move rule ${id} down" ${i === filters.length - 1 ? "disabled" : ""}>↓</button>
+            <button type="button" data-act="toggle" data-id="${id}" data-enabled="${f.enabled}">${f.enabled ? "Disable" : "Enable"}</button>
+            <button type="button" class="rule-remove" data-act="remove" data-id="${id}" aria-label="Remove rule ${id}">Remove</button>
+          </span>`
+        : "";
+      return `<tr class="${f.enabled ? "" : "is-disabled"}">
+        <td data-label="#" class="pos"><span>${i + 1}</span></td>
+        <td data-label="Match"><span><code class="match">${escapeHtml(f.summary)}</code>${f.enabled ? "" : " <span class='muted'>(disabled)</span>"}<br /><span class="muted">${id}</span></span></td>
+        <td data-label="Action"><span>${verdictBadge(f.verdict)}</span></td>
+        <td data-label="Log"><span>${log}</span></td>
+        <td data-label="Matches" class="num"><span>${c.packets.toLocaleString()} <span class="muted">(${formatBytes(c.bytes)})</span></span></td>
+        <td data-label="Expires"><span>${escapeHtml(expires)}</span></td>
+        <td data-label="Reason"><span>${escapeHtml(f.comment || "")}</span></td>
+        <td class="rule-actions">${controls}</td>
+      </tr>`;
+    })
+    .join("");
+  root.innerHTML = `<table class="device-table rules-table filters-table">
+    <caption class="muted">${filters.length} of ${st.max_filters} filter rules</caption>
+    <thead><tr><th scope="col">#</th><th scope="col">Match</th><th scope="col">Action</th><th scope="col">Log</th>
+    <th scope="col" class="num">Matches</th><th scope="col">Expires</th><th scope="col">Reason</th><th scope="col"><span class="visually-hidden">Controls</span></th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+async function refreshPolicyLog() {
+  try {
+    const res = await fetch("/api/v1/policy/log?limit=50", { headers: { Accept: "application/json" } });
+    if (res.ok) cache.policyLog = await res.json();
+  } catch {
+    /* keep the last log */
+  }
+}
+
+function renderPolicyLog() {
+  const root = document.getElementById("policy-log");
+  if (!root) return;
+  const entries = cache.policyLog || [];
+  if (!entries.length) {
+    root.innerHTML = "<p class='muted'>Nothing logged yet. Tick “Log matching packets” on a filter rule to see its packets here.</p>";
+    return;
+  }
+  const rows = entries
+    .map((e) => {
+      const ep = (addr, port) => (addr ? `${escapeHtml(addr)}${port ? `:${port}` : ""}` : "");
+      const flow = e.src ? `${ep(e.src, e.src_port)} → ${ep(e.dst, e.dst_port)}` : "non-IP frame";
+      const detail = e.tcp_flags
+        ? escapeHtml(e.tcp_flags.toUpperCase())
+        : e.icmp_type !== undefined && e.icmp_type !== null
+          ? `type ${e.icmp_type} code ${e.icmp_code}`
+          : "";
+      const outcome =
+        e.verdict === "drop" ? (e.dropped ? "Dropped" : "Would drop") : e.verdict === "accept" ? "Allowed" : "Counted";
+      return `<tr>
+        <td data-label="Time"><span>${escapeHtml(new Date(e.at).toLocaleTimeString())}</span></td>
+        <td data-label="Rule"><span><code>${escapeHtml(e.rule_id)}</code></span></td>
+        <td data-label="Outcome"><span>${outcome}</span></td>
+        <td data-label="Interface"><span>${escapeHtml(e.interface || "")}</span></td>
+        <td data-label="Protocol"><span>${escapeHtml((e.protocol || "").toUpperCase())}</span></td>
+        <td data-label="Flow" class="flow"><span>${flow}</span></td>
+        <td data-label="Details"><span>${detail}</span></td>
+        <td data-label="Device"><span>${escapeHtml(e.src_mac)}</span></td>
+        <td data-label="Size" class="num"><span>${e.length} B</span></td>
+      </tr>`;
+    })
+    .join("");
+  root.innerHTML = `<table class="device-table log-table">
+    <thead><tr><th scope="col">Time</th><th scope="col">Rule</th><th scope="col">Outcome</th><th scope="col">Interface</th><th scope="col">Protocol</th>
+    <th scope="col">Source → destination</th><th scope="col">Details</th><th scope="col">Device</th><th scope="col" class="num">Size</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function renderInterfaceOptions() {
+  const list = document.getElementById("filter-iface-list");
+  if (!list || !cache.devices) return;
+  const names = [...new Set(cache.devices.map((d) => d.interface).filter(Boolean))].sort();
+  const html = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
+  if (list.innerHTML !== html) list.innerHTML = html;
+}
+
+function updateFilterFormForProtocol() {
+  const proto = /** @type {HTMLSelectElement} */ (document.getElementById("filter-protocol")).value;
+  const isIcmp = proto === "icmp" || proto === "icmpv6";
+  document.querySelectorAll("#filter-add [data-ports]").forEach((el) => {
+    /** @type {HTMLElement} */ (el).hidden = isIcmp;
+  });
+  document.querySelectorAll("#filter-add [data-tcp]").forEach((el) => {
+    /** @type {HTMLElement} */ (el).hidden = proto !== "tcp";
+  });
+  document.querySelectorAll("#filter-add [data-icmp]").forEach((el) => {
+    /** @type {HTMLElement} */ (el).hidden = !isIcmp;
+  });
+}
+
+function buildFilterBody(form) {
+  const fd = new FormData(form);
+  const str = (k) => String(fd.get(k) || "").trim();
+  const proto = str("protocol");
+  const match = {};
+  const set = (k, v) => {
+    if (v !== "" && v !== undefined && v !== null && v !== false) match[k] = v;
+  };
+  set("protocol", proto);
+  set("interface", str("interface"));
+  set("src", str("src"));
+  set("dst", str("dst"));
+  if (match.src) set("src_not", fd.get("src_not") === "on");
+  if (match.dst) set("dst_not", fd.get("dst_not") === "on");
+  set("src_mac", str("src_mac"));
+  const isIcmp = proto === "icmp" || proto === "icmpv6";
+  if (!isIcmp) {
+    set("src_port", str("src_port"));
+    set("dst_port", str("dst_port"));
+    if (match.src_port) set("src_port_not", fd.get("src_port_not") === "on");
+    if (match.dst_port) set("dst_port_not", fd.get("dst_port_not") === "on");
+  }
+  if (proto === "tcp") {
+    const flags = fd.getAll("flag").map(String);
+    if (flags.length) match[str("flag_mode") === "all" ? "tcp_flags_all" : "tcp_flags_any"] = flags;
+  }
+  if (isIcmp) {
+    if (str("icmp_type") !== "") match.icmp_type = Number(str("icmp_type"));
+    if (str("icmp_code") !== "") match.icmp_code = Number(str("icmp_code"));
+  }
+  const body = {
+    verdict: str("verdict"),
+    match,
+    log: fd.get("log") === "on",
+    ttl_seconds: Number(str("ttl")) || 0,
+    comment: str("comment"),
+    force: fd.get("force") === "on",
+  };
+  if (body.log) body.log_every_seconds = Number(str("log_every") || "1");
+  if (str("position") === "top") body.position = 0;
+  return body;
+}
+
+function setupFilters() {
+  document.getElementById("filter-protocol")?.addEventListener("change", updateFilterFormForProtocol);
+  updateFilterFormForProtocol();
+
+  document.getElementById("filter-add")?.addEventListener("input", () => {
+    showFormMessage("filter-add-error", "");
+    showFormMessage("filter-add-ok", "");
+  });
+
+  document.getElementById("filter-add")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = /** @type {HTMLFormElement} */ (e.currentTarget);
+    const submit = /** @type {HTMLButtonElement} */ (document.getElementById("filter-add-submit"));
+    showFormMessage("filter-add-error", "");
+    showFormMessage("filter-add-ok", "");
+    const body = buildFilterBody(form);
+    submit.disabled = true;
+    const res = await policyWrite("POST", "/api/v1/policy/filters", body);
+    submit.disabled = false;
+    if (!res.ok) {
+      const hint =
+        res.status === 422 ? " Tick “Allow a block that matches every host…” below if you mean it." : "";
+      showFormMessage("filter-add-error", res.error + hint);
+      return;
+    }
+    form.reset();
+    updateFilterFormForProtocol();
+    const pos = body.position === 0 ? "at the top" : "at the end";
+    const dry =
+      res.data.verdict === "drop" && cache.policy && cache.policy.mode !== "enforce"
+        ? " It only counts until you start enforcing."
+        : "";
+    showFormMessage("filter-add-ok", `${VERDICT_LABEL[res.data.verdict]} rule ${res.data.id} added ${pos}.${dry}`);
+    await reloadPolicy();
+  });
+
+  document.getElementById("policy-filters")?.addEventListener("click", async (e) => {
+    const btn = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest("button[data-act]"));
+    if (!btn || !cache.policy) return;
+    const id = btn.dataset.id || "";
+    const act = btn.dataset.act;
+    const filters = cache.policy.filters || [];
+    const idx = filters.findIndex((f) => f.id === id);
+    let res;
+    btn.disabled = true;
+    if (act === "up" || act === "down") {
+      res = await policyWrite("PUT", `/api/v1/policy/filters/${encodeURIComponent(id)}/position`, {
+        position: act === "up" ? idx - 1 : idx + 1,
+      });
+    } else if (act === "toggle") {
+      res = await policyWrite("PUT", `/api/v1/policy/filters/${encodeURIComponent(id)}/enabled`, {
+        enabled: btn.dataset.enabled !== "true",
+      });
+    } else if (act === "remove") {
+      if (!window.confirm(`Remove filter rule ${id}? Packets it matched will be handled by the rules below it.`)) {
+        btn.disabled = false;
+        return;
+      }
+      res = await policyWrite("DELETE", `/api/v1/policy/filters/${encodeURIComponent(id)}`);
+    }
+    if (res && !res.ok) {
+      btn.disabled = false;
+      showFormMessage("filters-error", res.error);
+      return;
+    }
+    showFormMessage("filters-error", "");
+    await reloadPolicy();
+    // Keep keyboard focus on the moved rule's matching control.
+    if (act === "up" || act === "down") {
+      const sel = (a) => `#policy-filters button[data-act="${a}"][data-id="${CSS.escape(id)}"]:not([disabled])`;
+      /** @type {HTMLElement | null} */ (
+        document.querySelector(sel(act)) || document.querySelector(sel(act === "up" ? "down" : "up")) || document.querySelector(sel("toggle"))
+      )?.focus();
+    }
+  });
+}
+
 setupThemeToggle();
 setupPauseToggle();
 setupRouter();
+setupPolicy();
+setupFilters();
 renderBuildInfo();
 tick();
 setInterval(tick, 3000);

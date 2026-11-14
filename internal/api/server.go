@@ -4,14 +4,20 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"maps"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
+	"github.com/zrougamed/cerberus/internal/policy"
 	"github.com/zrougamed/cerberus/internal/version"
 )
 
@@ -20,10 +26,26 @@ var webFS embed.FS
 
 type Server struct {
 	monitor *monitor.NetworkMonitor
+	// Set once the BPF collection is loaded, which happens after the HTTP
+	// server has started, hence atomic.
+	kernelStats atomic.Pointer[kernelStatsFunc]
+
+	policy    *policy.Engine
+	tokenHash []byte // sha256 of CERBERUS_API_TOKEN; nil disables writes
+	authLimit authLimiter
 }
+
+type kernelStatsFunc func() (kstats.Snapshot, error)
 
 func NewServer(mon *monitor.NetworkMonitor) *Server {
 	return &Server{monitor: mon}
+}
+
+// SetKernelStats registers the source of the BPF-side counters exported in
+// /metrics. Without it those series are omitted.
+func (s *Server) SetKernelStats(fn func() (kstats.Snapshot, error)) {
+	f := kernelStatsFunc(fn)
+	s.kernelStats.Store(&f)
 }
 
 func (s *Server) Handler() (http.Handler, error) {
@@ -35,6 +57,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/v1/anomalies", s.handleAnomalies)
 	mux.HandleFunc("/api/v1/version", s.handleVersion)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	if s.policy != nil {
+		s.registerPolicyRoutes(mux)
+	}
 
 	staticSub, err := fs.Sub(webFS, "web")
 	if err != nil {
@@ -42,7 +67,40 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	return mux, nil
+	return securityHeaders(mux), nil
+}
+
+// contentSecurityPolicy allows only the embedded dashboard's own script and
+// stylesheet, Google Fonts, and same-origin API calls. There is no inline
+// script or style in internal/api/web; keep it that way (use classes in
+// styles.css) or the browser will block it.
+const contentSecurityPolicy = "default-src 'none'; " +
+	"script-src 'self'; " +
+	"style-src 'self' https://fonts.googleapis.com; " +
+	"font-src https://fonts.gstatic.com; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"base-uri 'none'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
+// securityHeaders sets browser hardening headers on every response. The
+// dashboard is never meant to be framed, and the API carries the device
+// inventory, so responses are not cached either.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			h.Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type summaryResponse struct {
@@ -230,6 +288,18 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "cerberus_packets_total{protocol=\"tls\"} %d\n", pkt["tls"])
 	fmt.Fprintln(w)
 
+	s.writeKernelMetrics(w)
+
+	if hits := s.monitor.GetWatchlistHits(); len(hits) > 0 {
+		ids := slices.Sorted(maps.Keys(hits))
+		fmt.Fprintln(w, "# HELP cerberus_watchlist_hits_total Packets to or from an address on a watchlist.")
+		fmt.Fprintln(w, "# TYPE cerberus_watchlist_hits_total counter")
+		for _, id := range ids {
+			fmt.Fprintf(w, "cerberus_watchlist_hits_total{list=\"%s\"} %d\n", escapeLabelValue(id), hits[id])
+		}
+		fmt.Fprintln(w)
+	}
+
 	fmt.Fprintln(w, "# HELP cerberus_devices_total Number of tracked devices.")
 	fmt.Fprintln(w, "# TYPE cerberus_devices_total gauge")
 	fmt.Fprintf(w, "cerberus_devices_total %d\n\n", len(devices))
@@ -274,6 +344,50 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "cerberus_dns_correlated_connections_total{mac=\"%s\",domain=\"%s\"} %d\n", escapeLabelValue(d.MAC), escapeLabelValue(domain), count)
 		}
 	}
+}
+
+// writeKernelMetrics exports the classifier's own counters. They count every
+// packet the hook saw, including ones that produced no event, and the events
+// lost to a full ring buffer.
+func (s *Server) writeKernelMetrics(w io.Writer) {
+	fn := s.kernelStats.Load()
+	if fn == nil {
+		return
+	}
+	snap, err := (*fn)()
+	if err != nil {
+		fmt.Fprintf(w, "# kernel counters unavailable: %s\n\n", strings.ReplaceAll(err.Error(), "\n", " "))
+		return
+	}
+	classes := []struct {
+		name string
+		c    kstats.Counter
+	}{
+		{"total", snap.Total},
+		{"arp", snap.ARP},
+		{"ipv4", snap.IPv4},
+		{"ipv6", snap.IPv6},
+		{"other", snap.Other},
+	}
+	fmt.Fprintln(w, "# HELP cerberus_kernel_packets_total Packets seen by the TC hook, by L3 class.")
+	fmt.Fprintln(w, "# TYPE cerberus_kernel_packets_total counter")
+	for _, c := range classes {
+		fmt.Fprintf(w, "cerberus_kernel_packets_total{class=\"%s\"} %d\n", c.name, c.c.Packets)
+	}
+	fmt.Fprintln(w, "# HELP cerberus_kernel_bytes_total Bytes seen by the TC hook, by L3 class.")
+	fmt.Fprintln(w, "# TYPE cerberus_kernel_bytes_total counter")
+	for _, c := range classes {
+		fmt.Fprintf(w, "cerberus_kernel_bytes_total{class=\"%s\"} %d\n", c.name, c.c.Bytes)
+	}
+	fmt.Fprintln(w, "# HELP cerberus_ringbuf_dropped_events_total Events lost because the ring buffer was full.")
+	fmt.Fprintln(w, "# TYPE cerberus_ringbuf_dropped_events_total counter")
+	fmt.Fprintf(w, "cerberus_ringbuf_dropped_events_total %d\n", snap.RingbufFull.Packets)
+	fmt.Fprintln(w, "# HELP cerberus_policy_dropped_packets_total Packets dropped by enforced policy rules.")
+	fmt.Fprintln(w, "# TYPE cerberus_policy_dropped_packets_total counter")
+	fmt.Fprintf(w, "cerberus_policy_dropped_packets_total %d\n", snap.PolicyDropped.Packets)
+	fmt.Fprintln(w, "# HELP cerberus_filter_log_lost_total Filter log events lost because the log ring buffer was full.")
+	fmt.Fprintln(w, "# TYPE cerberus_filter_log_lost_total counter")
+	fmt.Fprintf(w, "cerberus_filter_log_lost_total %d\n\n", snap.FilterLogLost.Packets)
 }
 
 func escapeLabelValue(value string) string {

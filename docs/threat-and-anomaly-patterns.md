@@ -1,6 +1,6 @@
 # Threat-relevant patterns Cerberus can surface
 
-Cerberus is a **visibility and behavioral-anomaly** tool, not a full IDS/IPS product. It does not block traffic or label packets with vendor threat names. What it **does** do is measure **metadata** (counts, ports, rates, L7 snippets) and raise **rule alerts** or **ML-lite anomaly scores** when traffic **shape** diverges from a recently learned baseline.
+Cerberus is a **visibility and behavioral-anomaly** tool, not a full IDS/IPS product. It does not label packets with vendor threat names, and detections never block anything on their own. Blocking is a separate, explicit step: operator-defined policy rules ([active-response.md](active-response.md)). What it **does** do is measure **metadata** (counts, ports, rates, L7 snippets) and raise **rule alerts** or **ML-lite anomaly scores** when traffic **shape** diverges from a recently learned baseline.
 
 The behaviors below are described in terms of **what the pipeline can show** and **what that often lines up with** in real networks. Always confirm with your own tools, captures, and policy.
 
@@ -58,7 +58,7 @@ Cerberus does **not** distinguish “attack” vs “viral legitimate traffic”
 
 **Application-layer** floods (HTTP/DNS/TLS-heavy) may elevate **`http_rate`**, **`dns_rate`**, or **`tls_rate`** in the anomaly vector if that traffic is present in the capture path.
 
-Again: **no blocking**, **no “this is a DDoS” label**—only statistical deviation and counters.
+Again: **no automatic blocking** and **no “this is a DDoS” label**, only statistical deviation and counters. To act on a finding, add a policy rule ([active-response.md](active-response.md)).
 
 ---
 

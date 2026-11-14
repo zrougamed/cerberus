@@ -26,3 +26,7 @@ README.md
 LICENSE
 *.md
 data/
+
+# Local-only notes (never part of the build context)
+local-track/
+.local/

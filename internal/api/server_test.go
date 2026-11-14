@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/alerts"
+	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/version"
@@ -123,7 +126,7 @@ func TestAlertsEndpointReturnsRecentAlertsFirst(t *testing.T) {
 		_ = os.Remove(dbPath)
 	}()
 
-	for i := 0; i < 201; i++ {
+	for range 201 {
 		mon.TrackEvent(&models.NetworkEvent{
 			EventType: models.EVENT_TYPE_DNS,
 			SrcMac:    [6]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01},
@@ -133,7 +136,7 @@ func TestAlertsEndpointReturnsRecentAlertsFirst(t *testing.T) {
 		})
 	}
 	time.Sleep(2 * time.Millisecond)
-	for i := 0; i < 501; i++ {
+	for range 501 {
 		mon.TrackEvent(&models.NetworkEvent{
 			EventType: models.EVENT_TYPE_TCP,
 			SrcMac:    [6]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x02},
@@ -233,5 +236,189 @@ func TestAnomaliesEndpointReturnsSnapshot(t *testing.T) {
 	}
 	if out.WindowSeconds <= 0 {
 		t.Fatalf("expected positive window size, got %d", out.WindowSeconds)
+	}
+}
+
+func TestHandler_SetsSecurityHeaders(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	mon, err := monitor.NewNetworkMonitor(10, dbPath)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	t.Cleanup(func() { _ = mon.Close() })
+
+	handler, err := NewServer(mon).Handler()
+	if err != nil {
+		t.Fatalf("failed to build handler: %v", err)
+	}
+
+	common := map[string]string{
+		"Content-Security-Policy": contentSecurityPolicy,
+		"X-Frame-Options":         "DENY",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "no-referrer",
+	}
+	tests := []struct {
+		path      string
+		wantCache string
+	}{
+		{path: "/", wantCache: ""},
+		{path: "/api/v1/summary", wantCache: "no-store"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s: status %d", tc.path, rr.Code)
+			}
+			for name, want := range common {
+				if got := rr.Header().Get(name); got != want {
+					t.Errorf("%s: got %q, want %q", name, got, want)
+				}
+			}
+			if !strings.Contains(rr.Header().Get("Permissions-Policy"), "camera=()") {
+				t.Errorf("Permissions-Policy missing camera=(): %q", rr.Header().Get("Permissions-Policy"))
+			}
+			if got := rr.Header().Get("Cache-Control"); got != tc.wantCache {
+				t.Errorf("Cache-Control: got %q, want %q", got, tc.wantCache)
+			}
+		})
+	}
+}
+
+func TestMetrics_KernelCounters(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	mon, err := monitor.NewNetworkMonitor(10, dbPath)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	t.Cleanup(func() { _ = mon.Close() })
+
+	scrape := func(srv *Server) string {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		srv.handleMetrics(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		return rr.Body.String()
+	}
+
+	t.Run("omitted without a source", func(t *testing.T) {
+		body := scrape(NewServer(mon))
+		if strings.Contains(body, "cerberus_kernel_packets_total") {
+			t.Fatalf("kernel series should be absent:\n%s", body)
+		}
+	})
+
+	t.Run("exported from the source", func(t *testing.T) {
+		srv := NewServer(mon)
+		srv.SetKernelStats(func() (kstats.Snapshot, error) {
+			return kstats.Snapshot{
+				Total:       kstats.Counter{Packets: 42, Bytes: 4200},
+				IPv6:        kstats.Counter{Packets: 7, Bytes: 700},
+				RingbufFull: kstats.Counter{Packets: 3, Bytes: 192},
+			}, nil
+		})
+		body := scrape(srv)
+		for _, want := range []string{
+			`cerberus_kernel_packets_total{class="total"} 42`,
+			`cerberus_kernel_packets_total{class="ipv6"} 7`,
+			`cerberus_kernel_bytes_total{class="total"} 4200`,
+			`cerberus_ringbuf_dropped_events_total 3`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("missing %q in:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("error is reported as a comment", func(t *testing.T) {
+		srv := NewServer(mon)
+		srv.SetKernelStats(func() (kstats.Snapshot, error) {
+			return kstats.Snapshot{}, errors.New("map\nclosed")
+		})
+		body := scrape(srv)
+		if !strings.Contains(body, "# kernel counters unavailable: map closed") {
+			t.Fatalf("expected single-line error comment:\n%s", body)
+		}
+		if strings.Contains(body, "cerberus_ringbuf_dropped_events_total ") {
+			t.Fatalf("no samples expected on error:\n%s", body)
+		}
+	})
+}
+
+func TestMetrics_WatchlistHits(t *testing.T) {
+	cfg := alerts.DefaultConfig()
+	cfg.Watchlists = []alerts.Watchlist{
+		{ID: "zeta", Enabled: true, CIDRs: []string{"192.0.2.0/24"}, Direction: alerts.DirectionAny, Severity: "low"},
+		{ID: "alpha", Enabled: true, CIDRs: []string{"198.51.100.0/24"}, Direction: alerts.DirectionAny, Severity: "low"},
+	}
+	mon, err := monitor.NewNetworkMonitorWithAlerts(10, filepath.Join(t.TempDir(), "test.db"), cfg)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	t.Cleanup(func() { _ = mon.Close() })
+
+	rr := httptest.NewRecorder()
+	NewServer(mon).handleMetrics(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rr.Body.String()
+
+	alpha := strings.Index(body, `cerberus_watchlist_hits_total{list="alpha"} 0`)
+	zeta := strings.Index(body, `cerberus_watchlist_hits_total{list="zeta"} 0`)
+	if alpha < 0 || zeta < 0 {
+		t.Fatalf("watchlist series missing:\n%s", body)
+	}
+	if alpha > zeta {
+		t.Fatal("watchlist series should be sorted by list id")
+	}
+}
+
+func TestContentSecurityPolicy_Directives(t *testing.T) {
+	for _, want := range []string{
+		"default-src 'none'",
+		"script-src 'self'",
+		"frame-ancestors 'none'",
+		"base-uri 'none'",
+	} {
+		if !strings.Contains(contentSecurityPolicy, want) {
+			t.Errorf("CSP missing %q: %s", want, contentSecurityPolicy)
+		}
+	}
+	if strings.Contains(contentSecurityPolicy, "unsafe-") {
+		t.Errorf("CSP must not allow unsafe-* sources: %s", contentSecurityPolicy)
+	}
+}
+
+// The CSP forbids inline script and style; fail fast if the embedded UI
+// reintroduces them.
+func TestEmbeddedWeb_NoInlineScriptOrStyle(t *testing.T) {
+	for _, name := range []string{"web/index.html", "web/app.js"} {
+		data, err := webFS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		src := string(data)
+		for _, bad := range []string{"style=", "<style", " onclick=", " onload=", "javascript:"} {
+			if strings.Contains(src, bad) {
+				t.Errorf("%s contains %q, which the CSP blocks", name, bad)
+			}
+		}
+	}
+	html, _ := webFS.ReadFile("web/index.html")
+	if n := strings.Count(string(html), "<script"); n != strings.Count(string(html), `<script src="/`) {
+		t.Errorf("index.html has an inline <script>")
+	}
+}
+
+// Several UI elements (the "Updates paused" badges, policy panels) set
+// display:inline-block/flex/grid, which overrides the hidden attribute
+// unless this rule exists. Without it "Updates paused" showed while live.
+func TestEmbeddedCSS_HiddenAttributeWins(t *testing.T) {
+	css, err := webFS.ReadFile("web/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact := strings.Join(strings.Fields(string(css)), " ")
+	if !strings.Contains(compact, "[hidden] { display: none !important; }") {
+		t.Fatal("styles.css must keep `[hidden] { display: none !important; }`")
 	}
 }

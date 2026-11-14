@@ -86,7 +86,7 @@ See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) and [ml-ano
 ### SYN floods and DDoS (short version)
 
 - There is **no** separate “SYN flood” or “DDoS” rule ID. Both usually appear as **anomaly alerts** when related features jump vs baseline.
-- Cerberus **does not block** traffic; it **observes** and **scores**.
+- Alerts never block traffic by themselves; Cerberus **observes** and **scores**. To block, add a rule on the **Policy** page ([active-response.md](active-response.md)).
 
 ---
 
@@ -110,13 +110,47 @@ Delivery is asynchronous (never blocks packet processing). Full buffers drop eve
 
 ---
 
-## 4. Prometheus (optional)
+## 4. Watchlists (CIDR sets)
+
+A watchlist is a named set of IPv4/IPv6 prefixes. Any TCP, UDP, ICMP, DNS,
+HTTP or TLS event whose source or destination is in the set:
+
+- increments `cerberus_watchlist_hits_total{list="<id>"}` (every packet), and
+- raises a rule alert `watchlist:<id>`, at most once per `realert_seconds`
+  for the same device and remote address.
+
+ARP is not matched. The idea comes from bpfilter's `(ip4.snet) in <set>`
+rules with a `counter` and a rate-limited `log`. Cerberus only observes,
+so nothing is dropped.
+
+```yaml
+watchlists:
+  - id: known-c2             # letters, digits, _ or -; unique
+    cidrs:                   # prefixes or single addresses (/32, /128)
+      - 203.0.113.0/24
+      - 2001:db8:bad::/48
+      - 198.51.100.7
+    direction: dst           # any (default) | src | dst
+    severity: high           # low | medium | high (default high)
+    message: "Outbound connection to known C2 range"
+    realert_seconds: 600     # default 600; 0 alerts on every packet
+  - id: lab-only
+    enabled: false           # kept in the file, not evaluated
+```
+
+Limits: 10,000 prefixes across all lists (matching is a linear scan per
+packet). Invalid prefixes, duplicate ids or an unknown direction refuse to
+start. Example: [`configs/alerts.watchlists.yaml`](../configs/alerts.watchlists.yaml).
+
+---
+
+## 5. Prometheus (optional)
 
 `GET /metrics` exposes packet and device counters. You can **route Prometheus alerts** on those series for ops-level paging—outside Cerberus’s built-in alert list.
 
 ---
 
-## 5. Quick checklist
+## 6. Quick checklist
 
 | Goal | Action |
 |------|--------|
@@ -125,6 +159,7 @@ Delivery is asynchronous (never blocks packet processing). Full buffers drop eve
 | See anomaly alerts | Wait for baseline, then generate traffic very different from the first warm-up windows |
 | Reset rule latch | Let counts drop under threshold; next crossing can alert again |
 | No alerts at all | Quiet traffic; or disable rules / anomaly in config |
+| Flag traffic to known-bad ranges | Add a `watchlists:` entry; watch `watchlist:<id>` alerts and `cerberus_watchlist_hits_total` |
 | Webhook / Slack / Teams | Enable `notifications` and set `webhook.url`, `slack.webhook_url`, and/or `teams.webhook_url` — see [notifications.md](notifications.md) |
 
 ---
