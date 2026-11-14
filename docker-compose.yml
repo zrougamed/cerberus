@@ -21,4 +21,6 @@ services:
       - DEBIAN_FRONTEND=noninteractive
       - CERBERUS_HTTP_ADDR=0.0.0.0:8080
       # - CERBERUS_ALERTS_CONFIG=/app/configs/alerts.yaml
+      # Enables policy changes (blocking) from the console/API; 16+ chars.
+      # - CERBERUS_API_TOKEN=${CERBERUS_API_TOKEN}
     restart: unless-stopped

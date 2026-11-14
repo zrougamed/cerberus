@@ -10,6 +10,8 @@ Cerberus reads the following environment variables at runtime.
 | `CERBERUS_DB_ONLINE` | *(unset)* | When `1`, `true`, or `yes`, allows automatic download/refresh of IEEE OUI and IANA service registries when local cache is missing or stale. |
 | `CERBERUS_ALERTS_CONFIG` | *(unset)* | Path to a YAML or JSON **declarative alerts** file. When unset, built-in defaults apply (same thresholds as before). When set, the file is merged onto defaults and **validated at startup** — invalid config refuses to start. See [`configs/alerts.example.yaml`](../configs/alerts.example.yaml) and [how-to-alerts.md](how-to-alerts.md). |
 | `CERBERUS_INTERFACES` | *(unset)* | Comma-separated interface names or shell globs to attach to, e.g. `eth0,wlan*`. Prefix an entry with `!` to exclude it: `!docker*,!veth*` attaches everywhere except container interfaces. Down interfaces are always skipped; loopback only when named. Unset keeps the default (every up, non-loopback interface). An invalid pattern refuses to start. |
+| `CERBERUS_API_TOKEN` | *(unset)* | Bearer token (16+ characters) required to change the active-response policy from the console or API. Unset keeps the policy read-only. See [active-response.md](active-response.md). |
+| `CERBERUS_POLICY_FILE` | `<CERBERUS_DATA_DIR>/policy.json` | Where the policy (mode and rules) is persisted. An invalid file refuses to start. |
 
 Interface selection and LRU size are currently set in code (`cmd/cerberus` / `monitor.NewNetworkMonitor`); see root README “Configuration” for pointers.
 

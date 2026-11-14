@@ -16,6 +16,27 @@ Base URL is whatever host/port `CERBERUS_HTTP_ADDR` binds to (default `http://12
 
 Errors: non-GET returns **405** with plain text body `method not allowed`.
 
+## Policy
+
+Active response; see [active-response.md](active-response.md). Reads need no
+token. Writes need `Authorization: Bearer $CERBERUS_API_TOKEN`; without the
+variable they return **403**. Ten failed attempts per client per minute return
+**429**. Bodies are JSON, at most 16 KiB, unknown fields rejected. Errors are
+`{"error": "..."}`.
+
+| Method and path | Body | Success |
+|-----------------|------|---------|
+| `GET /api/v1/policy` | | **200** `{mode, kernel_attached, max_rules, writes_enabled, rules: [{id, action, mac \| cidr, direction, comment, created_at, created_by, expires_at, counters: {packets, bytes}}], audit: [{at, actor, action, rule_id, detail}]}` |
+| `PUT /api/v1/policy/mode` | `{"mode": "monitor" \| "enforce"}` | **200** `{"mode": ...}` |
+| `POST /api/v1/policy/rules` | `{id?, action: "drop" \| "log", mac? \| cidr?, direction?: "src" \| "dst" \| "any", comment?, ttl_seconds?, force?}` | **201** the rule |
+| `DELETE /api/v1/policy/rules/{id}` | | **204** |
+
+Errors: **400** invalid input, **401** bad token, **404** unknown rule,
+**409** duplicate id/address or policy full, **422** covers a protected
+address (resend with `"force": true`), **500** kernel or storage failure (the
+change was rolled back). The optional `X-Cerberus-Actor` header labels the
+change in the audit trail.
+
 ## Prometheus
 
 | Path | Description |
@@ -32,6 +53,7 @@ that produce no event, so they can be compared with `cerberus_packets_total`.
 |--------|---------|
 | `cerberus_kernel_packets_total{class}` | Packets seen, by class: `total`, `arp`, `ipv4`, `ipv6`, `other` |
 | `cerberus_kernel_bytes_total{class}` | Bytes seen, same classes |
+| `cerberus_policy_dropped_packets_total` | Packets dropped by enforced policy rules |
 | `cerberus_ringbuf_dropped_events_total` | Events lost because the ring buffer was full. If this rises, the monitor is missing traffic: user space is too slow, or someone is flooding the link to blind it. |
 
 If the counters cannot be read, the scrape contains a
@@ -61,7 +83,8 @@ API calls, `frame-ancestors 'none'`; no inline script or style is allowed),
 
 ## CORS and auth
 
-The embedded server does **not** configure CORS or authentication. Run behind a reverse proxy if you need those for remote access.
+The embedded server does not configure CORS. Read endpoints are
+unauthenticated; policy changes need the bearer token above. Run behind a reverse proxy if you need those for remote access.
 
 ## Related
 

@@ -86,7 +86,7 @@ See [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) and [ml-ano
 ### SYN floods and DDoS (short version)
 
 - There is **no** separate “SYN flood” or “DDoS” rule ID. Both usually appear as **anomaly alerts** when related features jump vs baseline.
-- Cerberus **does not block** traffic; it **observes** and **scores**.
+- Alerts never block traffic by themselves; Cerberus **observes** and **scores**. To block, add a rule on the **Policy** page ([active-response.md](active-response.md)).
 
 ---
 
