@@ -1,0 +1,257 @@
+openapi: 3.0.3
+info:
+  title: Cerberus Control Room API
+  version: "1.0"
+  description: |
+    Fleet telemetry, anomaly snapshots, Prometheus metrics, and active-response policy.
+    State-changing policy routes require `Authorization: Bearer $CERBERUS_API_TOKEN`.
+servers:
+  - url: /
+paths:
+  /api/v1/summary:
+    get:
+      summary: Fleet snapshot
+      operationId: getSummary
+      tags: [Monitor]
+      responses:
+        "200":
+          description: Aggregated packet stats, devices, DNS/TLS rankings
+  /api/v1/devices:
+    get:
+      summary: Device inventory
+      operationId: getDevices
+      tags: [Monitor]
+      responses:
+        "200":
+          description: Array of DeviceInfo objects
+  /api/v1/alerts:
+    get:
+      summary: Rule-based alerts
+      operationId: getAlerts
+      tags: [Monitor]
+      responses:
+        "200":
+          description: Recent AlertEvent objects
+  /api/v1/anomalies:
+    get:
+      summary: Anomaly model snapshot
+      operationId: getAnomalies
+      tags: [Monitor]
+      responses:
+        "200":
+          description: AnomalySnapshot with scores and recent alerts
+  /api/v1/version:
+    get:
+      summary: Build metadata
+      operationId: getVersion
+      tags: [Monitor]
+      responses:
+        "200":
+          description: commit and build date
+  /metrics:
+    get:
+      summary: Prometheus exposition
+      operationId: getMetrics
+      tags: [Monitor]
+      responses:
+        "200":
+          description: text/plain Prometheus metrics
+  /api/v1/policy:
+    get:
+      summary: Policy status
+      operationId: getPolicy
+      tags: [Policy]
+      responses:
+        "200":
+          description: Mode, rules, filters, audit, writes_enabled
+  /api/v1/policy/mode:
+    put:
+      summary: Set enforcement mode
+      operationId: setPolicyMode
+      tags: [Policy]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode:
+                  type: string
+                  enum: [monitor, enforce]
+      responses:
+        "200":
+          description: Updated mode
+        "401":
+          description: Missing or invalid token
+  /api/v1/policy/rules:
+    post:
+      summary: Add blocklist rule (MAC, CIDR, or hostname/SNI/DNS)
+      operationId: addPolicyRule
+      tags: [Policy]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                id:
+                  type: string
+                action:
+                  type: string
+                  enum: [drop, log]
+                mac:
+                  type: string
+                cidr:
+                  type: string
+                hostname:
+                  type: string
+                  description: FQDN or single-level wildcard (*.evil.com)
+                host_match:
+                  type: string
+                  enum: [dns, sni, any]
+                  description: Which telemetry hostname rules match (default any)
+                direction:
+                  type: string
+                  enum: [src, dst, any]
+                comment:
+                  type: string
+                ttl_seconds:
+                  type: integer
+                force:
+                  type: boolean
+            examples:
+              cidr:
+                value: {action: drop, cidr: "203.0.113.0/24", direction: dst}
+              mac:
+                value: {action: drop, mac: "02:00:00:00:00:01"}
+              dns:
+                value: {action: drop, hostname: "*.evil.com", host_match: dns}
+              sni:
+                value: {action: drop, hostname: "tracker.io", host_match: sni}
+      responses:
+        "201":
+          description: Created rule
+        "400":
+          description: Invalid body
+        "401":
+          description: Unauthorized
+        "409":
+          description: Conflict
+        "422":
+          description: Covers protected address (retry with force)
+  /api/v1/policy/rules/{id}:
+    delete:
+      summary: Remove blocklist rule
+      operationId: deletePolicyRule
+      tags: [Policy]
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+        "404":
+          description: Unknown id
+  /api/v1/policy/filters:
+    post:
+      summary: Add ordered L3/L4 filter
+      operationId: addPolicyFilter
+      tags: [Policy]
+      security: [{bearerAuth: []}]
+      responses:
+        "201":
+          description: Created filter
+  /api/v1/policy/filters/{id}:
+    delete:
+      summary: Remove filter
+      operationId: deletePolicyFilter
+      tags: [Policy]
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+  /api/v1/policy/filters/{id}/position:
+    put:
+      summary: Move filter in evaluation order
+      operationId: movePolicyFilter
+      tags: [Policy]
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Moved
+  /api/v1/policy/filters/{id}/enabled:
+    put:
+      summary: Enable or disable filter
+      operationId: enablePolicyFilter
+      tags: [Policy]
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Updated
+  /api/v1/policy/log:
+    get:
+      summary: Filter packet log
+      operationId: getPolicyLog
+      tags: [Policy]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Newest log entries
+  /openapi.yaml:
+    get:
+      summary: This OpenAPI document
+      operationId: getOpenAPI
+      tags: [Docs]
+      responses:
+        "200":
+          description: openapi.yaml
+  /docs:
+    get:
+      summary: Swagger UI
+      operationId: getDocs
+      tags: [Docs]
+      responses:
+        "200":
+          description: Interactive API docs
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Value of CERBERUS_API_TOKEN

@@ -348,6 +348,7 @@ func policyLoop(e *policy.Engine, mon *monitor.NetworkMonitor, stop <-chan struc
 		for _, r := range e.Expire() {
 			fmt.Printf("Policy rule %s expired\n", r.ID)
 		}
+		e.SyncHostnames(policy.DevicesFromInfo(mon.GetStats()))
 		for _, h := range e.PollHits() {
 			mon.RecordAlert(policyHitAlert(h))
 		}
@@ -376,7 +377,10 @@ func policyHitAlert(h policy.Hit) models.AlertEvent {
 		return filterHitAlert(h)
 	}
 	target := h.Rule.CIDR
-	if h.Rule.MAC != "" {
+	switch {
+	case h.Rule.Hostname != "" && h.Rule.ParentID == "":
+		target = h.Rule.HostMatch + " " + h.Rule.Hostname
+	case h.Rule.MAC != "":
 		target = "MAC " + h.Rule.MAC
 	}
 	verb, severity := "matched", "low"

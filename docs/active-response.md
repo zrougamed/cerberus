@@ -60,6 +60,7 @@ curl -s -X POST -H "$H" localhost:8080/api/v1/policy/filters -d \
 |------|---------|------------|
 | Device (MAC) | Every frame whose **source** MAC is the device, ARP included. Use it to quarantine a device. | `policy_mac` (hash) |
 | IPv4 / IPv6 address or range | Packets whose source, destination or either address is in the prefix (`direction: src`, `dst`, `any`). | `policy_v4`, `policy_v6` (LPM trie) |
+| Hostname (DNS / SNI) | Devices whose observed DNS names or TLS SNI match the hostname (`host_match`: `dns`, `sni`, or `any`). Supports `*.evil.com`. Userspace sync installs derived MAC quarantine rules. | derived `policy_mac` |
 
 Actions:
 

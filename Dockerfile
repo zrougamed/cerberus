@@ -1,5 +1,14 @@
+# UI stage: build the React Control Room into internal/api/web for go:embed.
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS ui
+
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+# vite.config outDir is ../internal/api/web (relative to web/)
+RUN npm run build
+
 # Build stage. Base images are pinned by digest; bump tag and digest together.
-# The React Control Room is prebuilt into internal/api/web (see `make web`).
 FROM golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS builder
 
 # Install only what we need for BPF compilation
@@ -20,8 +29,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
-# Copy source code
+# Copy source code, then overlay the freshly built SPA so the image does not
+# depend on whatever was last committed under internal/api/web.
 COPY . .
+COPY --from=ui /src/internal/api/web ./internal/api/web
 
 # Build eBPF program
 RUN make bpf

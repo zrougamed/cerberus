@@ -438,3 +438,44 @@ func TestEmbeddedCSS_HiddenAttributeWins(t *testing.T) {
 		t.Fatal("embedded CSS must keep `[hidden]{display:none!important}`")
 	}
 }
+
+func TestDocsAndOpenAPIEndpoints(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	mon, err := monitor.NewNetworkMonitor(10, dbPath)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	defer func() {
+		_ = mon.Close()
+		_ = os.Remove(dbPath)
+	}()
+
+	h, err := NewServer(mon).Handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("openapi: expected 200, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "openapi:") {
+		t.Fatal("openapi.yaml missing openapi marker")
+	}
+	if !strings.Contains(rr.Body.String(), "/api/v1/policy/rules") {
+		t.Fatal("openapi.yaml missing policy rules path")
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/docs", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("docs: expected 200, got %d", rr.Code)
+	}
+	if csp := rr.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "unpkg.com") {
+		t.Fatalf("docs CSP should allow swagger CDN, got %q", csp)
+	}
+	if !strings.Contains(rr.Body.String(), "SwaggerUIBundle") {
+		t.Fatal("docs HTML missing Swagger UI bootstrap")
+	}
+}

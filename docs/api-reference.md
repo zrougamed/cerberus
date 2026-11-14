@@ -28,7 +28,7 @@ variable they return **403**. Ten failed attempts per client per minute return
 |-----------------|------|---------|
 | `GET /api/v1/policy` | | **200** `{mode, kernel_attached, max_rules, max_filters, writes_enabled, filters: [{id, position, summary, enabled, match, verdict, log, counters, ...}], rules: [{id, action, mac \| cidr, direction, comment, created_at, created_by, expires_at, counters: {packets, bytes}}], audit: [{at, actor, action, rule_id, detail}]}` |
 | `PUT /api/v1/policy/mode` | `{"mode": "monitor" \| "enforce"}` | **200** `{"mode": ...}` |
-| `POST /api/v1/policy/rules` | `{id?, action: "drop" \| "log", mac? \| cidr?, direction?: "src" \| "dst" \| "any", comment?, ttl_seconds?, force?}` | **201** the rule |
+| `POST /api/v1/policy/rules` | `{id?, action: "drop" \| "log", mac? \| cidr? \| hostname?, host_match?: "dns" \| "sni" \| "any", direction?: "src" \| "dst" \| "any", comment?, ttl_seconds?, force?}` | **201** the rule. Hostname rules match observed DNS / TLS SNI (wildcard `*.evil.com` allowed) and auto-quarantine matching device MACs. Interactive OpenAPI UI: `/docs` (`/openapi.yaml`). |
 | `DELETE /api/v1/policy/rules/{id}` | | **204** |
 | `POST /api/v1/policy/filters` | `{id?, verdict: "accept" \| "drop" \| "continue", match: {interface?, family?, protocol?, src?, src_not?, dst?, dst_not?, src_mac?, src_port?, src_port_not?, dst_port?, dst_port_not?, tcp_flags_any?, tcp_flags_all?, icmp_type?, icmp_code?}, log?, log_every_seconds?, comment?, ttl_seconds?, position?, disabled?, force?}` | **201** the rule |
 | `DELETE /api/v1/policy/filters/{id}` | | **204** |

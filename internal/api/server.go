@@ -57,6 +57,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/v1/anomalies", s.handleAnomalies)
 	mux.HandleFunc("/api/v1/version", s.handleVersion)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	s.registerDocsRoutes(mux)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)
 	}
@@ -90,7 +91,11 @@ const contentSecurityPolicy = "default-src 'none'; " +
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		csp := contentSecurityPolicy
+		if r.URL.Path == "/docs" || strings.HasPrefix(r.URL.Path, "/docs/") {
+			csp = docsContentSecurityPolicy
+		}
+		h.Set("Content-Security-Policy", csp)
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
@@ -114,6 +119,7 @@ type summaryResponse struct {
 	DNSResponseNames map[string]int      `json:"dns_response_domains"`
 	EncryptedDNS     map[string]int      `json:"encrypted_dns"`
 	TLSVersions      map[string]int      `json:"tls_versions"`
+	TLSSNIs          map[string]int      `json:"top_tls_snis"`
 	DNSCorrelated    map[string]int      `json:"dns_correlated_domains"`
 	RecentDevice     []deviceSummaryItem `json:"recent_devices"`
 }
@@ -148,6 +154,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	dnsResponseNames := make(map[string]int)
 	encryptedDNS := make(map[string]int)
 	tlsVersions := make(map[string]int)
+	tlsSNIs := make(map[string]int)
 	dnsCorrelated := make(map[string]int)
 	deviceItems := make([]deviceSummaryItem, 0, len(devices))
 
@@ -169,6 +176,9 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		}
 		for version, count := range d.TLSVersions {
 			tlsVersions[version] += count
+		}
+		for sni, count := range d.TLSSNIs {
+			tlsSNIs[sni] += count
 		}
 		for domain, count := range d.CorrelatedDomains {
 			dnsCorrelated[domain] += count
@@ -207,6 +217,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		DNSResponseNames: topMap(dnsResponseNames, 8),
 		EncryptedDNS:     topMap(encryptedDNS, 8),
 		TLSVersions:      topMap(tlsVersions, 8),
+		TLSSNIs:          topMap(tlsSNIs, 8),
 		DNSCorrelated:    topMap(dnsCorrelated, 8),
 		RecentDevice:     deviceItems,
 	})
