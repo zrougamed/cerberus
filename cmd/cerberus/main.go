@@ -28,8 +28,10 @@ import (
 func main() {
 	fmt.Printf("Cerberus %s\n", version.String())
 
-	// Clean up any existing TC hooks
-	utils.CleanCards()
+	// No startup TC/XDP cleanup: TCX links are owned by this process and the
+	// kernel detaches them when it exits, so nothing is left behind. The old
+	// cleanup deleted every interface's clsact/ingress qdisc and XDP program,
+	// breaking other TC users (Cilium, tc-based shapers, other BPF tools).
 
 	// Ensure the data directory exists
 	err := os.MkdirAll("./data", 0o750)

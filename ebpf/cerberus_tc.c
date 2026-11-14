@@ -39,6 +39,12 @@
 #define HTTPS_ALT_PORT 8443
 #define L7_PAYLOAD_SIZE 128
 
+// Verdicts for TCX. A monitor must not end the chain: TC_ACT_OK maps to
+// TCX_PASS, which skips every program attached after this one (Cilium,
+// shapers, other BPF tools). TC_ACT_UNSPEC is TCX_NEXT: hand the packet on.
+#define CERB_PASS TC_ACT_UNSPEC
+#define CERB_DROP TC_ACT_SHOT   // TCX_DROP
+
 // Define ICMP header structure directly to avoid including <linux/icmp.h>
 struct icmp_hdr {
     __u8  type;
@@ -128,7 +134,7 @@ static __always_inline void count(__u32 idx, struct __sk_buff *skb)
 static __always_inline int ringbuf_full(struct __sk_buff *skb)
 {
     count(CNT_RINGBUF_FULL, skb);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 // Helper to check if payload looks like HTTP
@@ -172,16 +178,16 @@ static __always_inline int handle_arp(struct __sk_buff *skb, struct ethhdr *eth)
     void *data_end = (void *)(long)skb->data_end;
     struct arp_hdr *arp = (void *)(eth + 1);
     if ((void *)(arp + 1) > data_end)
-        return TC_ACT_OK;
+        return CERB_PASS;
 
     if (bpf_ntohs(arp->ar_hrd) != 1 ||
         bpf_ntohs(arp->ar_pro) != ETH_P_IP ||
         arp->ar_hln != 6 || arp->ar_pln != 4)
-        return TC_ACT_OK;
+        return CERB_PASS;
 
     __u8 *arp_data = (__u8 *)(arp + 1);
     if ((void *)(arp_data + 20) > data_end)
-        return TC_ACT_OK;
+        return CERB_PASS;
 
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
     if (!e) return ringbuf_full(skb);
@@ -207,7 +213,7 @@ static __always_inline int handle_arp(struct __sk_buff *skb, struct ethhdr *eth)
     __builtin_memset(e->l7_payload, 0, sizeof(e->l7_payload));
 
     bpf_ringbuf_submit(e, 0);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 // ------------------- TCP -------------------
@@ -215,7 +221,7 @@ static __always_inline int handle_tcp(struct __sk_buff *skb, struct ethhdr *eth,
 {
     void *data_end = (void *)(long)skb->data_end;
     struct tcphdr *tcph = (void *)iph + (iph->ihl * 4);
-    if ((void *)(tcph + 1) > data_end) return TC_ACT_OK;
+    if ((void *)(tcph + 1) > data_end) return CERB_PASS;
 
     __u16 src_port = bpf_ntohs(tcph->source);
     __u16 dst_port = bpf_ntohs(tcph->dest);
@@ -290,7 +296,7 @@ static __always_inline int handle_tcp(struct __sk_buff *skb, struct ethhdr *eth,
     }
 
     bpf_ringbuf_submit(e, 0);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 // ------------------- UDP -------------------
@@ -298,7 +304,7 @@ static __always_inline int handle_udp(struct __sk_buff *skb, struct ethhdr *eth,
 {
     void *data_end = (void *)(long)skb->data_end;
     struct udphdr *udph = (void *)iph + (iph->ihl * 4);
-    if ((void *)(udph + 1) > data_end) return TC_ACT_OK;
+    if ((void *)(udph + 1) > data_end) return CERB_PASS;
 
     __u16 src_port = bpf_ntohs(udph->source);
     __u16 dst_port = bpf_ntohs(udph->dest);
@@ -353,7 +359,7 @@ static __always_inline int handle_udp(struct __sk_buff *skb, struct ethhdr *eth,
     }
 
     bpf_ringbuf_submit(e, 0);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 // ------------------- ICMP -------------------
@@ -361,7 +367,7 @@ static __always_inline int handle_icmp(struct __sk_buff *skb, struct ethhdr *eth
 {
     void *data_end = (void *)(long)skb->data_end;
     struct icmp_hdr *icmph = (void *)iph + (iph->ihl * 4);
-    if ((void *)(icmph + 1) > data_end) return TC_ACT_OK;
+    if ((void *)(icmph + 1) > data_end) return CERB_PASS;
 
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
     if (!e) return ringbuf_full(skb);
@@ -388,14 +394,14 @@ static __always_inline int handle_icmp(struct __sk_buff *skb, struct ethhdr *eth
     __builtin_memset(e->l7_payload, 0, L7_PAYLOAD_SIZE);
 
     bpf_ringbuf_submit(e, 0);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 static __always_inline int handle_tcp6(struct __sk_buff *skb, struct ethhdr *eth, struct ipv6hdr *ip6h)
 {
     void *data_end = (void *)(long)skb->data_end;
     struct tcphdr *tcph = (void *)(ip6h + 1);
-    if ((void *)(tcph + 1) > data_end) return TC_ACT_OK;
+    if ((void *)(tcph + 1) > data_end) return CERB_PASS;
     __u16 src_port = bpf_ntohs(tcph->source);
     __u16 dst_port = bpf_ntohs(tcph->dest);
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
@@ -444,14 +450,14 @@ static __always_inline int handle_tcp6(struct __sk_buff *skb, struct ethhdr *eth
         }
     }
     bpf_ringbuf_submit(e, 0);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 static __always_inline int handle_udp6(struct __sk_buff *skb, struct ethhdr *eth, struct ipv6hdr *ip6h)
 {
     void *data_end = (void *)(long)skb->data_end;
     struct udphdr *udph = (void *)(ip6h + 1);
-    if ((void *)(udph + 1) > data_end) return TC_ACT_OK;
+    if ((void *)(udph + 1) > data_end) return CERB_PASS;
     __u16 src_port = bpf_ntohs(udph->source);
     __u16 dst_port = bpf_ntohs(udph->dest);
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
@@ -489,14 +495,14 @@ static __always_inline int handle_udp6(struct __sk_buff *skb, struct ethhdr *eth
         }
     }
     bpf_ringbuf_submit(e, 0);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 static __always_inline int handle_icmp6(struct __sk_buff *skb, struct ethhdr *eth, struct ipv6hdr *ip6h)
 {
     void *data_end = (void *)(long)skb->data_end;
     struct icmp_hdr *icmph = (void *)(ip6h + 1);
-    if ((void *)(icmph + 1) > data_end) return TC_ACT_OK;
+    if ((void *)(icmph + 1) > data_end) return CERB_PASS;
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
     if (!e) return ringbuf_full(skb);
     e->event_type = EVENT_TYPE_ICMP;
@@ -519,7 +525,7 @@ static __always_inline int handle_icmp6(struct __sk_buff *skb, struct ethhdr *et
     __builtin_memset(e->arp_tha, 0, 6);
     __builtin_memset(e->l7_payload, 0, L7_PAYLOAD_SIZE);
     bpf_ringbuf_submit(e, 0);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 // ------------------- Classifier -------------------
@@ -533,7 +539,7 @@ int xdp_arp_monitor(struct __sk_buff *skb)
     count(CNT_TOTAL, skb);
     if ((void *)(eth + 1) > data_end) {
         count(CNT_OTHER, skb);
-        return TC_ACT_OK;
+        return CERB_PASS;
     }
 
     __u16 proto = bpf_ntohs(eth->h_proto);
@@ -545,7 +551,7 @@ int xdp_arp_monitor(struct __sk_buff *skb)
     if (proto == ETH_P_IP) {
         count(CNT_IPV4, skb);
         struct iphdr *iph = (void *)(eth + 1);
-        if ((void *)(iph + 1) > data_end) return TC_ACT_OK;
+        if ((void *)(iph + 1) > data_end) return CERB_PASS;
 
         if (iph->protocol == PROTO_TCP) return handle_tcp(skb, eth, iph);
         if (iph->protocol == PROTO_UDP) return handle_udp(skb, eth, iph);
@@ -554,15 +560,15 @@ int xdp_arp_monitor(struct __sk_buff *skb)
     if (proto == ETH_P_IPV6) {
         count(CNT_IPV6, skb);
         struct ipv6hdr *ip6h = (void *)(eth + 1);
-        if ((void *)(ip6h + 1) > data_end) return TC_ACT_OK;
+        if ((void *)(ip6h + 1) > data_end) return CERB_PASS;
         if (ip6h->nexthdr == PROTO_TCP) return handle_tcp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_UDP) return handle_udp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_ICMPV6) return handle_icmp6(skb, eth, ip6h);
-        return TC_ACT_OK;
+        return CERB_PASS;
     }
 
     count(CNT_OTHER, skb);
-    return TC_ACT_OK;
+    return CERB_PASS;
 }
 
 char _license[] SEC("license") = "GPL";
