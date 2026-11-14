@@ -127,6 +127,9 @@ func (e *Engine) AddFilter(in FilterInput, actor string) (FilterRule, error) {
 		if p := e.protectedFilterHit(c); p != "" {
 			return FilterRule{}, fmt.Errorf("%w: it covers %s, which is this host or the gateway; set force to override", ErrProtected, p)
 		}
+		if z := e.watchOnlyFilterHit(c); z != "" {
+			return FilterRule{}, fmt.Errorf("%w: it overlaps watch-only zone %s; set enforce on the zone or force to override", ErrProtected, z)
+		}
 	}
 	if r.ID == "" {
 		for r.ID = newRuleID(); e.idTakenLocked(r.ID); r.ID = newRuleID() {

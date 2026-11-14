@@ -38,6 +38,9 @@ type Options struct {
 	// typo cannot cut the console off the network.
 	Protected    []netip.Addr
 	ProtectedMAC []net.HardwareAddr
+	// WatchOnly maps zone ids to networks where drop rules need force:
+	// industrial zones, where a dropped packet can stop a process.
+	WatchOnly map[string][]netip.Prefix
 	// HitRealert is the minimum gap between two hit reports for one rule.
 	HitRealert time.Duration
 	// Now is the clock; defaults to time.Now.
@@ -292,6 +295,59 @@ func (e *Engine) protectedHit(t target) string {
 	return ""
 }
 
+// watchOnlyIDs returns the watch-only zone ids sorted, for stable errors.
+func (e *Engine) watchOnlyIDs() []string {
+	ids := make([]string, 0, len(e.opts.WatchOnly))
+	for id := range e.opts.WatchOnly {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// watchOnlyHit names the watch-only zone a prefix overlaps, or "".
+func (e *Engine) watchOnlyHit(p netip.Prefix) string {
+	if !p.IsValid() {
+		return ""
+	}
+	for _, id := range e.watchOnlyIDs() {
+		for _, z := range e.opts.WatchOnly[id] {
+			if z.Overlaps(p) {
+				return fmt.Sprintf("%s (%s)", id, z)
+			}
+		}
+	}
+	return ""
+}
+
+// watchOnlyFilterHit names a watch-only zone a drop filter can match. A
+// negated side ("not in X") matches every address outside X, so it hits a
+// zone unless X contains the whole zone.
+func (e *Engine) watchOnlyFilterHit(c compiledMatch) string {
+	for _, side := range []struct {
+		p   netip.Prefix
+		not bool
+	}{{c.src, c.srcNot}, {c.dst, c.dstNot}} {
+		if !side.p.IsValid() {
+			continue
+		}
+		if !side.not {
+			if z := e.watchOnlyHit(side.p); z != "" {
+				return z
+			}
+			continue
+		}
+		for _, id := range e.watchOnlyIDs() {
+			for _, z := range e.opts.WatchOnly[id] {
+				if side.p.Bits() > z.Bits() || !side.p.Contains(z.Addr()) {
+					return fmt.Sprintf("%s (%s)", id, z)
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func newRuleID() string {
 	var b [4]byte
 	_, _ = rand.Read(b[:])
@@ -309,6 +365,11 @@ func (e *Engine) Add(in RuleInput, actor string) (Rule, error) {
 
 	if p := e.protectedHit(t); p != "" && !in.Force {
 		return Rule{}, fmt.Errorf("%w: it covers %s, which is this host or the gateway; set force to override", ErrProtected, p)
+	}
+	if r.Action == ActionDrop && t.mac == nil && !t.userspaceOnly() && !in.Force {
+		if z := e.watchOnlyHit(t.prefix); z != "" {
+			return Rule{}, fmt.Errorf("%w: it overlaps watch-only zone %s; set enforce on the zone or force to override", ErrProtected, z)
+		}
 	}
 	if r.ID == "" {
 		for r.ID = newRuleID(); e.idTakenLocked(r.ID); r.ID = newRuleID() {

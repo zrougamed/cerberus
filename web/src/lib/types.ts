@@ -15,7 +15,64 @@ export type DeviceSummary = {
   tls_connections?: number
   industrial?: Record<string, IndustrialStats>
   asset?: AssetInfo
+  zone?: string
   [key: string]: unknown
+}
+
+/** GET /api/v1/zones */
+export type ZoneInfo = {
+  id: string
+  name: string
+  level: number
+  cidrs: string[]
+  industrial: boolean
+  enforce: boolean
+  devices: number
+}
+
+export type ZoneSummary = {
+  zones: ZoneInfo[]
+  conduits: { from: string; to: string; ports?: number[] | null; bidirectional: boolean }[]
+  violations: Record<string, number> | null
+}
+
+/** GET /api/v1/baseline */
+export type BaselineFlow = {
+  id: string
+  client: string
+  server: string
+  protocol: string
+  class: string
+  status: 'learned' | 'approved' | 'new'
+  first_seen: string
+  last_seen: string
+  count: number
+}
+
+export type BaselineState = {
+  status: {
+    state: 'learning' | 'enforcing' | 'disabled'
+    started_at?: string
+    learning_until?: string
+    learned: number
+    approved: number
+    new: number
+    dropped: number
+    max_flows: number
+  }
+  flows: BaselineFlow[]
+}
+
+/** One row of GET /api/v1/assets. */
+export type AssetEntry = {
+  mac: string
+  ip: string
+  oui_vendor?: string
+  role: string
+  role_source: '' | 'inferred' | 'override'
+  protocols: string[]
+  asset?: AssetInfo
+  last_seen: string
 }
 
 /** Identity a device reported about itself in an industrial protocol. */

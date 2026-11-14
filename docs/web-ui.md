@@ -32,10 +32,13 @@ Dev: run the Go harness on `:18080`, then `npm run dev` in `web/` (Vite proxies 
 | `#/` | Dashboard |
 | `#/analytics` | Analytics charts |
 | `#/devices` | Device table |
-| `#/device/:mac` | Device detail |
+| `#/device/:mac` | Device detail, with industrial counters and reported identity |
+| `#/zones` | Zones by Purdue level with their devices, conduits, and traffic without a conduit |
+| `#/assets` | Industrial asset inventory: role and protocol filters, CSV download, role override (needs the API token) |
 | `#/alerts` | Rule alerts |
 | `#/anomalies` | Anomaly snapshot |
 | `#/policy` | Active response |
+| `#/baseline` | Industrial flow baseline: learning state, new flows to approve or forget, known flows, relearn |
 | `#/raw/:endpoint` | Raw JSON |
 
 ## Charts

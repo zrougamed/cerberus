@@ -23,6 +23,9 @@ const (
 	RuleOPCUAWrite       = "opcua_write"
 	RuleOPCUAInsecure    = "opcua_insecure"
 	RuleMQTTAnonymous    = "mqtt_anonymous"
+	// RuleAssetChanged fires when a device reports a different model,
+	// firmware or serial than before. Only enabled and severity apply.
+	RuleAssetChanged = "asset_changed"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -61,6 +64,7 @@ type IndustrialConfig struct {
 	OPCUAWrite       IndustrialRule `yaml:"opcua_write" json:"opcua_write"`
 	OPCUAInsecure    IndustrialRule `yaml:"opcua_insecure" json:"opcua_insecure"`
 	MQTTAnonymous    IndustrialRule `yaml:"mqtt_anonymous" json:"mqtt_anonymous"`
+	AssetChanged     IndustrialRule `yaml:"asset_changed" json:"asset_changed"`
 }
 
 // NamedIndustrialRule pairs a rule with its id.
@@ -88,6 +92,7 @@ func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
 		{RuleOPCUAWrite, &c.OPCUAWrite},
 		{RuleOPCUAInsecure, &c.OPCUAInsecure},
 		{RuleMQTTAnonymous, &c.MQTTAnonymous},
+		{RuleAssetChanged, &c.AssetChanged},
 	}
 }
 
@@ -131,6 +136,9 @@ func defaultIndustrialConfig() IndustrialConfig {
 		OPCUAWrite:       rule("medium"),
 		OPCUAInsecure:    rule("medium"),
 		MQTTAnonymous:    rule("medium"),
+		// A firmware or model change on a controller is either planned
+		// maintenance or someone swapping hardware; both deserve a look.
+		AssetChanged: rule("high"),
 	}
 }
 

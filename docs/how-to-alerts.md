@@ -154,6 +154,24 @@ simulator on port 502 and write a register. Configuration and limits:
 
 ---
 
+### Zones and conduits
+
+`zone_no_conduit` and `zone_level_skip` fire for traffic between two
+configured zones that no conduit allows. Define a `segmentation` section,
+then connect from a host in one zone to a host in another on a port the
+conduit does not list. See
+[industrial-protocols.md](industrial-protocols.md#zones-and-conduits).
+
+### Flow baseline
+
+`baseline_new_flow` fires once for each industrial (client, server,
+protocol, operation) tuple first seen after the learning period. To test it,
+set `flow_baseline.learning_hours: 1`, wait an hour, then send a Modbus
+write from a host that only read before. See
+[industrial-protocols.md](industrial-protocols.md#flow-baseline).
+
+---
+
 ## 5. Prometheus (optional)
 
 `GET /metrics` exposes packet and device counters. You can **route Prometheus alerts** on those series for ops-level paging—outside Cerberus’s built-in alert list.
