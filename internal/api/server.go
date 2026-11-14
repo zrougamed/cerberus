@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -311,6 +312,23 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w)
 	}
 
+	if counts := s.monitor.GetIndustrialCounts(); len(counts) > 0 {
+		keys := slices.SortedFunc(maps.Keys(counts), func(a, b monitor.IndustrialCountKey) int {
+			return cmp.Or(cmp.Compare(a.Protocol, b.Protocol), cmp.Compare(a.Class, b.Class), cmpBool(a.Response, b.Response))
+		})
+		fmt.Fprintln(w, "# HELP cerberus_industrial_messages_total Decoded industrial protocol messages by operation class and direction.")
+		fmt.Fprintln(w, "# TYPE cerberus_industrial_messages_total counter")
+		for _, k := range keys {
+			direction := "request"
+			if k.Response {
+				direction = "response"
+			}
+			fmt.Fprintf(w, "cerberus_industrial_messages_total{protocol=\"%s\",class=\"%s\",direction=\"%s\"} %d\n",
+				escapeLabelValue(k.Protocol), escapeLabelValue(k.Class), direction, counts[k])
+		}
+		fmt.Fprintln(w)
+	}
+
 	fmt.Fprintln(w, "# HELP cerberus_devices_total Number of tracked devices.")
 	fmt.Fprintln(w, "# TYPE cerberus_devices_total gauge")
 	fmt.Fprintf(w, "cerberus_devices_total %d\n\n", len(devices))
@@ -432,4 +450,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// cmpBool orders false before true.
+func cmpBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case !a:
+		return -1
+	default:
+		return 1
+	}
 }

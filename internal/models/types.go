@@ -228,4 +228,27 @@ type DeviceInfo struct {
 	SeenPatterns         map[string]bool       `json:"-"`
 	TrafficTypeCounts    map[TrafficType]int   `json:"traffic_type_counts"`
 	FlowStats            map[string]*FlowStats `json:"-"` // flowKey -> stats
+	// Industrial holds per-protocol counters from the industrial decoders,
+	// keyed by protocol name ("modbus").
+	Industrial map[string]*IndustrialStats `json:"industrial,omitempty"`
+}
+
+// IndustrialStats counts decoded control-protocol traffic for one device
+// and protocol. Requests are what the device sent as a client (HMI, SCADA
+// server, engineering workstation); Responses are what it answered as a
+// server (PLC, RTU).
+type IndustrialStats struct {
+	Requests   int `json:"requests"`
+	Responses  int `json:"responses"`
+	Exceptions int `json:"exceptions"`
+	// Operations counts requests by class: read, write, diagnostic, other.
+	Operations map[string]int `json:"operations"`
+	// Functions counts requests by function name.
+	Functions map[string]int `json:"functions"`
+	// Details counts protocol-specific notes, such as the S7 rack and slot
+	// a client connected to.
+	Details map[string]int `json:"details,omitempty"`
+	// Peers holds the most recent remote addresses, oldest first.
+	Peers    []string  `json:"peers"`
+	LastSeen time.Time `json:"last_seen"`
 }

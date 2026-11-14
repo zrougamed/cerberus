@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
+import { IndustrialPanel } from '../components/IndustrialPanel'
 import { useLive } from '../lib/live'
 
 export function DeviceDetailPage() {
@@ -48,6 +49,7 @@ export function DeviceDetailPage() {
           </Link>
         </p>
       </section>
+      <IndustrialPanel industrial={device.industrial} />
     </div>
   )
 }

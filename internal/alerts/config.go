@@ -39,12 +39,13 @@ const (
 type Config struct {
 	// TargetHistorySize caps the rolling unique-destination list per device.
 	// Threshold unique_targets must stay below this or target_spread never fires.
-	TargetHistorySize int             `yaml:"target_history_size" json:"target_history_size"`
-	Thresholds        []ThresholdRule `yaml:"thresholds" json:"thresholds"`
-	Baselines         BaselineConfig  `yaml:"baselines" json:"baselines"`
-	Anomaly           AnomalyConfig   `yaml:"anomaly" json:"anomaly"`
-	Notifications     notify.Config   `yaml:"notifications" json:"notifications"`
-	Watchlists        []Watchlist     `yaml:"watchlists" json:"watchlists"`
+	TargetHistorySize int              `yaml:"target_history_size" json:"target_history_size"`
+	Thresholds        []ThresholdRule  `yaml:"thresholds" json:"thresholds"`
+	Baselines         BaselineConfig   `yaml:"baselines" json:"baselines"`
+	Anomaly           AnomalyConfig    `yaml:"anomaly" json:"anomaly"`
+	Notifications     notify.Config    `yaml:"notifications" json:"notifications"`
+	Watchlists        []Watchlist      `yaml:"watchlists" json:"watchlists"`
+	Industrial        IndustrialConfig `yaml:"industrial" json:"industrial"`
 }
 
 // ThresholdRule is a declarative comparison against a device metric.
@@ -89,6 +90,7 @@ type fileOverlay struct {
 	Anomaly           *anomalyOverlay       `yaml:"anomaly" json:"anomaly"`
 	Notifications     *notificationsOverlay `yaml:"notifications" json:"notifications"`
 	Watchlists        *[]watchlistOverlay   `yaml:"watchlists" json:"watchlists"`
+	Industrial        *industrialOverlay    `yaml:"industrial" json:"industrial"`
 }
 
 type notificationsOverlay struct {
@@ -203,6 +205,7 @@ func DefaultConfig() Config {
 				Tag:     "cerberus",
 			},
 		},
+		Industrial: defaultIndustrialConfig(),
 	}
 }
 
@@ -300,6 +303,7 @@ func mergeOverlay(cfg *Config, o fileOverlay) error {
 			cfg.Watchlists = append(cfg.Watchlists, w.toWatchlist())
 		}
 	}
+	mergeIndustrial(&cfg.Industrial, o.Industrial)
 	return nil
 }
 
@@ -444,6 +448,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := validateWatchlists(c.Watchlists); err != nil {
+		return err
+	}
+	if err := validateIndustrial(c.Industrial); err != nil {
 		return err
 	}
 	if c.Notifications.Enabled &&
