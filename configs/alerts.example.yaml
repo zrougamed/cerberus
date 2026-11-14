@@ -84,6 +84,16 @@ industrial:
     severity: high
     allowed_sources: []
     realert_seconds: 3600
+  dnp3_control:              # select / operate / direct operate, start/stop application
+    enabled: true
+    severity: high
+    allowed_sources: []      # the DNP3 master(s)
+    realert_seconds: 3600
+  dnp3_diagnostic:           # restarts, disable unsolicited, save configuration
+    enabled: true
+    severity: high
+    allowed_sources: []
+    realert_seconds: 3600
 
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:

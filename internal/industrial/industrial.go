@@ -31,10 +31,12 @@ const (
 	// ProtocolS7Plus is the newer, integrity-protected S7 protocol. It is
 	// only detected and counted, not decoded.
 	ProtocolS7Plus = "s7comm_plus"
+	ProtocolDNP3   = "dnp3"
 )
 
 const (
 	ipProtoTCP uint8 = 6
+	ipProtoUDP uint8 = 17
 )
 
 // functionInfo is a function code's name and class in a decoder table.
@@ -78,6 +80,10 @@ func Decode(ipProto uint8, srcPort, dstPort uint16, payload []byte) (Message, bo
 	}
 	if ipProto == ipProtoTCP && (dstPort == S7Port || srcPort == S7Port) {
 		return DecodeS7(payload, srcPort == S7Port && dstPort != S7Port)
+	}
+	if (ipProto == ipProtoTCP || ipProto == ipProtoUDP) && (dstPort == DNP3Port || srcPort == DNP3Port) {
+		// DNP3 carries its own direction in the function code.
+		return DecodeDNP3(payload)
 	}
 	return Message{}, false
 }

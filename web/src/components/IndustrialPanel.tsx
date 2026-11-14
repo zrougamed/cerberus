@@ -4,6 +4,7 @@ const protocolNames: Record<string, string> = {
   modbus: 'Modbus/TCP',
   s7comm: 'S7comm',
   s7comm_plus: 'S7comm-plus',
+  dnp3: 'DNP3',
 }
 
 // Operations that change what the controller does; shown in the danger colour.

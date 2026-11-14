@@ -63,6 +63,8 @@ var industrialRuleClasses = map[string]struct {
 	alerts.RuleS7Write:          {industrial.ProtocolS7, industrial.ClassWrite},
 	alerts.RuleS7Control:        {industrial.ProtocolS7, industrial.ClassControl},
 	alerts.RuleS7Program:        {industrial.ProtocolS7, industrial.ClassProgram},
+	alerts.RuleDNP3Control:      {industrial.ProtocolDNP3, industrial.ClassControl},
+	alerts.RuleDNP3Diagnostic:   {industrial.ProtocolDNP3, industrial.ClassDiagnostic},
 }
 
 // newIndustrialRules maps "<protocol>|<class>" to the enabled rule that
@@ -173,6 +175,7 @@ var protocolLabels = map[string]string{
 	industrial.ProtocolModbus: "Modbus",
 	industrial.ProtocolS7:     "S7comm",
 	industrial.ProtocolS7Plus: "S7comm-plus",
+	industrial.ProtocolDNP3:   "DNP3",
 }
 
 func industrialAlertMessage(msg industrial.Message, srcIP, dstIP string) string {
@@ -182,6 +185,9 @@ func industrialAlertMessage(msg industrial.Message, srcIP, dstIP string) string 
 	}
 	if msg.HasRange {
 		text += fmt.Sprintf(", address %d count %d", msg.Address, msg.Quantity)
+	}
+	if msg.Detail != "" {
+		text += " (" + msg.Detail + ")"
 	}
 	return text
 }

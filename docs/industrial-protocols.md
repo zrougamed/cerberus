@@ -5,8 +5,9 @@ Cerberus decodes industrial control protocols in user space, from the first
 UDP event. No BPF change and no extra kernel work is involved, so enabling it
 costs nothing on networks that don't carry this traffic.
 
-Supported today: **Modbus/TCP** (TCP 502) and **S7comm** (ISO-on-TCP, TCP
-102), with S7comm-plus detected and counted. Planned: DNP3,
+Supported today: **Modbus/TCP** (TCP 502), **S7comm** (ISO-on-TCP, TCP
+102, with S7comm-plus detected and counted) and **DNP3** (TCP and UDP
+20000). Planned:
 EtherNet/IP + CIP, BACnet/IP, IEC 104, OPC UA, MQTT and PROFINET DCP (see
 the `industrial` label on the issue tracker).
 
@@ -133,8 +134,40 @@ Modbus rules. S7 has no unit id, so re-alerting is per source and target.
 
 Example: `S7comm plc_stop from 10.20.0.10 to 10.20.0.50`
 
+## DNP3
+
+A frame is accepted only when the link header starts with `05 64`, declares
+a length of at least 5 and its CRC matches. Link frames without user data
+(reset link, link status) count as `link_layer`. For user data the
+transport and application headers are read from the first block; the
+outstation address is counted in `details` (`"outstation 10": 42`) and the
+direction comes from the function code (129 and up are responses). A
+response with any of the low three IIN2 bits set (function not supported,
+object unknown, parameter error) counts as an error reply.
+
+| Class | Functions |
+|-------|-----------|
+| read | read, get_file_info |
+| write | write, freeze_clear |
+| control | select, operate, direct_operate, direct_operate_no_ack, start_application, stop_application |
+| diagnostic | cold_restart, warm_restart, initialize_data, initialize_application, save_configuration, disable_unsolicited |
+| program | delete_file, activate_config |
+| other | confirm, freezes, enable_unsolicited, time sync, file open/close, authentication, responses |
+
+`disable_unsolicited` is in the diagnostic class because it is a known way to
+stop an outstation from reporting changes to its master.
+
+| Rule | Fires on | Default |
+|------|----------|---------|
+| `dnp3_control` | control class requests | on, high |
+| `dnp3_diagnostic` | restarts, initialisation, save configuration, disable unsolicited | on, high |
+
+Example: `DNP3 direct_operate from 10.20.0.10 to 10.20.0.70 (outstation 10)`
+
 ## Limits
 
+- DNP3 objects (which point is operated, with what value) are past the
+  first header and not decoded. Data block CRCs are not checked.
 - Only the first 128 bytes of each segment are seen. One Modbus frame per
   segment is decoded; a second frame packed in the same segment is not.
 - Modbus over a non-standard port is not detected.

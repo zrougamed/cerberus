@@ -12,6 +12,8 @@ const (
 	RuleS7Write          = "s7_write"
 	RuleS7Control        = "s7_control"
 	RuleS7Program        = "s7_program"
+	RuleDNP3Control      = "dnp3_control"
+	RuleDNP3Diagnostic   = "dnp3_diagnostic"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -39,6 +41,8 @@ type IndustrialConfig struct {
 	S7Write          IndustrialRule `yaml:"s7_write" json:"s7_write"`
 	S7Control        IndustrialRule `yaml:"s7_control" json:"s7_control"`
 	S7Program        IndustrialRule `yaml:"s7_program" json:"s7_program"`
+	DNP3Control      IndustrialRule `yaml:"dnp3_control" json:"dnp3_control"`
+	DNP3Diagnostic   IndustrialRule `yaml:"dnp3_diagnostic" json:"dnp3_diagnostic"`
 }
 
 // NamedIndustrialRule pairs a rule with its id.
@@ -55,6 +59,8 @@ func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
 		{RuleS7Write, &c.S7Write},
 		{RuleS7Control, &c.S7Control},
 		{RuleS7Program, &c.S7Program},
+		{RuleDNP3Control, &c.DNP3Control},
+		{RuleDNP3Diagnostic, &c.DNP3Diagnostic},
 	}
 }
 
@@ -65,13 +71,9 @@ type industrialRuleOverlay struct {
 	RealertSeconds *int     `yaml:"realert_seconds" json:"realert_seconds"`
 }
 
-type industrialOverlay struct {
-	ModbusWrite      *industrialRuleOverlay `yaml:"modbus_write" json:"modbus_write"`
-	ModbusDiagnostic *industrialRuleOverlay `yaml:"modbus_diagnostic" json:"modbus_diagnostic"`
-	S7Write          *industrialRuleOverlay `yaml:"s7_write" json:"s7_write"`
-	S7Control        *industrialRuleOverlay `yaml:"s7_control" json:"s7_control"`
-	S7Program        *industrialRuleOverlay `yaml:"s7_program" json:"s7_program"`
-}
+// industrialOverlay maps rule ids to their file settings. Unknown ids are
+// rejected so a typo does not silently leave a rule at its default.
+type industrialOverlay map[string]*industrialRuleOverlay
 
 func defaultIndustrialConfig() IndustrialConfig {
 	rule := func(severity string) IndustrialRule {
@@ -85,17 +87,27 @@ func defaultIndustrialConfig() IndustrialConfig {
 		S7Write:   rule("medium"),
 		S7Control: rule("high"),
 		S7Program: rule("high"),
+		// Operate and restart commands come from the master only, and
+		// rarely; anything else sending them is worth a page.
+		DNP3Control:    rule("high"),
+		DNP3Diagnostic: rule("high"),
 	}
 }
 
-func mergeIndustrial(dst *IndustrialConfig, src *industrialOverlay) {
-	if src == nil {
-		return
+func mergeIndustrial(dst *IndustrialConfig, src industrialOverlay) error {
+	rules := dst.Rules()
+	known := make(map[string]*IndustrialRule, len(rules))
+	for _, r := range rules {
+		known[r.ID] = r.Rule
 	}
-	overlays := []*industrialRuleOverlay{src.ModbusWrite, src.ModbusDiagnostic, src.S7Write, src.S7Control, src.S7Program}
-	for i, r := range dst.Rules() {
-		mergeIndustrialRule(r.Rule, overlays[i])
+	for id, o := range src {
+		rule, ok := known[id]
+		if !ok {
+			return fmt.Errorf("industrial: unknown rule %q", id)
+		}
+		mergeIndustrialRule(rule, o)
 	}
+	return nil
 }
 
 func mergeIndustrialRule(dst *IndustrialRule, src *industrialRuleOverlay) {

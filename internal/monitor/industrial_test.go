@@ -365,3 +365,60 @@ func TestNewIndustrialRules_SkipsDisabled(t *testing.T) {
 		t.Fatalf("rules = %d, want %d", len(rules), len(industrialRuleClasses)-1)
 	}
 }
+
+func dnp3Event(srcMAC byte, src, dst string, sport, dport uint16, control byte, destAddr, srcAddr uint16, block ...byte) *models.NetworkEvent {
+	evt := modbusEvent(srcMAC, src, dst, sport, dport, 0)
+	evt.Protocol = 17
+	evt.EventType = models.EVENT_TYPE_UDP
+	evt.L7Payload = [models.L7PayloadSize]byte{}
+	h := []byte{0x05, 0x64, byte(5 + len(block)), control, byte(destAddr), byte(destAddr >> 8), byte(srcAddr), byte(srcAddr >> 8)}
+	crc := dnp3TestCRC(h)
+	copy(evt.L7Payload[:], append(append(h, byte(crc), byte(crc>>8)), block...))
+	return evt
+}
+
+// dnp3TestCRC mirrors the decoder's CRC so frames can be built here.
+func dnp3TestCRC(b []byte) uint16 {
+	var crc uint16
+	for _, c := range b {
+		crc ^= uint16(c)
+		for range 8 {
+			if crc&1 != 0 {
+				crc = crc>>1 ^ 0xA6BC
+			} else {
+				crc >>= 1
+			}
+		}
+	}
+	return ^crc
+}
+
+func TestTrackEvent_DNP3OperateAndRestart(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	nm.TrackEvent(dnp3Event(1, "10.0.0.9", "10.0.0.70", 50000, 20000, 0xC4, 10, 1, 0xC0, 0xC1, 1))
+	nm.TrackEvent(dnp3Event(1, "10.0.0.9", "10.0.0.70", 50000, 20000, 0xC4, 10, 1, 0xC0, 0xC1, 5))
+	nm.TrackEvent(dnp3Event(1, "10.0.0.9", "10.0.0.70", 50000, 20000, 0xC4, 10, 1, 0xC0, 0xC1, 13))
+	nm.TrackEvent(dnp3Event(7, "10.0.0.70", "10.0.0.9", 20000, 50000, 0x44, 1, 10, 0xC0, 0xC1, 129, 0, 1))
+
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	if len(got) != 2 {
+		t.Fatalf("alerts = %+v", got)
+	}
+	if want := "DNP3 direct_operate from 10.0.0.9 to 10.0.0.70 (outstation 10)"; got[alerts.RuleDNP3Control].Message != want {
+		t.Fatalf("control message = %q, want %q", got[alerts.RuleDNP3Control].Message, want)
+	}
+	if got[alerts.RuleDNP3Diagnostic].Message != "DNP3 cold_restart from 10.0.0.9 to 10.0.0.70 (outstation 10)" {
+		t.Fatalf("diagnostic alert = %+v", got[alerts.RuleDNP3Diagnostic])
+	}
+	master := nm.GetStats()["02:00:00:00:00:01"].Industrial[industrial.ProtocolDNP3]
+	if master.Requests != 3 || master.Details["outstation 10"] != 3 {
+		t.Fatalf("master stats = %+v", master)
+	}
+	rtu := nm.GetStats()["02:00:00:00:00:07"].Industrial[industrial.ProtocolDNP3]
+	if rtu.Responses != 1 || rtu.Exceptions != 1 {
+		t.Fatalf("outstation stats = %+v", rtu)
+	}
+}

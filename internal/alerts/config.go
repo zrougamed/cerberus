@@ -90,7 +90,7 @@ type fileOverlay struct {
 	Anomaly           *anomalyOverlay       `yaml:"anomaly" json:"anomaly"`
 	Notifications     *notificationsOverlay `yaml:"notifications" json:"notifications"`
 	Watchlists        *[]watchlistOverlay   `yaml:"watchlists" json:"watchlists"`
-	Industrial        *industrialOverlay    `yaml:"industrial" json:"industrial"`
+	Industrial        industrialOverlay     `yaml:"industrial" json:"industrial"`
 }
 
 type notificationsOverlay struct {
@@ -303,8 +303,7 @@ func mergeOverlay(cfg *Config, o fileOverlay) error {
 			cfg.Watchlists = append(cfg.Watchlists, w.toWatchlist())
 		}
 	}
-	mergeIndustrial(&cfg.Industrial, o.Industrial)
-	return nil
+	return mergeIndustrial(&cfg.Industrial, o.Industrial)
 }
 
 func mergeNotifications(dst *notify.Config, src *notificationsOverlay) {
