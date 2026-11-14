@@ -12,6 +12,7 @@ const (
 	idxIPv6
 	idxOther
 	idxRingbufFull
+	idxPolicyDrop
 	numCounters
 )
 
@@ -32,6 +33,8 @@ type Snapshot struct {
 	// because the ring buffer was full. A rising value means the monitor is
 	// missing traffic (overload, or an attempt to blind it).
 	RingbufFull Counter `json:"ringbuf_full"`
+	// PolicyDropped counts packets dropped by an enforced policy rule.
+	PolicyDropped Counter `json:"policy_dropped"`
 }
 
 // PerCPULookup fetches one key of a per-CPU map into a slice with one entry
@@ -64,11 +67,12 @@ func (r *Reader) Read() (Snapshot, error) {
 		}
 	}
 	return Snapshot{
-		Total:       sums[idxTotal],
-		ARP:         sums[idxARP],
-		IPv4:        sums[idxIPv4],
-		IPv6:        sums[idxIPv6],
-		Other:       sums[idxOther],
-		RingbufFull: sums[idxRingbufFull],
+		Total:         sums[idxTotal],
+		ARP:           sums[idxARP],
+		IPv4:          sums[idxIPv4],
+		IPv6:          sums[idxIPv6],
+		Other:         sums[idxOther],
+		RingbufFull:   sums[idxRingbufFull],
+		PolicyDropped: sums[idxPolicyDrop],
 	}, nil
 }

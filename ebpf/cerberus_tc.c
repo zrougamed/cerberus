@@ -107,7 +107,8 @@ struct {
 #define CNT_IPV6         3
 #define CNT_OTHER        4  // other ethertypes, or too short to parse
 #define CNT_RINGBUF_FULL 5  // events lost because the ring buffer was full
-#define CNT_MAX          6
+#define CNT_POLICY_DROP  6  // packets dropped by an enforced policy rule
+#define CNT_MAX          7
 
 struct counter {
     __u64 packets;
@@ -128,6 +129,156 @@ static __always_inline void count(__u32 idx, struct __sk_buff *skb)
         c->packets++;
         c->bytes += skb->len;
     }
+}
+
+// ------------------- Policy (active response) -------------------
+// Modelled on bpfilter sets: user space fills hash/LPM maps, every rule has
+// its own counter, and a global switch decides whether "drop" rules really
+// drop (enforce) or only count (monitor / dry run). Layouts must match
+// internal/policy.
+#define POLICY_ACTION_DROP 1
+#define POLICY_ACTION_LOG  2  // count only, never drop
+
+#define POLICY_DIR_SRC 1
+#define POLICY_DIR_DST 2
+
+#define MAX_POLICY_RULES 1024
+
+struct policy_val {
+    __u32 slot;    // index into policy_counters
+    __u8  action;  // POLICY_ACTION_*
+    __u8  dir;     // POLICY_DIR_* bitmask (IP rules)
+    __u16 pad;
+};
+
+struct policy_mac_key {
+    __u8  addr[6];
+    __u16 pad;
+};
+
+struct policy_v4_key {
+    __u32 prefixlen;
+    __u8  addr[4];
+};
+
+struct policy_v6_key {
+    __u32 prefixlen;
+    __u8  addr[16];
+};
+
+// policy_cfg[0] != 0 means enforce; 0 (default) means monitor only.
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u32);
+} policy_cfg SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_POLICY_RULES);
+    __type(key, struct policy_mac_key);
+    __type(value, struct policy_val);
+} policy_mac SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __uint(max_entries, MAX_POLICY_RULES);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __type(key, struct policy_v4_key);
+    __type(value, struct policy_val);
+} policy_v4 SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __uint(max_entries, MAX_POLICY_RULES);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __type(key, struct policy_v6_key);
+    __type(value, struct policy_val);
+} policy_v6 SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, MAX_POLICY_RULES);
+    __type(key, __u32);
+    __type(value, struct counter);
+} policy_counters SEC(".maps");
+
+// Counts the match and reports whether this rule asks for a drop.
+static __always_inline int policy_hit(struct __sk_buff *skb, struct policy_val *v)
+{
+    __u32 slot = v->slot;
+    struct counter *c = bpf_map_lookup_elem(&policy_counters, &slot);
+    if (c) {
+        c->packets++;
+        c->bytes += skb->len;
+    }
+    return v->action == POLICY_ACTION_DROP;
+}
+
+static __always_inline int policy_enforcing(void)
+{
+    __u32 k = 0;
+    __u32 *on = bpf_map_lookup_elem(&policy_cfg, &k);
+    return on && *on;
+}
+
+// Final verdict once all rules matching the packet have been counted.
+static __always_inline int policy_should_drop(struct __sk_buff *skb, int want_drop)
+{
+    if (want_drop && policy_enforcing()) {
+        count(CNT_POLICY_DROP, skb);
+        return 1;
+    }
+    return 0;
+}
+
+static __always_inline int policy_check_mac(struct __sk_buff *skb, struct ethhdr *eth)
+{
+    struct policy_mac_key k = {};
+    __builtin_memcpy(k.addr, eth->h_source, 6);
+    struct policy_val *v = bpf_map_lookup_elem(&policy_mac, &k);
+    if (!v)
+        return 0;
+    return policy_should_drop(skb, policy_hit(skb, v));
+}
+
+static __always_inline int policy_check_v4(struct __sk_buff *skb, struct iphdr *iph)
+{
+    int drop = 0;
+    struct policy_v4_key k = { .prefixlen = 32 };
+    struct policy_val *v;
+
+    __builtin_memcpy(k.addr, &iph->saddr, 4);
+    v = bpf_map_lookup_elem(&policy_v4, &k);
+    if (v && (v->dir & POLICY_DIR_SRC))
+        drop |= policy_hit(skb, v);
+
+    __builtin_memcpy(k.addr, &iph->daddr, 4);
+    v = bpf_map_lookup_elem(&policy_v4, &k);
+    if (v && (v->dir & POLICY_DIR_DST))
+        drop |= policy_hit(skb, v);
+
+    return policy_should_drop(skb, drop);
+}
+
+static __always_inline int policy_check_v6(struct __sk_buff *skb, struct ipv6hdr *ip6h)
+{
+    int drop = 0;
+    struct policy_v6_key k = { .prefixlen = 128 };
+    struct policy_val *v;
+
+    __builtin_memcpy(k.addr, &ip6h->saddr, 16);
+    v = bpf_map_lookup_elem(&policy_v6, &k);
+    if (v && (v->dir & POLICY_DIR_SRC))
+        drop |= policy_hit(skb, v);
+
+    __builtin_memcpy(k.addr, &ip6h->daddr, 16);
+    v = bpf_map_lookup_elem(&policy_v6, &k);
+    if (v && (v->dir & POLICY_DIR_DST))
+        drop |= policy_hit(skb, v);
+
+    return policy_should_drop(skb, drop);
 }
 
 // Records a lost event and lets the packet through unchanged.
@@ -542,6 +693,9 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         return CERB_PASS;
     }
 
+    // Quarantined devices: drop every frame from the MAC, ARP included.
+    if (policy_check_mac(skb, eth)) return CERB_DROP;
+
     __u16 proto = bpf_ntohs(eth->h_proto);
 
     if (proto == ETH_P_ARP) {
@@ -552,6 +706,7 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         count(CNT_IPV4, skb);
         struct iphdr *iph = (void *)(eth + 1);
         if ((void *)(iph + 1) > data_end) return CERB_PASS;
+        if (policy_check_v4(skb, iph)) return CERB_DROP;
 
         if (iph->protocol == PROTO_TCP) return handle_tcp(skb, eth, iph);
         if (iph->protocol == PROTO_UDP) return handle_udp(skb, eth, iph);
@@ -561,6 +716,7 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         count(CNT_IPV6, skb);
         struct ipv6hdr *ip6h = (void *)(eth + 1);
         if ((void *)(ip6h + 1) > data_end) return CERB_PASS;
+        if (policy_check_v6(skb, ip6h)) return CERB_DROP;
         if (ip6h->nexthdr == PROTO_TCP) return handle_tcp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_UDP) return handle_udp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_ICMPV6) return handle_icmp6(skb, eth, ip6h);

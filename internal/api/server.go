@@ -373,7 +373,10 @@ func (s *Server) writeKernelMetrics(w io.Writer) {
 	}
 	fmt.Fprintln(w, "# HELP cerberus_ringbuf_dropped_events_total Events lost because the ring buffer was full.")
 	fmt.Fprintln(w, "# TYPE cerberus_ringbuf_dropped_events_total counter")
-	fmt.Fprintf(w, "cerberus_ringbuf_dropped_events_total %d\n\n", snap.RingbufFull.Packets)
+	fmt.Fprintf(w, "cerberus_ringbuf_dropped_events_total %d\n", snap.RingbufFull.Packets)
+	fmt.Fprintln(w, "# HELP cerberus_policy_dropped_packets_total Packets dropped by enforced policy rules.")
+	fmt.Fprintln(w, "# TYPE cerberus_policy_dropped_packets_total counter")
+	fmt.Fprintf(w, "cerberus_policy_dropped_packets_total %d\n\n", snap.PolicyDropped.Packets)
 }
 
 func escapeLabelValue(value string) string {

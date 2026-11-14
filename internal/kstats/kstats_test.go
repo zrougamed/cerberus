@@ -29,6 +29,7 @@ func TestRead_SumsAcrossCPUs(t *testing.T) {
 		idxIPv6:        {{Packets: 2, Bytes: 240}, {Packets: 1, Bytes: 100}},
 		idxOther:       {{}, {}},
 		idxRingbufFull: {{Packets: 3, Bytes: 300}, {Packets: 1, Bytes: 64}},
+		idxPolicyDrop:  {{Packets: 2, Bytes: 120}, {Packets: 2, Bytes: 80}},
 	}}
 
 	got, err := NewReader(m).Read()
@@ -36,11 +37,12 @@ func TestRead_SumsAcrossCPUs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := Snapshot{
-		Total:       Counter{Packets: 15, Bytes: 1500},
-		ARP:         Counter{Packets: 1, Bytes: 60},
-		IPv4:        Counter{Packets: 11, Bytes: 1100},
-		IPv6:        Counter{Packets: 3, Bytes: 340},
-		RingbufFull: Counter{Packets: 4, Bytes: 364},
+		Total:         Counter{Packets: 15, Bytes: 1500},
+		ARP:           Counter{Packets: 1, Bytes: 60},
+		IPv4:          Counter{Packets: 11, Bytes: 1100},
+		IPv6:          Counter{Packets: 3, Bytes: 340},
+		RingbufFull:   Counter{Packets: 4, Bytes: 364},
+		PolicyDropped: Counter{Packets: 4, Bytes: 200},
 	}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
