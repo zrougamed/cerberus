@@ -12,6 +12,20 @@ const (
 	RuleS7Write          = "s7_write"
 	RuleS7Control        = "s7_control"
 	RuleS7Program        = "s7_program"
+	RuleDNP3Control      = "dnp3_control"
+	RuleDNP3Diagnostic   = "dnp3_diagnostic"
+	RuleENIPWrite        = "enip_write"
+	RuleENIPControl      = "enip_control"
+	RuleBACnetWrite      = "bacnet_write"
+	RuleBACnetControl    = "bacnet_control"
+	RuleIEC104Control    = "iec104_control"
+	RuleIEC104Diagnostic = "iec104_diagnostic"
+	RuleOPCUAWrite       = "opcua_write"
+	RuleOPCUAInsecure    = "opcua_insecure"
+	RuleMQTTAnonymous    = "mqtt_anonymous"
+	// RuleAssetChanged fires when a device reports a different model,
+	// firmware or serial than before. Only enabled and severity apply.
+	RuleAssetChanged = "asset_changed"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -39,6 +53,18 @@ type IndustrialConfig struct {
 	S7Write          IndustrialRule `yaml:"s7_write" json:"s7_write"`
 	S7Control        IndustrialRule `yaml:"s7_control" json:"s7_control"`
 	S7Program        IndustrialRule `yaml:"s7_program" json:"s7_program"`
+	DNP3Control      IndustrialRule `yaml:"dnp3_control" json:"dnp3_control"`
+	DNP3Diagnostic   IndustrialRule `yaml:"dnp3_diagnostic" json:"dnp3_diagnostic"`
+	ENIPWrite        IndustrialRule `yaml:"enip_write" json:"enip_write"`
+	ENIPControl      IndustrialRule `yaml:"enip_control" json:"enip_control"`
+	BACnetWrite      IndustrialRule `yaml:"bacnet_write" json:"bacnet_write"`
+	BACnetControl    IndustrialRule `yaml:"bacnet_control" json:"bacnet_control"`
+	IEC104Control    IndustrialRule `yaml:"iec104_control" json:"iec104_control"`
+	IEC104Diagnostic IndustrialRule `yaml:"iec104_diagnostic" json:"iec104_diagnostic"`
+	OPCUAWrite       IndustrialRule `yaml:"opcua_write" json:"opcua_write"`
+	OPCUAInsecure    IndustrialRule `yaml:"opcua_insecure" json:"opcua_insecure"`
+	MQTTAnonymous    IndustrialRule `yaml:"mqtt_anonymous" json:"mqtt_anonymous"`
+	AssetChanged     IndustrialRule `yaml:"asset_changed" json:"asset_changed"`
 }
 
 // NamedIndustrialRule pairs a rule with its id.
@@ -55,6 +81,18 @@ func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
 		{RuleS7Write, &c.S7Write},
 		{RuleS7Control, &c.S7Control},
 		{RuleS7Program, &c.S7Program},
+		{RuleDNP3Control, &c.DNP3Control},
+		{RuleDNP3Diagnostic, &c.DNP3Diagnostic},
+		{RuleENIPWrite, &c.ENIPWrite},
+		{RuleENIPControl, &c.ENIPControl},
+		{RuleBACnetWrite, &c.BACnetWrite},
+		{RuleBACnetControl, &c.BACnetControl},
+		{RuleIEC104Control, &c.IEC104Control},
+		{RuleIEC104Diagnostic, &c.IEC104Diagnostic},
+		{RuleOPCUAWrite, &c.OPCUAWrite},
+		{RuleOPCUAInsecure, &c.OPCUAInsecure},
+		{RuleMQTTAnonymous, &c.MQTTAnonymous},
+		{RuleAssetChanged, &c.AssetChanged},
 	}
 }
 
@@ -65,13 +103,9 @@ type industrialRuleOverlay struct {
 	RealertSeconds *int     `yaml:"realert_seconds" json:"realert_seconds"`
 }
 
-type industrialOverlay struct {
-	ModbusWrite      *industrialRuleOverlay `yaml:"modbus_write" json:"modbus_write"`
-	ModbusDiagnostic *industrialRuleOverlay `yaml:"modbus_diagnostic" json:"modbus_diagnostic"`
-	S7Write          *industrialRuleOverlay `yaml:"s7_write" json:"s7_write"`
-	S7Control        *industrialRuleOverlay `yaml:"s7_control" json:"s7_control"`
-	S7Program        *industrialRuleOverlay `yaml:"s7_program" json:"s7_program"`
-}
+// industrialOverlay maps rule ids to their file settings. Unknown ids are
+// rejected so a typo does not silently leave a rule at its default.
+type industrialOverlay map[string]*industrialRuleOverlay
 
 func defaultIndustrialConfig() IndustrialConfig {
 	rule := func(severity string) IndustrialRule {
@@ -85,17 +119,43 @@ func defaultIndustrialConfig() IndustrialConfig {
 		S7Write:   rule("medium"),
 		S7Control: rule("high"),
 		S7Program: rule("high"),
+		// Operate and restart commands come from the master only, and
+		// rarely; anything else sending them is worth a page.
+		DNP3Control:    rule("high"),
+		DNP3Diagnostic: rule("high"),
+		// Tag writes from HMIs are routine, like S7 write_var.
+		ENIPWrite:   rule("medium"),
+		ENIPControl: rule("high"),
+		// Building systems write setpoints constantly; disabling a device's
+		// communication or reinitialising it is rare and disruptive.
+		BACnetWrite:   rule("medium"),
+		BACnetControl: rule("high"),
+		// IEC 104 commands come from the control centre only.
+		IEC104Control:    rule("high"),
+		IEC104Diagnostic: rule("high"),
+		OPCUAWrite:       rule("medium"),
+		OPCUAInsecure:    rule("medium"),
+		MQTTAnonymous:    rule("medium"),
+		// A firmware or model change on a controller is either planned
+		// maintenance or someone swapping hardware; both deserve a look.
+		AssetChanged: rule("high"),
 	}
 }
 
-func mergeIndustrial(dst *IndustrialConfig, src *industrialOverlay) {
-	if src == nil {
-		return
+func mergeIndustrial(dst *IndustrialConfig, src industrialOverlay) error {
+	rules := dst.Rules()
+	known := make(map[string]*IndustrialRule, len(rules))
+	for _, r := range rules {
+		known[r.ID] = r.Rule
 	}
-	overlays := []*industrialRuleOverlay{src.ModbusWrite, src.ModbusDiagnostic, src.S7Write, src.S7Control, src.S7Program}
-	for i, r := range dst.Rules() {
-		mergeIndustrialRule(r.Rule, overlays[i])
+	for id, o := range src {
+		rule, ok := known[id]
+		if !ok {
+			return fmt.Errorf("industrial: unknown rule %q", id)
+		}
+		mergeIndustrialRule(rule, o)
 	}
+	return nil
 }
 
 func mergeIndustrialRule(dst *IndustrialRule, src *industrialRuleOverlay) {

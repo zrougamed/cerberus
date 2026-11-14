@@ -31,10 +31,27 @@ const (
 	// ProtocolS7Plus is the newer, integrity-protected S7 protocol. It is
 	// only detected and counted, not decoded.
 	ProtocolS7Plus = "s7comm_plus"
+	ProtocolDNP3   = "dnp3"
+	ProtocolENIP   = "enip"
+	ProtocolBACnet = "bacnet"
+	ProtocolIEC104 = "iec104"
+	ProtocolOPCUA  = "opcua"
+	ProtocolMQTT   = "mqtt"
+)
+
+// Flags mark a property of a message worth alerting on that is not an
+// operation class.
+const (
+	// FlagInsecurePolicy: an OPC UA secure channel opened with
+	// SecurityPolicy#None, so nothing is signed or encrypted.
+	FlagInsecurePolicy = "insecure_policy"
+	// FlagNoUsername: an MQTT client connected without a username.
+	FlagNoUsername = "no_username"
 )
 
 const (
 	ipProtoTCP uint8 = 6
+	ipProtoUDP uint8 = 17
 )
 
 // functionInfo is a function code's name and class in a decoder table.
@@ -64,6 +81,21 @@ type Message struct {
 	// Detail is a short protocol-specific note worth counting, such as the
 	// S7 rack and slot a client connects to. Empty when there is none.
 	Detail string
+	// Identity is set when the message announces what the sending device
+	// is (CIP ListIdentity, Modbus Read Device Identification, BACnet I-Am).
+	Identity *Identity
+	// Flag is one of the Flag* constants, or empty.
+	Flag string
+}
+
+// Identity describes a device as it reports itself. Strings are cleaned
+// to printable ASCII and capped, since they come straight off the wire.
+type Identity struct {
+	Vendor     string
+	Model      string
+	Firmware   string
+	Serial     string
+	DeviceType string
 }
 
 // Decode picks a decoder from the transport and ports and runs it on
@@ -79,5 +111,42 @@ func Decode(ipProto uint8, srcPort, dstPort uint16, payload []byte) (Message, bo
 	if ipProto == ipProtoTCP && (dstPort == S7Port || srcPort == S7Port) {
 		return DecodeS7(payload, srcPort == S7Port && dstPort != S7Port)
 	}
+	if (ipProto == ipProtoTCP || ipProto == ipProtoUDP) && (dstPort == DNP3Port || srcPort == DNP3Port) {
+		// DNP3 carries its own direction in the function code.
+		return DecodeDNP3(payload)
+	}
+	if (ipProto == ipProtoTCP || ipProto == ipProtoUDP) && (dstPort == ENIPPort || srcPort == ENIPPort) {
+		return DecodeENIP(payload, srcPort == ENIPPort && dstPort != ENIPPort)
+	}
+	if ipProto == ipProtoUDP && (dstPort == BACnetPort || srcPort == BACnetPort) {
+		return DecodeBACnet(payload)
+	}
+	if ipProto == ipProtoTCP && (dstPort == IEC104Port || srcPort == IEC104Port) {
+		return DecodeIEC104(payload)
+	}
+	if ipProto == ipProtoTCP && (dstPort == OPCUAPort || srcPort == OPCUAPort) {
+		return DecodeOPCUA(payload, srcPort == OPCUAPort && dstPort != OPCUAPort)
+	}
+	if ipProto == ipProtoTCP && (dstPort == MQTTPort || srcPort == MQTTPort) {
+		return DecodeMQTT(payload, srcPort == MQTTPort && dstPort != MQTTPort)
+	}
 	return Message{}, false
+}
+
+// maxWireString caps strings taken from packets (product names, client ids).
+const maxWireString = 64
+
+// cleanString keeps printable ASCII, drops everything else and truncates,
+// so device-supplied text is safe to log, store and render.
+func cleanString(b []byte) string {
+	out := make([]byte, 0, min(len(b), maxWireString))
+	for _, c := range b {
+		if len(out) == maxWireString {
+			break
+		}
+		if c >= 0x20 && c < 0x7F {
+			out = append(out, c)
+		}
+	}
+	return string(out)
 }

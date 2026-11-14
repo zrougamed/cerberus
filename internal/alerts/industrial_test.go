@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -113,8 +114,10 @@ func TestIndustrialRules_CoverEveryField(t *testing.T) {
 		}
 		ids[r.ID] = true
 	}
-	if len(ids) != 5 {
-		t.Fatalf("rules = %v", ids)
+	// Every IndustrialRule field must be reachable through Rules(), or
+	// it would be neither validated nor merged from the file.
+	if n := reflect.TypeOf(c).NumField(); len(ids) != n {
+		t.Fatalf("Rules() lists %d rules, IndustrialConfig has %d fields", len(ids), n)
 	}
 	if c.S7Write.Severity != "medium" || c.S7Control.Severity != "high" || c.S7Program.Severity != "high" {
 		t.Fatalf("S7 defaults = %+v %+v %+v", c.S7Write, c.S7Control, c.S7Program)
@@ -129,5 +132,13 @@ func TestParse_S7Overlay(t *testing.T) {
 	}
 	if cfg.Industrial.S7Write.Enabled || len(cfg.Industrial.S7Program.AllowedSources) != 1 || !cfg.Industrial.S7Control.Enabled {
 		t.Fatalf("industrial = %+v", cfg.Industrial)
+	}
+}
+
+func TestParse_IndustrialUnknownRuleRejected(t *testing.T) {
+	t.Parallel()
+	_, err := Parse([]byte("industrial:\n  modbus_writes:\n    enabled: false\n"), ".yaml")
+	if err == nil || !strings.Contains(err.Error(), `unknown rule "modbus_writes"`) {
+		t.Fatalf("err = %v", err)
 	}
 }

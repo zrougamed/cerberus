@@ -53,28 +53,49 @@ func (r *industrialRule) allows(addr string) bool {
 	return false
 }
 
-// industrialRuleClasses says which decoded operation each rule alerts on.
-var industrialRuleClasses = map[string]struct {
+// industrialRuleTarget is what a rule alerts on: requests of one class, or
+// requests carrying one flag.
+type industrialRuleTarget struct {
 	protocol string
 	class    industrial.Class
-}{
-	alerts.RuleModbusWrite:      {industrial.ProtocolModbus, industrial.ClassWrite},
-	alerts.RuleModbusDiagnostic: {industrial.ProtocolModbus, industrial.ClassDiagnostic},
-	alerts.RuleS7Write:          {industrial.ProtocolS7, industrial.ClassWrite},
-	alerts.RuleS7Control:        {industrial.ProtocolS7, industrial.ClassControl},
-	alerts.RuleS7Program:        {industrial.ProtocolS7, industrial.ClassProgram},
+	flag     string
 }
 
-// newIndustrialRules maps "<protocol>|<class>" to the enabled rule that
-// alerts on it.
+func (t industrialRuleTarget) key() string {
+	if t.flag != "" {
+		return t.protocol + "|flag:" + t.flag
+	}
+	return t.protocol + "|" + string(t.class)
+}
+
+var industrialRuleTargets = map[string]industrialRuleTarget{
+	alerts.RuleModbusWrite:      {protocol: industrial.ProtocolModbus, class: industrial.ClassWrite},
+	alerts.RuleModbusDiagnostic: {protocol: industrial.ProtocolModbus, class: industrial.ClassDiagnostic},
+	alerts.RuleS7Write:          {protocol: industrial.ProtocolS7, class: industrial.ClassWrite},
+	alerts.RuleS7Control:        {protocol: industrial.ProtocolS7, class: industrial.ClassControl},
+	alerts.RuleS7Program:        {protocol: industrial.ProtocolS7, class: industrial.ClassProgram},
+	alerts.RuleDNP3Control:      {protocol: industrial.ProtocolDNP3, class: industrial.ClassControl},
+	alerts.RuleDNP3Diagnostic:   {protocol: industrial.ProtocolDNP3, class: industrial.ClassDiagnostic},
+	alerts.RuleENIPWrite:        {protocol: industrial.ProtocolENIP, class: industrial.ClassWrite},
+	alerts.RuleENIPControl:      {protocol: industrial.ProtocolENIP, class: industrial.ClassControl},
+	alerts.RuleBACnetWrite:      {protocol: industrial.ProtocolBACnet, class: industrial.ClassWrite},
+	alerts.RuleBACnetControl:    {protocol: industrial.ProtocolBACnet, class: industrial.ClassControl},
+	alerts.RuleIEC104Control:    {protocol: industrial.ProtocolIEC104, class: industrial.ClassControl},
+	alerts.RuleIEC104Diagnostic: {protocol: industrial.ProtocolIEC104, class: industrial.ClassDiagnostic},
+	alerts.RuleOPCUAWrite:       {protocol: industrial.ProtocolOPCUA, class: industrial.ClassWrite},
+	alerts.RuleOPCUAInsecure:    {protocol: industrial.ProtocolOPCUA, flag: industrial.FlagInsecurePolicy},
+	alerts.RuleMQTTAnonymous:    {protocol: industrial.ProtocolMQTT, flag: industrial.FlagNoUsername},
+}
+
+// newIndustrialRules maps each target key to the enabled rule for it.
 func newIndustrialRules(cfg alerts.IndustrialConfig) map[string]*industrialRule {
 	rules := make(map[string]*industrialRule)
 	for _, r := range cfg.Rules() {
-		target, ok := industrialRuleClasses[r.ID]
+		target, ok := industrialRuleTargets[r.ID]
 		if !ok || !r.Rule.Enabled {
 			continue
 		}
-		rules[target.protocol+"|"+string(target.class)] = &industrialRule{id: r.ID, cfg: *r.Rule, allow: r.Rule.SourcePrefixes()}
+		rules[target.key()] = &industrialRule{id: r.ID, cfg: *r.Rule, allow: r.Rule.SourcePrefixes()}
 	}
 	return rules
 }
@@ -91,9 +112,13 @@ func (nm *NetworkMonitor) trackIndustrial(device *models.DeviceInfo, evt *models
 		return
 	}
 	recordIndustrial(device, msg, dstIP, now)
+	if msg.Identity != nil && msg.Response {
+		nm.recordAsset(device, msg.Protocol, msg.Identity, now)
+	}
 	nm.industrialCounts[IndustrialCountKey{Protocol: msg.Protocol, Class: string(msg.Class), Response: msg.Response}]++
 	if !msg.Response {
 		nm.checkIndustrialAlert(device, msg, srcIP, dstIP, now)
+		nm.observeFlow(device, msg, srcIP, dstIP, now)
 	}
 }
 
@@ -145,10 +170,18 @@ func recordIndustrial(device *models.DeviceInfo, msg industrial.Message, peer st
 }
 
 func (nm *NetworkMonitor) checkIndustrialAlert(device *models.DeviceInfo, msg industrial.Message, srcIP, dstIP string, now time.Time) {
-	rule := nm.industrialRules[msg.Protocol+"|"+string(msg.Class)]
-	if rule == nil || rule.allows(srcIP) {
-		return
+	keys := []string{industrialRuleTarget{protocol: msg.Protocol, class: msg.Class}.key()}
+	if msg.Flag != "" {
+		keys = append(keys, industrialRuleTarget{protocol: msg.Protocol, flag: msg.Flag}.key())
 	}
+	for _, k := range keys {
+		if rule := nm.industrialRules[k]; rule != nil && !rule.allows(srcIP) {
+			nm.raiseIndustrialAlert(rule, device, msg, srcIP, dstIP, now)
+		}
+	}
+}
+
+func (nm *NetworkMonitor) raiseIndustrialAlert(rule *industrialRule, device *models.DeviceInfo, msg industrial.Message, srcIP, dstIP string, now time.Time) {
 	key := fmt.Sprintf("%s|%s|%s|%d", device.MAC, rule.id, dstIP, msg.Unit)
 	gap := time.Duration(rule.cfg.RealertSeconds) * time.Second
 	if last, ok := nm.industrialLast[key]; ok && now.Sub(last) < gap {
@@ -173,6 +206,17 @@ var protocolLabels = map[string]string{
 	industrial.ProtocolModbus: "Modbus",
 	industrial.ProtocolS7:     "S7comm",
 	industrial.ProtocolS7Plus: "S7comm-plus",
+	industrial.ProtocolDNP3:   "DNP3",
+	industrial.ProtocolENIP:   "EtherNet/IP",
+	industrial.ProtocolBACnet: "BACnet",
+	industrial.ProtocolIEC104: "IEC 104",
+	industrial.ProtocolOPCUA:  "OPC UA",
+	industrial.ProtocolMQTT:   "MQTT",
+}
+
+var flagLabels = map[string]string{
+	industrial.FlagInsecurePolicy: "no message security",
+	industrial.FlagNoUsername:     "no username",
 }
 
 func industrialAlertMessage(msg industrial.Message, srcIP, dstIP string) string {
@@ -182,6 +226,12 @@ func industrialAlertMessage(msg industrial.Message, srcIP, dstIP string) string 
 	}
 	if msg.HasRange {
 		text += fmt.Sprintf(", address %d count %d", msg.Address, msg.Quantity)
+	}
+	if msg.Detail != "" {
+		text += " (" + msg.Detail + ")"
+	}
+	if label := flagLabels[msg.Flag]; label != "" {
+		text += ", " + label
 	}
 	return text
 }

@@ -1,10 +1,6 @@
-import type { IndustrialStats } from '../lib/types'
+import { protocolNames } from '../lib/protocols'
+import type { AssetInfo, IndustrialStats } from '../lib/types'
 
-const protocolNames: Record<string, string> = {
-  modbus: 'Modbus/TCP',
-  s7comm: 'S7comm',
-  s7comm_plus: 'S7comm-plus',
-}
 
 // Operations that change what the controller does; shown in the danger colour.
 const riskyClasses = new Set(['write', 'diagnostic', 'control', 'program'])
@@ -118,14 +114,50 @@ function ProtocolSection({ protocol, stats }: { protocol: string; stats: Industr
   )
 }
 
-export function IndustrialPanel({ industrial }: { industrial?: Record<string, IndustrialStats> }) {
+function AssetSummary({ asset }: { asset: AssetInfo }) {
+  const rows: [string, string | undefined][] = [
+    ['Vendor', asset.vendor],
+    ['Model', asset.model],
+    ['Type', asset.device_type],
+    ['Firmware', asset.firmware],
+    ['Serial', asset.serial],
+  ]
+  return (
+    <section aria-labelledby="asset-heading">
+      <h3 id="asset-heading" className="m-0 text-base font-bold">Reported identity</h3>
+      <p className="muted m-0 mt-1 text-sm">
+        From {protocolNames[asset.source] || asset.source}
+        {asset.updated_at ? `, ${new Date(asset.updated_at).toLocaleString()}` : ''}
+      </p>
+      <dl className="m-0 mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+        {rows
+          .filter(([, v]) => v)
+          .map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="muted">{k}</dt>
+              <dd className="m-0 font-mono [overflow-wrap:anywhere]">{v}</dd>
+            </div>
+          ))}
+      </dl>
+    </section>
+  )
+}
+
+export function IndustrialPanel({
+  industrial,
+  asset,
+}: {
+  industrial?: Record<string, IndustrialStats>
+  asset?: AssetInfo
+}) {
   const protocols = Object.entries(industrial || {})
-  if (!protocols.length) return null
+  if (!protocols.length && !asset) return null
   return (
     <section className="panel grid gap-3" aria-labelledby="industrial-heading">
       <h2 id="industrial-heading" className="m-0 font-[family-name:var(--font-display)] text-lg font-bold">
         Industrial protocols
       </h2>
+      {asset && <AssetSummary asset={asset} />}
       {protocols.map(([protocol, stats]) => (
         <ProtocolSection key={protocol} protocol={protocol} stats={stats} />
       ))}

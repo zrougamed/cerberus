@@ -39,13 +39,15 @@ const (
 type Config struct {
 	// TargetHistorySize caps the rolling unique-destination list per device.
 	// Threshold unique_targets must stay below this or target_spread never fires.
-	TargetHistorySize int              `yaml:"target_history_size" json:"target_history_size"`
-	Thresholds        []ThresholdRule  `yaml:"thresholds" json:"thresholds"`
-	Baselines         BaselineConfig   `yaml:"baselines" json:"baselines"`
-	Anomaly           AnomalyConfig    `yaml:"anomaly" json:"anomaly"`
-	Notifications     notify.Config    `yaml:"notifications" json:"notifications"`
-	Watchlists        []Watchlist      `yaml:"watchlists" json:"watchlists"`
-	Industrial        IndustrialConfig `yaml:"industrial" json:"industrial"`
+	TargetHistorySize int                `yaml:"target_history_size" json:"target_history_size"`
+	Thresholds        []ThresholdRule    `yaml:"thresholds" json:"thresholds"`
+	Baselines         BaselineConfig     `yaml:"baselines" json:"baselines"`
+	Anomaly           AnomalyConfig      `yaml:"anomaly" json:"anomaly"`
+	Notifications     notify.Config      `yaml:"notifications" json:"notifications"`
+	Watchlists        []Watchlist        `yaml:"watchlists" json:"watchlists"`
+	Industrial        IndustrialConfig   `yaml:"industrial" json:"industrial"`
+	FlowBaseline      FlowBaselineConfig `yaml:"flow_baseline" json:"flow_baseline"`
+	Segmentation      SegmentationConfig `yaml:"segmentation" json:"segmentation"`
 }
 
 // ThresholdRule is a declarative comparison against a device metric.
@@ -90,7 +92,9 @@ type fileOverlay struct {
 	Anomaly           *anomalyOverlay       `yaml:"anomaly" json:"anomaly"`
 	Notifications     *notificationsOverlay `yaml:"notifications" json:"notifications"`
 	Watchlists        *[]watchlistOverlay   `yaml:"watchlists" json:"watchlists"`
-	Industrial        *industrialOverlay    `yaml:"industrial" json:"industrial"`
+	Industrial        industrialOverlay     `yaml:"industrial" json:"industrial"`
+	FlowBaseline      *flowBaselineOverlay  `yaml:"flow_baseline" json:"flow_baseline"`
+	Segmentation      *segmentationOverlay  `yaml:"segmentation" json:"segmentation"`
 }
 
 type notificationsOverlay struct {
@@ -205,7 +209,9 @@ func DefaultConfig() Config {
 				Tag:     "cerberus",
 			},
 		},
-		Industrial: defaultIndustrialConfig(),
+		Industrial:   defaultIndustrialConfig(),
+		FlowBaseline: defaultFlowBaseline(),
+		Segmentation: defaultSegmentation(),
 	}
 }
 
@@ -303,8 +309,9 @@ func mergeOverlay(cfg *Config, o fileOverlay) error {
 			cfg.Watchlists = append(cfg.Watchlists, w.toWatchlist())
 		}
 	}
-	mergeIndustrial(&cfg.Industrial, o.Industrial)
-	return nil
+	mergeFlowBaseline(&cfg.FlowBaseline, o.FlowBaseline)
+	mergeSegmentation(&cfg.Segmentation, o.Segmentation)
+	return mergeIndustrial(&cfg.Industrial, o.Industrial)
 }
 
 func mergeNotifications(dst *notify.Config, src *notificationsOverlay) {
@@ -451,6 +458,12 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := validateIndustrial(c.Industrial); err != nil {
+		return err
+	}
+	if err := validateFlowBaseline(c.FlowBaseline); err != nil {
+		return err
+	}
+	if err := validateSegmentation(c.Segmentation); err != nil {
 		return err
 	}
 	if c.Notifications.Enabled &&

@@ -181,3 +181,52 @@ func FuzzDecodeModbus(f *testing.F) {
 		}
 	})
 }
+
+func deviceIDReply(objs ...[2]string) []byte {
+	pdu := []byte{0x2B, 0x0E, 0x01, 0x01, 0x00, 0x00, byte(len(objs))}
+	for _, o := range objs {
+		pdu = append(pdu, o[0][0], byte(len(o[1])))
+		pdu = append(pdu, o[1]...)
+	}
+	return mbap(1, pdu...)
+}
+
+func TestDecodeModbus_DeviceIdentification(t *testing.T) {
+	t.Parallel()
+	m, ok := DecodeModbus(deviceIDReply([2]string{"\x00", "Schneider Electric"}, [2]string{"\x01", "BMXP342020"}, [2]string{"\x02", "v3.20"}), true)
+	if !ok || m.Identity == nil {
+		t.Fatalf("got %+v ok=%v", m, ok)
+	}
+	if *m.Identity != (Identity{Vendor: "Schneider Electric", Model: "BMXP342020", Firmware: "v3.20"}) {
+		t.Fatalf("identity = %+v", *m.Identity)
+	}
+	// Model name wins over product name and code.
+	m, _ = DecodeModbus(deviceIDReply([2]string{"\x01", "CODE"}, [2]string{"\x04", "Product"}, [2]string{"\x05", "M580"}), true)
+	if m.Identity.Model != "M580" {
+		t.Fatalf("model = %q", m.Identity.Model)
+	}
+	m, _ = DecodeModbus(deviceIDReply([2]string{"\x01", "CODE"}, [2]string{"\x04", "Product"}), true)
+	if m.Identity.Model != "Product" {
+		t.Fatalf("model = %q", m.Identity.Model)
+	}
+}
+
+func TestParseModbusDeviceID_Edges(t *testing.T) {
+	t.Parallel()
+	if parseModbusDeviceID([]byte{0x0E, 1, 1}) != nil {
+		t.Fatal("short header accepted")
+	}
+	// Only unknown objects: no identity.
+	if parseModbusDeviceID([]byte{0x0E, 1, 1, 0, 0, 1, 0x80, 2, 'h', 'i'}) != nil {
+		t.Fatal("identity from private objects only")
+	}
+	// Object length past the capture stops parsing but keeps what was read.
+	id := parseModbusDeviceID([]byte{0x0E, 1, 1, 0, 0, 2, 0x00, 3, 'A', 'B', 'B', 0x01, 50, 'x'})
+	if id == nil || id.Vendor != "ABB" || id.Model != "" {
+		t.Fatalf("identity = %+v", id)
+	}
+	// Request direction never yields an identity.
+	if m, _ := DecodeModbus(deviceIDReply([2]string{"\x00", "X"}), false); m.Identity != nil {
+		t.Fatal("identity parsed from a request")
+	}
+}
