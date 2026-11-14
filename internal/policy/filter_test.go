@@ -80,6 +80,8 @@ func TestAddFilter_EncodesEveryMatcher(t *testing.T) {
 	}
 	copy(want.Src[:], []byte{198, 51, 100, 0})
 	copy(want.Dst[:], []byte{10, 0, 0, 5})
+	copy(want.SrcMask[:], []byte{0xFF, 0xFF, 0xFF})
+	copy(want.DstMask[:], []byte{0xFF, 0xFF, 0xFF, 0xFF})
 	if v != want {
 		t.Fatalf("kernel value\n got %+v\nwant %+v", v, want)
 	}
@@ -159,13 +161,17 @@ func TestAddFilter_SafetyRails(t *testing.T) {
 	if _, err := e.AddFilter(gw, "t"); !errors.Is(err, ErrProtected) {
 		t.Fatalf("drop covering gateway must need force: %v", err)
 	}
-	// Accept and continue rules are never dangerous; negated addresses are
-	// not "covering" the protected one.
+	// Accept and continue rules are never dangerous; a negated address is a
+	// deliberate scope and does not "cover" the protected one.
 	if _, err := e.AddFilter(FilterInput{Verdict: "accept", Match: FilterMatch{Protocol: "tcp"}}, "t"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.AddFilter(FilterInput{Verdict: "drop", Match: FilterMatch{Src: "192.168.1.0/24", SrcNot: true, Dst: "10.9.0.0/16"}}, "t"); err != nil {
 		t.Fatal(err)
+	}
+	// "Block TCP 3389 from anywhere except the LAN" needs no force.
+	if _, err := e.AddFilter(FilterInput{Verdict: "drop", Match: FilterMatch{Protocol: "tcp", Src: "192.168.1.0/24", SrcNot: true, DstPort: "3389"}}, "t"); err != nil {
+		t.Fatalf("negated scope: %v", err)
 	}
 }
 
@@ -380,10 +386,27 @@ func TestRecordLog(t *testing.T) {
 
 func TestSizesMatchC(t *testing.T) {
 	t.Parallel()
-	if n := binary.Size(filterValue{}); n != 80 {
-		t.Fatalf("filterValue is %d bytes, struct filter_rule is 80", n)
+	if n := binary.Size(filterValue{}); n != 112 {
+		t.Fatalf("filterValue is %d bytes, struct filter_rule is 112", n)
 	}
 	if n := binary.Size(logEvent{}); n != 72 {
 		t.Fatalf("logEvent is %d bytes, struct filter_log_event is 72", n)
+	}
+}
+
+func TestPrefixMask(t *testing.T) {
+	t.Parallel()
+	cases := map[uint8][16]byte{
+		0:   {},
+		8:   {0xFF},
+		12:  {0xFF, 0xF0},
+		25:  {0xFF, 0xFF, 0xFF, 0x80},
+		32:  {0xFF, 0xFF, 0xFF, 0xFF},
+		128: {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+	}
+	for bits, want := range cases {
+		if got := prefixMask(bits); got != want {
+			t.Errorf("/%d: got %x, want %x", bits, got, want)
+		}
 	}
 }

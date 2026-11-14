@@ -106,7 +106,7 @@ var tcpFlagBits = map[string]uint8{
 
 var protocolNumbers = map[string]uint8{"tcp": 6, "udp": 17, "icmp": 1, "icmpv6": 58}
 
-// filterValue mirrors struct filter_rule (80 bytes).
+// filterValue mirrors struct filter_rule (112 bytes).
 type filterValue struct {
 	Slot          uint32
 	Verdict       uint8
@@ -128,6 +128,8 @@ type filterValue struct {
 	Pad0          uint8
 	Src           [16]byte
 	Dst           [16]byte
+	SrcMask       [16]byte
+	DstMask       [16]byte
 	SMAC          [6]byte
 	Pad1          uint16
 	Pad2          uint32
@@ -291,7 +293,9 @@ func compileMatch(m FilterMatch, checkIface bool) (compiledMatch, error) {
 		}
 		c.iface = name
 	}
-	c.hasAddress = (c.src.IsValid() && !c.srcNot) || (c.dst.IsValid() && !c.dstNot) || c.mac != nil
+	// Negated addresses count too: "anything except the LAN" is a deliberate
+	// scope. Only a rule with no address or device at all is "broad".
+	c.hasAddress = c.src.IsValid() || c.dst.IsValid() || c.mac != nil
 	return c, nil
 }
 
@@ -410,6 +414,7 @@ func encodeFilter(r FilterRule, c compiledMatch, slot uint32) filterValue {
 	}
 	if c.src.IsValid() {
 		v.SrcPlen = prefixBits(c.src)
+		v.SrcMask = prefixMask(v.SrcPlen)
 		copy(v.Src[:], c.src.Addr().AsSlice())
 		if c.srcNot {
 			v.MFlags |= fmNotSrc
@@ -417,6 +422,7 @@ func encodeFilter(r FilterRule, c compiledMatch, slot uint32) filterValue {
 	}
 	if c.dst.IsValid() {
 		v.DstPlen = prefixBits(c.dst)
+		v.DstMask = prefixMask(v.DstPlen)
 		copy(v.Dst[:], c.dst.Addr().AsSlice())
 		if c.dstNot {
 			v.MFlags |= fmNotDst
@@ -429,6 +435,22 @@ func encodeFilter(r FilterRule, c compiledMatch, slot uint32) filterValue {
 		v.MFlags |= fmNotDport
 	}
 	return v
+}
+
+// prefixMask is the byte mask of a prefix length, so the kernel compares
+// addresses without per-bit branches.
+func prefixMask(bits uint8) [16]byte {
+	var m [16]byte
+	for i := 0; i < 16 && bits > 0; i++ {
+		if bits >= 8 {
+			m[i] = 0xFF
+			bits -= 8
+		} else {
+			m[i] = byte(0xFF << (8 - bits))
+			bits = 0
+		}
+	}
+	return m
 }
 
 func prefixBits(p netip.Prefix) uint8 {

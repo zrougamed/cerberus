@@ -123,13 +123,18 @@ struct {
     __type(value, struct counter);
 } counters SEC(".maps");
 
-static __always_inline void count(__u32 idx, struct __sk_buff *skb)
+static __always_inline void count_len(__u32 idx, __u32 len)
 {
     struct counter *c = bpf_map_lookup_elem(&counters, &idx);
     if (c) {
         c->packets++;
-        c->bytes += skb->len;
+        c->bytes += len;
     }
+}
+
+static __always_inline void count(__u32 idx, struct __sk_buff *skb)
+{
+    count_len(idx, skb->len);
 }
 
 // ------------------- Policy (active response) -------------------
@@ -324,8 +329,10 @@ struct filter_rule {
     __u8  src_plen;        // 0: any source address
     __u8  dst_plen;        // 0: any destination address
     __u8  pad0;
-    __u8  src[16];         // IPv4 uses the first 4 bytes
+    __u8  src[16];         // prefix, already masked; IPv4 uses the first 4 bytes
     __u8  dst[16];
+    __u8  src_mask[16];    // precomputed by user space from src_plen
+    __u8  dst_mask[16];
     __u8  smac[6];
     __u16 pad1;
     __u32 pad2;            // explicit: keeps the u64 below 8-byte aligned
@@ -467,22 +474,15 @@ static __always_inline void parse_pkt(struct __sk_buff *skb, struct ethhdr *eth,
     }
 }
 
-// Bounded loop (kernel >= 5.3 verifies these without unrolling).
-static __always_inline int prefix_match(const __u8 *addr, const __u8 *pfx, __u8 plen)
+// Branch-free masked compare (the mask comes precomputed from user space),
+// so the verifier sees one straight-line path instead of 16 branches.
+static __always_inline int masked_eq(const __u8 *addr, const __u8 *pfx, const __u8 *mask)
 {
-    for (int i = 0; i < 16; i++) {
-        if (plen == 0)
-            return 1;
-        if (plen >= 8) {
-            if (addr[i] != pfx[i])
-                return 0;
-            plen -= 8;
-        } else {
-            __u8 mask = (__u8)(0xFF << (8 - plen));
-            return (addr[i] & mask) == (pfx[i] & mask);
-        }
-    }
-    return 1;
+    __u8 diff = 0;
+#pragma unroll
+    for (int i = 0; i < 16; i++)
+        diff |= (addr[i] ^ pfx[i]) & mask[i];
+    return diff == 0;
 }
 
 static __always_inline int port_match(__u16 port, __u16 lo, __u16 hi, int negate)
@@ -507,12 +507,12 @@ static __always_inline int rule_match(struct filter_rule *r, struct pkt_info *p)
         if (!p->family)
             return 0;
         if (r->src_plen) {
-            int m = prefix_match(p->src, r->src, r->src_plen);
+            int m = masked_eq(p->src, r->src, r->src_mask);
             if ((r->mflags & FM_NOT_SRC) ? m : !m)
                 return 0;
         }
         if (r->dst_plen) {
-            int m = prefix_match(p->dst, r->dst, r->dst_plen);
+            int m = masked_eq(p->dst, r->dst, r->dst_mask);
             if ((r->mflags & FM_NOT_DST) ? m : !m)
                 return 0;
         }
@@ -544,8 +544,7 @@ static __always_inline int rule_match(struct filter_rule *r, struct pkt_info *p)
     return 1;
 }
 
-static __always_inline void filter_publish(struct __sk_buff *skb, struct filter_rule *r,
-                                           struct pkt_info *p, __u8 enforced)
+static __always_inline void filter_publish(struct filter_rule *r, struct pkt_info *p, __u8 enforced)
 {
     __u32 slot = r->slot;
     __u64 now = bpf_ktime_get_ns();
@@ -558,7 +557,7 @@ static __always_inline void filter_publish(struct __sk_buff *skb, struct filter_
 
     struct filter_log_event *e = bpf_ringbuf_reserve(&filter_log, sizeof(*e), 0);
     if (!e) {
-        count(CNT_FILTER_LOST, skb);
+        count_len(CNT_FILTER_LOST, p->len);
         return;
     }
     e->ts_ns = now;
@@ -582,49 +581,73 @@ static __always_inline void filter_publish(struct __sk_buff *skb, struct filter_
     bpf_ringbuf_submit(e, 0);
 }
 
-static __always_inline int filter_chain(struct __sk_buff *skb, struct pkt_info *p)
+// State shared with the bpf_loop callback. The packet info is held by
+// value: no pointers cross into the callback.
+struct chain_ctx {
+    struct pkt_info p;
+    __u32 base;
+    __u32 n;
+    __u32 enforcing;
+    __u32 result;   // FR_*
+};
+
+// One rule per call; returns 1 to stop the loop. bpf_loop (kernel >= 5.17)
+// lets the verifier check this body once instead of 64 unrolled copies.
+static long chain_step(__u64 i, void *data)
+{
+    struct chain_ctx *c = data;
+    if (i >= c->n)
+        return 1;
+    __u32 idx = c->base + (__u32)i;
+    struct filter_rule *r = bpf_map_lookup_elem(&filter_rules, &idx);
+    if (!r)
+        return 1;
+    if (!rule_match(r, &c->p))
+        return 0;
+
+    __u32 slot = r->slot;
+    struct counter *cnt = bpf_map_lookup_elem(&filter_counters, &slot);
+    if (cnt) {
+        cnt->packets++;
+        cnt->bytes += c->p.len;
+    }
+
+    __u8 enforced = r->verdict == FV_DROP && c->enforcing;
+    if (r->log)
+        filter_publish(r, &c->p, enforced);
+
+    if (r->verdict == FV_ACCEPT) {
+        c->result = FR_ACCEPT;
+        return 1;
+    }
+    if (r->verdict == FV_DROP) {
+        if (enforced) {
+            count_len(CNT_POLICY_DROP, c->p.len);
+            c->result = FR_DROP;
+        }
+        return 1; // dry run: decided, but the packet passes
+    }
+    return 0;     // FV_CONTINUE
+}
+
+static __always_inline int filter_chain(struct pkt_info *p)
 {
     __u32 k0 = 0;
     __u32 *cfg = bpf_map_lookup_elem(&filter_cfg, &k0);
     if (!cfg)
         return FR_NONE;
     __u32 n = *cfg & 0xFFFF;
-    __u32 base = (*cfg & 0x10000) ? MAX_FILTER_RULES : 0;
-    int enforcing = policy_enforcing();
+    if (n == 0)
+        return FR_NONE;
 
-    for (__u32 i = 0; i < MAX_FILTER_RULES; i++) {
-        if (i >= n)
-            break;
-        __u32 idx = base + i;
-        struct filter_rule *r = bpf_map_lookup_elem(&filter_rules, &idx);
-        if (!r)
-            break;
-        if (!rule_match(r, p))
-            continue;
-
-        __u32 slot = r->slot;
-        struct counter *c = bpf_map_lookup_elem(&filter_counters, &slot);
-        if (c) {
-            c->packets++;
-            c->bytes += skb->len;
-        }
-
-        __u8 enforced = r->verdict == FV_DROP && enforcing;
-        if (r->log)
-            filter_publish(skb, r, p, enforced);
-
-        if (r->verdict == FV_ACCEPT)
-            return FR_ACCEPT;
-        if (r->verdict == FV_DROP) {
-            if (enforced) {
-                count(CNT_POLICY_DROP, skb);
-                return FR_DROP;
-            }
-            return FR_NONE; // dry run: decided, but the packet passes
-        }
-        // FV_CONTINUE: keep evaluating
-    }
-    return FR_NONE;
+    struct chain_ctx c = {};
+    c.p = *p;
+    c.n = n;
+    c.base = (*cfg & 0x10000) ? MAX_FILTER_RULES : 0;
+    c.enforcing = policy_enforcing();
+    c.result = FR_NONE;
+    bpf_loop(MAX_FILTER_RULES, chain_step, &c, 0);
+    return c.result;
 }
 
 // Records a lost event and lets the packet through unchanged.
@@ -1043,7 +1066,7 @@ int xdp_arp_monitor(struct __sk_buff *skb)
     // exception that also skips the blocklists), then the blocklist sets.
     struct pkt_info pi = {};
     parse_pkt(skb, eth, &pi);
-    int chain = filter_chain(skb, &pi);
+    int chain = filter_chain(&pi);
     if (chain == FR_DROP) return CERB_DROP;
     int skip_sets = chain == FR_ACCEPT;
 
