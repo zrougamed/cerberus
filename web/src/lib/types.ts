@@ -14,7 +14,19 @@ export type DeviceSummary = {
   tls?: number
   tls_connections?: number
   industrial?: Record<string, IndustrialStats>
+  asset?: AssetInfo
   [key: string]: unknown
+}
+
+/** Identity a device reported about itself in an industrial protocol. */
+export type AssetInfo = {
+  vendor?: string
+  model?: string
+  firmware?: string
+  serial?: string
+  device_type?: string
+  source: string
+  updated_at?: string
 }
 
 /** Per-protocol counters from the industrial decoders (see internal/models). */

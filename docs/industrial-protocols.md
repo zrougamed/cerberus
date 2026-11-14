@@ -7,7 +7,7 @@ costs nothing on networks that don't carry this traffic.
 
 Supported today: **Modbus/TCP** (TCP 502), **S7comm** (ISO-on-TCP, TCP
 102, with S7comm-plus detected and counted) and **DNP3** (TCP and UDP
-20000). Planned:
+20000) and **EtherNet/IP + CIP** (TCP and UDP 44818). Planned:
 EtherNet/IP + CIP, BACnet/IP, IEC 104, OPC UA, MQTT and PROFINET DCP (see
 the `industrial` label on the issue tracker).
 
@@ -163,6 +163,34 @@ stop an outstation from reporting changes to its master.
 | `dnp3_diagnostic` | restarts, initialisation, save configuration, disable unsolicited | on, high |
 
 Example: `DNP3 direct_operate from 10.20.0.10 to 10.20.0.70 (outstation 10)`
+
+## EtherNet/IP and CIP
+
+The 24-byte encapsulation header must name a known command, have the
+options field at zero and, for requests, status zero. For SendRRData and
+SendUnitData the CIP request inside the data item is decoded: service code
+and the class from the path. One level of Unconnected Send (how engineering
+tools reach a controller through a comms module) is unwrapped, so a tag
+write routed that way is still seen as `write_tag`.
+
+| Class | Services |
+|-------|----------|
+| read | get_attribute(s)_*, read_tag, read_tag_fragmented, get_member |
+| write | set_attribute(s)_*, write_tag, write_tag_fragmented, read_modify_write_tag, create, delete |
+| control | reset, start, stop |
+| other | forward_open/close, unconnected_send, multiple_service_packet, session commands |
+
+ListIdentity replies (the answer to a broadcast that most engineering tools
+send) are stored on the device as `asset`: vendor, model (product name),
+firmware revision, serial and device type. The device page shows them under
+**Reported identity**.
+
+| Rule | Fires on | Default |
+|------|----------|---------|
+| `enip_write` | CIP writes, including Logix tag writes | on, medium |
+| `enip_control` | reset, start, stop (reset on the identity object reboots the device) | on, high |
+
+Implicit I/O on UDP 2222 is not decoded.
 
 ## Limits
 

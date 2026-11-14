@@ -32,6 +32,7 @@ const (
 	// only detected and counted, not decoded.
 	ProtocolS7Plus = "s7comm_plus"
 	ProtocolDNP3   = "dnp3"
+	ProtocolENIP   = "enip"
 )
 
 const (
@@ -66,6 +67,19 @@ type Message struct {
 	// Detail is a short protocol-specific note worth counting, such as the
 	// S7 rack and slot a client connects to. Empty when there is none.
 	Detail string
+	// Identity is set when the message announces what the sending device
+	// is (CIP ListIdentity, Modbus Read Device Identification, BACnet I-Am).
+	Identity *Identity
+}
+
+// Identity describes a device as it reports itself. Strings are cleaned
+// to printable ASCII and capped, since they come straight off the wire.
+type Identity struct {
+	Vendor     string
+	Model      string
+	Firmware   string
+	Serial     string
+	DeviceType string
 }
 
 // Decode picks a decoder from the transport and ports and runs it on
@@ -85,5 +99,26 @@ func Decode(ipProto uint8, srcPort, dstPort uint16, payload []byte) (Message, bo
 		// DNP3 carries its own direction in the function code.
 		return DecodeDNP3(payload)
 	}
+	if (ipProto == ipProtoTCP || ipProto == ipProtoUDP) && (dstPort == ENIPPort || srcPort == ENIPPort) {
+		return DecodeENIP(payload, srcPort == ENIPPort && dstPort != ENIPPort)
+	}
 	return Message{}, false
+}
+
+// maxWireString caps strings taken from packets (product names, client ids).
+const maxWireString = 64
+
+// cleanString keeps printable ASCII, drops everything else and truncates,
+// so device-supplied text is safe to log, store and render.
+func cleanString(b []byte) string {
+	out := make([]byte, 0, min(len(b), maxWireString))
+	for _, c := range b {
+		if len(out) == maxWireString {
+			break
+		}
+		if c >= 0x20 && c < 0x7F {
+			out = append(out, c)
+		}
+	}
+	return string(out)
 }

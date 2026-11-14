@@ -49,7 +49,7 @@ export function DeviceDetailPage() {
           </Link>
         </p>
       </section>
-      <IndustrialPanel industrial={device.industrial} />
+      <IndustrialPanel industrial={device.industrial} asset={device.asset} />
     </div>
   )
 }

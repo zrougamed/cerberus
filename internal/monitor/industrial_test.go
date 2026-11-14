@@ -422,3 +422,58 @@ func TestTrackEvent_DNP3OperateAndRestart(t *testing.T) {
 		t.Fatalf("outstation stats = %+v", rtu)
 	}
 }
+
+func enipEvent(srcMAC byte, src, dst string, sport, dport uint16, cmd uint16, body ...byte) *models.NetworkEvent {
+	evt := modbusEvent(srcMAC, src, dst, sport, dport, 0)
+	evt.L7Payload = [models.L7PayloadSize]byte{}
+	h := make([]byte, 24)
+	binary.LittleEndian.PutUint16(h[0:2], cmd)
+	binary.LittleEndian.PutUint16(h[2:4], uint16(len(body)))
+	copy(evt.L7Payload[:], append(h, body...))
+	return evt
+}
+
+func TestTrackEvent_ENIPWriteResetAndIdentity(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	cpf := func(cip ...byte) []byte {
+		return append([]byte{0, 0, 0, 0, 0x0A, 0, 2, 0, 0, 0, 0, 0, 0xB2, 0, byte(len(cip)), 0}, cip...)
+	}
+	nm.TrackEvent(enipEvent(1, "10.0.0.9", "10.0.0.80", 50000, 44818, 0x6F, cpf(0x4D, 0x03, 0x91, 0x04, 'P', 'u', 'm', 'p', 0xC4, 0, 1, 0, 0, 0, 0, 0)...))
+	nm.TrackEvent(enipEvent(1, "10.0.0.9", "10.0.0.80", 50000, 44818, 0x6F, cpf(0x05, 0x02, 0x20, 0x01, 0x24, 0x01)...))
+
+	// ListIdentity reply from the PLC.
+	d := make([]byte, 33)
+	d[18], d[20], d[24], d[25] = 1, 0x0E, 33, 11
+	binary.LittleEndian.PutUint32(d[28:], 0x00ABCDEF)
+	name := "1769-L33ER"
+	d[32] = byte(len(name))
+	d = append(d, name...)
+	nm.TrackEvent(enipEvent(8, "10.0.0.80", "10.0.0.9", 44818, 50000, 0x63, append([]byte{1, 0, 0x0C, 0, byte(len(d)), 0}, d...)...))
+
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	if got[alerts.RuleENIPWrite].Severity != "medium" || got[alerts.RuleENIPWrite].Message != "EtherNet/IP write_tag from 10.0.0.9 to 10.0.0.80" {
+		t.Fatalf("write alert = %+v", got[alerts.RuleENIPWrite])
+	}
+	if got[alerts.RuleENIPControl].Severity != "high" || got[alerts.RuleENIPControl].Message != "EtherNet/IP reset from 10.0.0.9 to 10.0.0.80" {
+		t.Fatalf("control alert = %+v", got[alerts.RuleENIPControl])
+	}
+	plc := nm.GetStats()["02:00:00:00:00:08"]
+	want := models.AssetInfo{Vendor: "Rockwell Automation", Model: "1769-L33ER", Firmware: "33.011", Serial: "00abcdef",
+		DeviceType: "programmable logic controller", Source: "enip"}
+	if plc.Asset == nil {
+		t.Fatal("no asset recorded")
+	}
+	gotAsset := *plc.Asset
+	gotAsset.UpdatedAt = time.Time{}
+	if gotAsset != want {
+		t.Fatalf("asset = %+v, want %+v", gotAsset, want)
+	}
+	// Snapshot must not alias the monitor's record.
+	plc.Asset.Model = "changed"
+	if nm.GetStats()["02:00:00:00:00:08"].Asset.Model != "1769-L33ER" {
+		t.Fatal("asset snapshot shares state with the monitor")
+	}
+}

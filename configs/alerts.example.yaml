@@ -94,6 +94,16 @@ industrial:
     severity: high
     allowed_sources: []
     realert_seconds: 3600
+  enip_write:                # CIP set attribute / Logix tag writes
+    enabled: true
+    severity: medium
+    allowed_sources: []
+    realert_seconds: 3600
+  enip_control:              # CIP reset / start / stop
+    enabled: true
+    severity: high
+    allowed_sources: []
+    realert_seconds: 3600
 
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:

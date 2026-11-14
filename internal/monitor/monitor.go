@@ -1079,6 +1079,10 @@ func cloneDeviceInfo(d *models.DeviceInfo) *models.DeviceInfo {
 	c.TLSVersions = cloneStringIntMap(d.TLSVersions)
 	c.TrafficTypeCounts = cloneTrafficTypeIntMap(d.TrafficTypeCounts)
 	c.Industrial = cloneIndustrial(d.Industrial)
+	if d.Asset != nil {
+		a := *d.Asset
+		c.Asset = &a
+	}
 	c.RecentDNSQueries = nil
 	c.SeenPatterns = nil
 	c.FlowStats = nil

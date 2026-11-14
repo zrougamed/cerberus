@@ -65,6 +65,8 @@ var industrialRuleClasses = map[string]struct {
 	alerts.RuleS7Program:        {industrial.ProtocolS7, industrial.ClassProgram},
 	alerts.RuleDNP3Control:      {industrial.ProtocolDNP3, industrial.ClassControl},
 	alerts.RuleDNP3Diagnostic:   {industrial.ProtocolDNP3, industrial.ClassDiagnostic},
+	alerts.RuleENIPWrite:        {industrial.ProtocolENIP, industrial.ClassWrite},
+	alerts.RuleENIPControl:      {industrial.ProtocolENIP, industrial.ClassControl},
 }
 
 // newIndustrialRules maps "<protocol>|<class>" to the enabled rule that
@@ -93,6 +95,9 @@ func (nm *NetworkMonitor) trackIndustrial(device *models.DeviceInfo, evt *models
 		return
 	}
 	recordIndustrial(device, msg, dstIP, now)
+	if msg.Identity != nil && msg.Response {
+		recordAsset(device, msg.Protocol, msg.Identity, now)
+	}
 	nm.industrialCounts[IndustrialCountKey{Protocol: msg.Protocol, Class: string(msg.Class), Response: msg.Response}]++
 	if !msg.Response {
 		nm.checkIndustrialAlert(device, msg, srcIP, dstIP, now)
@@ -146,6 +151,19 @@ func recordIndustrial(device *models.DeviceInfo, msg industrial.Message, peer st
 	}
 }
 
+// recordAsset stores the identity a device announced about itself.
+func recordAsset(device *models.DeviceInfo, protocol string, id *industrial.Identity, now time.Time) {
+	device.Asset = &models.AssetInfo{
+		Vendor:     id.Vendor,
+		Model:      id.Model,
+		Firmware:   id.Firmware,
+		Serial:     id.Serial,
+		DeviceType: id.DeviceType,
+		Source:     protocol,
+		UpdatedAt:  now,
+	}
+}
+
 func (nm *NetworkMonitor) checkIndustrialAlert(device *models.DeviceInfo, msg industrial.Message, srcIP, dstIP string, now time.Time) {
 	rule := nm.industrialRules[msg.Protocol+"|"+string(msg.Class)]
 	if rule == nil || rule.allows(srcIP) {
@@ -176,6 +194,7 @@ var protocolLabels = map[string]string{
 	industrial.ProtocolS7:     "S7comm",
 	industrial.ProtocolS7Plus: "S7comm-plus",
 	industrial.ProtocolDNP3:   "DNP3",
+	industrial.ProtocolENIP:   "EtherNet/IP",
 }
 
 func industrialAlertMessage(msg industrial.Message, srcIP, dstIP string) string {

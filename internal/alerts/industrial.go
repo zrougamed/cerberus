@@ -14,6 +14,8 @@ const (
 	RuleS7Program        = "s7_program"
 	RuleDNP3Control      = "dnp3_control"
 	RuleDNP3Diagnostic   = "dnp3_diagnostic"
+	RuleENIPWrite        = "enip_write"
+	RuleENIPControl      = "enip_control"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -43,6 +45,8 @@ type IndustrialConfig struct {
 	S7Program        IndustrialRule `yaml:"s7_program" json:"s7_program"`
 	DNP3Control      IndustrialRule `yaml:"dnp3_control" json:"dnp3_control"`
 	DNP3Diagnostic   IndustrialRule `yaml:"dnp3_diagnostic" json:"dnp3_diagnostic"`
+	ENIPWrite        IndustrialRule `yaml:"enip_write" json:"enip_write"`
+	ENIPControl      IndustrialRule `yaml:"enip_control" json:"enip_control"`
 }
 
 // NamedIndustrialRule pairs a rule with its id.
@@ -61,6 +65,8 @@ func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
 		{RuleS7Program, &c.S7Program},
 		{RuleDNP3Control, &c.DNP3Control},
 		{RuleDNP3Diagnostic, &c.DNP3Diagnostic},
+		{RuleENIPWrite, &c.ENIPWrite},
+		{RuleENIPControl, &c.ENIPControl},
 	}
 }
 
@@ -91,6 +97,9 @@ func defaultIndustrialConfig() IndustrialConfig {
 		// rarely; anything else sending them is worth a page.
 		DNP3Control:    rule("high"),
 		DNP3Diagnostic: rule("high"),
+		// Tag writes from HMIs are routine, like S7 write_var.
+		ENIPWrite:   rule("medium"),
+		ENIPControl: rule("high"),
 	}
 }
 

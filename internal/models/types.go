@@ -231,6 +231,20 @@ type DeviceInfo struct {
 	// Industrial holds per-protocol counters from the industrial decoders,
 	// keyed by protocol name ("modbus").
 	Industrial map[string]*IndustrialStats `json:"industrial,omitempty"`
+	// Asset is what the device says about itself in an industrial protocol
+	// (vendor, model, firmware, serial). Nil until one is seen.
+	Asset *AssetInfo `json:"asset,omitempty"`
+}
+
+// AssetInfo is a device's self-reported identity.
+type AssetInfo struct {
+	Vendor     string    `json:"vendor,omitempty"`
+	Model      string    `json:"model,omitempty"`
+	Firmware   string    `json:"firmware,omitempty"`
+	Serial     string    `json:"serial,omitempty"`
+	DeviceType string    `json:"device_type,omitempty"`
+	Source     string    `json:"source"` // protocol the identity came from
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // IndustrialStats counts decoded control-protocol traffic for one device
