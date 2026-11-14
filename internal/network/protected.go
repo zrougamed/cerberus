@@ -33,7 +33,7 @@ func ProtectedTargets(topology *NetworkTopology) ([]netip.Addr, []net.HardwareAd
 				if mac := arpLookup(f, gw); mac != nil {
 					macs = append(macs, mac)
 				}
-				f.Close()
+				_ = f.Close()
 			}
 		}
 	}

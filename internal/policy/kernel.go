@@ -125,16 +125,16 @@ func (b *BPFMaps) DeleteMAC(mac net.HardwareAddr) error {
 
 func (b *BPFMaps) PutPrefix(p netip.Prefix, v value) error {
 	if p.Addr().Is4() {
-		return b.v4.Update(v4Key{Prefixlen: uint32(p.Bits()), Addr: p.Addr().As4()}, v, ebpf.UpdateAny)
+		return b.v4.Update(v4Key{Prefixlen: prefixLen(p), Addr: p.Addr().As4()}, v, ebpf.UpdateAny)
 	}
-	return b.v6.Update(v6Key{Prefixlen: uint32(p.Bits()), Addr: p.Addr().As16()}, v, ebpf.UpdateAny)
+	return b.v6.Update(v6Key{Prefixlen: prefixLen(p), Addr: p.Addr().As16()}, v, ebpf.UpdateAny)
 }
 
 func (b *BPFMaps) DeletePrefix(p netip.Prefix) error {
 	if p.Addr().Is4() {
-		return ignoreMissing(b.v4.Delete(v4Key{Prefixlen: uint32(p.Bits()), Addr: p.Addr().As4()}))
+		return ignoreMissing(b.v4.Delete(v4Key{Prefixlen: prefixLen(p), Addr: p.Addr().As4()}))
 	}
-	return ignoreMissing(b.v6.Delete(v6Key{Prefixlen: uint32(p.Bits()), Addr: p.Addr().As16()}))
+	return ignoreMissing(b.v6.Delete(v6Key{Prefixlen: prefixLen(p), Addr: p.Addr().As16()}))
 }
 
 func (b *BPFMaps) ReadCounter(slot uint32) (Counter, error) {
@@ -156,6 +156,16 @@ func (b *BPFMaps) ResetCounter(slot uint32) error {
 		return err
 	}
 	return b.counters.Update(slot, make([]perCPUCounter, n), ebpf.UpdateAny)
+}
+
+// prefixLen is the LPM key length; netip guarantees 0..128 for valid
+// prefixes, the check keeps the conversion provably in range.
+func prefixLen(p netip.Prefix) uint32 {
+	b := p.Bits()
+	if b < 0 || b > 128 {
+		return 0
+	}
+	return uint32(b)
 }
 
 func ignoreMissing(err error) error {
