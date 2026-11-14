@@ -26,6 +26,8 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Persistent Storage**: Local database for historical data with Redis migration path
 - **Control Room (Web UI)**: Hash-routed dashboard for summary, devices, rule alerts, anomalies, and raw JSON
 - **Behavioral anomaly & abuse-style signals**: ML-lite windows highlight SYN-heavy, high-volume, and unusual-port patterns (consistent with scans/floods); rule alerts flag DNS/TCP/target spread; see **[`docs/threat-and-anomaly-patterns.md`](docs/threat-and-anomaly-patterns.md)** for scope and limits (not a full IDS; no dedicated reverse-tunnel classifier)
+- **CIDR watchlists**: Named IPv4/IPv6 prefix sets that raise rate-limited `watchlist:<id>` alerts and per-list hit counters ([`docs/how-to-alerts.md`](docs/how-to-alerts.md#4-watchlists-cidr-sets))
+- **Kernel-side counters**: Packets/bytes seen by the TC hook and events lost to a full ring buffer, on `/metrics`
 - **Outbound notifications**: Optional Slack, Microsoft Teams, generic webhook, and syslog for rule alerts, anomalies, and new devices ([`docs/notifications.md`](docs/notifications.md))
 
 Full system behavior, data flow, and UI breakdown live in **[`docs/`](docs/README.md)**. Step-by-step **how to trigger alerts** (rule vs anomaly) is in **[`docs/how-to-alerts.md`](docs/how-to-alerts.md)**.
@@ -378,11 +380,12 @@ CERBERUS_GEOIP_DB=/path/to/GeoLite2-City.mmdb sudo ./build/cerberus
 
 ### Network Interface
 
-By default, Cerberus monitors all physical network interfaces. To customize:
+By default, Cerberus attaches to every up, non-loopback interface. Use
+`CERBERUS_INTERFACES` to pick names or globs, and `!` to exclude:
 
-```go
-// In main.go
-// Modify the interface selection logic to target specific interfaces
+```bash
+CERBERUS_INTERFACES='eth0,wlan*' sudo ./build/cerberus
+CERBERUS_INTERFACES='!docker*,!veth*' sudo ./build/cerberus
 ```
 
 ### Cache Size

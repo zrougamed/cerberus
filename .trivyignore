@@ -1,0 +1,3 @@
+# Root runtime is required to attach TC/BPF programs; recorded in
+# SECURITY-EXCEPTIONS.md (review by 2027-02-12).
+AVD-DS-0002
