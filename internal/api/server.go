@@ -21,7 +21,7 @@ import (
 	"github.com/zrougamed/cerberus/internal/version"
 )
 
-//go:embed web/*
+//go:embed all:web
 var webFS embed.FS
 
 type Server struct {

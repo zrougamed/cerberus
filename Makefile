@@ -17,9 +17,14 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X $(VERSION_PKG).Commit=$(COMMIT) -X $(VERSION_PKG).Date=$(BUILD_DATE)
 
-.PHONY: all clean build bpf run deps ci ci-build ci-test docker-build docker-run docker-up docker-down docker-logs docker-web help
+.PHONY: all clean build bpf web run deps ci ci-build ci-test docker-build docker-run docker-up docker-down docker-logs docker-web help
 
 all: bpf build
+
+# React Control Room → internal/api/web (embedded by the Go binary)
+web:
+	npm --prefix web ci
+	npm --prefix web run build
 
 # Build eBPF program
 bpf: $(BPF_OBJ)
@@ -29,7 +34,7 @@ $(BPF_OBJ): $(BPF_SRC)
 		$(INCLUDES) \
 		-c $(BPF_SRC) -o $(BPF_OBJ)
 
-# Build Go binary
+# Build Go binary (expects a current web UI under internal/api/web; run `make web` after UI changes)
 build: bpf
 	CGO_ENABLED=0 $(GO) build -ldflags="$(LDFLAGS)" -o build/$(BINARY) $(GO_SRC)
 
@@ -183,6 +188,7 @@ help:
 	@echo "    make all           - Build everything (eBPF + Go binary)"
 	@echo "    make bpf           - Build eBPF program only"
 	@echo "    make build         - Build Go binary only"
+	@echo "    make web           - Build React Control Room into internal/api/web"
 	@echo "    make clean         - Remove build artifacts"
 	@echo "    make deps          - Download and tidy Go dependencies"
 	@echo ""
