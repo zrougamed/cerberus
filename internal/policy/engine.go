@@ -295,7 +295,7 @@ func (e *Engine) Add(in RuleInput, actor string) (Rule, error) {
 	defer e.mu.Unlock()
 
 	if p := e.protectedHit(t); p != "" && !in.Force {
-		return Rule{}, fmt.Errorf("%w (%s); set force to override", ErrProtected, p)
+		return Rule{}, fmt.Errorf("%w: it covers %s, which is this host or the gateway; set force to override", ErrProtected, p)
 	}
 	if r.ID == "" {
 		for r.ID = newRuleID(); e.idTakenLocked(r.ID); r.ID = newRuleID() {

@@ -103,7 +103,7 @@ function activateNav() {
   });
   if (page === "raw") {
     const sel = document.getElementById("raw-endpoint");
-    if (sel && ["summary", "devices", "alerts", "anomalies", "policy"].includes(raw)) {
+    if (sel && ["summary", "devices", "alerts", "anomalies", "policy", "policylog"].includes(raw)) {
       sel.value = raw;
     }
   }
@@ -359,6 +359,7 @@ function renderDevicesPage() {
     ["tls_connections", "TLS"],
     ["last_seen", "Last seen"],
   ];
+  const actionsHeader = '<th scope="col">Response</th>';
 
   const sortedDevices = sortDevices(devices);
 
@@ -382,12 +383,15 @@ function renderDevicesPage() {
         <td>${d.http_requests ?? 0}</td>
         <td>${d.tls_connections ?? 0}</td>
         <td>${d.last_seen ? new Date(d.last_seen).toLocaleString() : ""}</td>
+        <td><span class="row-actions"><a href="#/policy/mac/${encodeURIComponent(d.mac)}" aria-label="Quarantine ${mac}">Quarantine</a>${
+          d.ip ? `<a href="#/policy/ip/${encodeURIComponent(d.ip)}" aria-label="Block IP ${escapeHtml(d.ip)}">Block IP</a>` : ""
+        }</span></td>
       </tr>`;
     })
     .join("");
 
   root.innerHTML = `<table class="device-table sortable-table">
-    <thead><tr>${headers}</tr></thead>
+    <thead><tr>${headers}${actionsHeader}</tr></thead>
     <tbody>${rows}</tbody></table>`;
 
   // Wire up header clicks for sorting
@@ -504,11 +508,16 @@ function renderAlertsPage() {
         <td>${escapeHtml(a.device_mac || "")}</td>
         <td>${escapeHtml(a.device_ip || "")}</td>
         <td>${escapeHtml(a.message || "")}</td>
+        <td>${
+          a.device_mac
+            ? `<span class="row-actions"><a href="#/policy/mac/${encodeURIComponent(a.device_mac)}" aria-label="Quarantine ${escapeHtml(a.device_mac)}">Quarantine</a></span>`
+            : ""
+        }</td>
       </tr>`;
     })
     .join("");
   root.innerHTML = `<table class="device-table">
-    <thead><tr><th>Time</th><th>Severity</th><th>Rule</th><th>Device MAC</th><th>Device IP</th><th>Message</th></tr></thead>
+    <thead><tr><th>Time</th><th>Severity</th><th>Rule</th><th>Device MAC</th><th>Device IP</th><th>Message</th><th>Response</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 
@@ -564,7 +573,9 @@ async function renderRawPage(endpoint) {
           ? "/api/v1/alerts"
           : ep === "policy"
             ? "/api/v1/policy"
-            : "/api/v1/anomalies";
+            : ep === "policylog"
+              ? "/api/v1/policy/log?limit=100"
+              : "/api/v1/anomalies";
   pre.textContent = "Loading…";
   try {
     const res = await fetch(path, { headers: { Accept: "application/json" } });
@@ -605,6 +616,7 @@ async function refreshData() {
 
 async function tick() {
   await refreshData();
+  if (parseRoute().page === "policy") await refreshPolicyLog();
   if (!paused) {
     renderCurrentRoute();
   }
@@ -777,8 +789,10 @@ function renderPolicyAccess() {
   const form = document.getElementById("policy-unlock");
   const unlocked = document.getElementById("policy-locked-actions");
   const submit = document.getElementById("policy-add-submit");
+  const filterSubmit = document.getElementById("filter-add-submit");
   const st = cache.policy;
   if (!note || !form || !unlocked || !submit) return;
+  if (filterSubmit) filterSubmit.disabled = !(st && st.writes_enabled && getToken());
   if (!st) {
     form.hidden = true;
     unlocked.hidden = true;
@@ -905,8 +919,11 @@ function applyPrefill(prefill) {
 function renderPolicyPage(prefill) {
   renderPolicyMode();
   renderPolicyAccess();
+  renderPolicyFilters();
+  renderPolicyLog();
   renderPolicyRules();
   renderPolicyAudit();
+  renderInterfaceOptions();
   applyPrefill(prefill);
 }
 
@@ -1024,7 +1041,7 @@ function setupPolicy() {
     submit.disabled = false;
     if (!res.ok) {
       if (res.status === 400 || res.status === 409 || res.status === 422) target.setAttribute("aria-invalid", "true");
-      const hint = res.status === 422 ? " Tick “Allow rules that cover this host or the gateway” if you really mean it." : "";
+      const hint = res.status === 422 ? " Tick “Allow rules that cover this host or the gateway” if you mean it." : "";
       showFormMessage("policy-add-error", res.error + hint);
       return;
     }
@@ -1063,10 +1080,259 @@ function setupPolicy() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Filter chain (bpfilter-style ordered rules)
+// ---------------------------------------------------------------------------
+
+const VERDICT_LABEL = { drop: "Block", accept: "Allow", continue: "Count" };
+
+function verdictBadge(v) {
+  const cls = v === "drop" ? "verdict-drop" : v === "accept" ? "verdict-accept" : "verdict-log";
+  return `<span class="verdict ${cls}">${VERDICT_LABEL[v] || escapeHtml(v)}</span>`;
+}
+
+function renderPolicyFilters() {
+  const root = document.getElementById("policy-filters");
+  const st = cache.policy;
+  if (!root) return;
+  if (!st) {
+    root.innerHTML = `<p class="muted">${escapeHtml(cache.policyError || "Loading…")}</p>`;
+    return;
+  }
+  const filters = st.filters || [];
+  if (!filters.length) {
+    root.innerHTML =
+      "<p class='muted'>No filter rules yet. Add one below, for example: block TCP to port 23 from anywhere except your admin network.</p>";
+    return;
+  }
+  const canEdit = st.writes_enabled && !!getToken();
+  const rows = filters
+    .map((f, i) => {
+      const c = f.counters || { packets: 0, bytes: 0 };
+      const expires = f.expires_at ? new Date(f.expires_at).toLocaleString() : "Never";
+      const log = f.log ? `Yes${f.log_every_seconds ? `, every ${f.log_every_seconds}s` : ""}` : "No";
+      const id = escapeHtml(f.id);
+      const controls = canEdit
+        ? `<span class="row-controls">
+            <button type="button" data-act="up" data-id="${id}" aria-label="Move rule ${id} up" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" data-act="down" data-id="${id}" aria-label="Move rule ${id} down" ${i === filters.length - 1 ? "disabled" : ""}>↓</button>
+            <button type="button" data-act="toggle" data-id="${id}" data-enabled="${f.enabled}">${f.enabled ? "Disable" : "Enable"}</button>
+            <button type="button" class="rule-remove" data-act="remove" data-id="${id}" aria-label="Remove rule ${id}">Remove</button>
+          </span>`
+        : "";
+      return `<tr class="${f.enabled ? "" : "is-disabled"}">
+        <td data-label="#" class="pos"><span>${i + 1}</span></td>
+        <td data-label="Match"><span><code class="match">${escapeHtml(f.summary)}</code>${f.enabled ? "" : " <span class='muted'>(disabled)</span>"}<br /><span class="muted">${id}</span></span></td>
+        <td data-label="Action"><span>${verdictBadge(f.verdict)}</span></td>
+        <td data-label="Log"><span>${log}</span></td>
+        <td data-label="Matches" class="num"><span>${c.packets.toLocaleString()} <span class="muted">(${formatBytes(c.bytes)})</span></span></td>
+        <td data-label="Expires"><span>${escapeHtml(expires)}</span></td>
+        <td data-label="Reason"><span>${escapeHtml(f.comment || "")}</span></td>
+        <td class="rule-actions">${controls}</td>
+      </tr>`;
+    })
+    .join("");
+  root.innerHTML = `<table class="device-table rules-table filters-table">
+    <caption class="muted">${filters.length} of ${st.max_filters} filter rules</caption>
+    <thead><tr><th scope="col">#</th><th scope="col">Match</th><th scope="col">Action</th><th scope="col">Log</th>
+    <th scope="col" class="num">Matches</th><th scope="col">Expires</th><th scope="col">Reason</th><th scope="col"><span class="visually-hidden">Controls</span></th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+async function refreshPolicyLog() {
+  try {
+    const res = await fetch("/api/v1/policy/log?limit=50", { headers: { Accept: "application/json" } });
+    if (res.ok) cache.policyLog = await res.json();
+  } catch {
+    /* keep the last log */
+  }
+}
+
+function renderPolicyLog() {
+  const root = document.getElementById("policy-log");
+  if (!root) return;
+  const entries = cache.policyLog || [];
+  if (!entries.length) {
+    root.innerHTML = "<p class='muted'>Nothing logged yet. Tick “Log matching packets” on a filter rule to see its packets here.</p>";
+    return;
+  }
+  const rows = entries
+    .map((e) => {
+      const ep = (addr, port) => (addr ? `${escapeHtml(addr)}${port ? `:${port}` : ""}` : "");
+      const flow = e.src ? `${ep(e.src, e.src_port)} → ${ep(e.dst, e.dst_port)}` : "non-IP frame";
+      const detail = e.tcp_flags
+        ? escapeHtml(e.tcp_flags.toUpperCase())
+        : e.icmp_type !== undefined && e.icmp_type !== null
+          ? `type ${e.icmp_type} code ${e.icmp_code}`
+          : "";
+      const outcome =
+        e.verdict === "drop" ? (e.dropped ? "Dropped" : "Would drop") : e.verdict === "accept" ? "Allowed" : "Counted";
+      return `<tr>
+        <td data-label="Time"><span>${escapeHtml(new Date(e.at).toLocaleTimeString())}</span></td>
+        <td data-label="Rule"><span><code>${escapeHtml(e.rule_id)}</code></span></td>
+        <td data-label="Outcome"><span>${outcome}</span></td>
+        <td data-label="Interface"><span>${escapeHtml(e.interface || "")}</span></td>
+        <td data-label="Protocol"><span>${escapeHtml((e.protocol || "").toUpperCase())}</span></td>
+        <td data-label="Flow" class="flow"><span>${flow}</span></td>
+        <td data-label="Details"><span>${detail}</span></td>
+        <td data-label="Device"><span>${escapeHtml(e.src_mac)}</span></td>
+        <td data-label="Size" class="num"><span>${e.length} B</span></td>
+      </tr>`;
+    })
+    .join("");
+  root.innerHTML = `<table class="device-table log-table">
+    <thead><tr><th scope="col">Time</th><th scope="col">Rule</th><th scope="col">Outcome</th><th scope="col">Interface</th><th scope="col">Protocol</th>
+    <th scope="col">Source → destination</th><th scope="col">Details</th><th scope="col">Device</th><th scope="col" class="num">Size</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function renderInterfaceOptions() {
+  const list = document.getElementById("filter-iface-list");
+  if (!list || !cache.devices) return;
+  const names = [...new Set(cache.devices.map((d) => d.interface).filter(Boolean))].sort();
+  const html = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
+  if (list.innerHTML !== html) list.innerHTML = html;
+}
+
+function updateFilterFormForProtocol() {
+  const proto = /** @type {HTMLSelectElement} */ (document.getElementById("filter-protocol")).value;
+  const isIcmp = proto === "icmp" || proto === "icmpv6";
+  document.querySelectorAll("#filter-add [data-ports]").forEach((el) => {
+    /** @type {HTMLElement} */ (el).hidden = isIcmp;
+  });
+  document.querySelectorAll("#filter-add [data-tcp]").forEach((el) => {
+    /** @type {HTMLElement} */ (el).hidden = proto !== "tcp";
+  });
+  document.querySelectorAll("#filter-add [data-icmp]").forEach((el) => {
+    /** @type {HTMLElement} */ (el).hidden = !isIcmp;
+  });
+}
+
+function buildFilterBody(form) {
+  const fd = new FormData(form);
+  const str = (k) => String(fd.get(k) || "").trim();
+  const proto = str("protocol");
+  const match = {};
+  const set = (k, v) => {
+    if (v !== "" && v !== undefined && v !== null && v !== false) match[k] = v;
+  };
+  set("protocol", proto);
+  set("interface", str("interface"));
+  set("src", str("src"));
+  set("dst", str("dst"));
+  if (match.src) set("src_not", fd.get("src_not") === "on");
+  if (match.dst) set("dst_not", fd.get("dst_not") === "on");
+  set("src_mac", str("src_mac"));
+  const isIcmp = proto === "icmp" || proto === "icmpv6";
+  if (!isIcmp) {
+    set("src_port", str("src_port"));
+    set("dst_port", str("dst_port"));
+    if (match.src_port) set("src_port_not", fd.get("src_port_not") === "on");
+    if (match.dst_port) set("dst_port_not", fd.get("dst_port_not") === "on");
+  }
+  if (proto === "tcp") {
+    const flags = fd.getAll("flag").map(String);
+    if (flags.length) match[str("flag_mode") === "all" ? "tcp_flags_all" : "tcp_flags_any"] = flags;
+  }
+  if (isIcmp) {
+    if (str("icmp_type") !== "") match.icmp_type = Number(str("icmp_type"));
+    if (str("icmp_code") !== "") match.icmp_code = Number(str("icmp_code"));
+  }
+  const body = {
+    verdict: str("verdict"),
+    match,
+    log: fd.get("log") === "on",
+    ttl_seconds: Number(str("ttl")) || 0,
+    comment: str("comment"),
+    force: fd.get("force") === "on",
+  };
+  if (body.log) body.log_every_seconds = Number(str("log_every") || "1");
+  if (str("position") === "top") body.position = 0;
+  return body;
+}
+
+function setupFilters() {
+  document.getElementById("filter-protocol")?.addEventListener("change", updateFilterFormForProtocol);
+  updateFilterFormForProtocol();
+
+  document.getElementById("filter-add")?.addEventListener("input", () => {
+    showFormMessage("filter-add-error", "");
+    showFormMessage("filter-add-ok", "");
+  });
+
+  document.getElementById("filter-add")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = /** @type {HTMLFormElement} */ (e.currentTarget);
+    const submit = /** @type {HTMLButtonElement} */ (document.getElementById("filter-add-submit"));
+    showFormMessage("filter-add-error", "");
+    showFormMessage("filter-add-ok", "");
+    const body = buildFilterBody(form);
+    submit.disabled = true;
+    const res = await policyWrite("POST", "/api/v1/policy/filters", body);
+    submit.disabled = false;
+    if (!res.ok) {
+      const hint =
+        res.status === 422 ? " Tick “Allow a block that matches every host…” below if you mean it." : "";
+      showFormMessage("filter-add-error", res.error + hint);
+      return;
+    }
+    form.reset();
+    updateFilterFormForProtocol();
+    const pos = body.position === 0 ? "at the top" : "at the end";
+    const dry =
+      res.data.verdict === "drop" && cache.policy && cache.policy.mode !== "enforce"
+        ? " It only counts until you start enforcing."
+        : "";
+    showFormMessage("filter-add-ok", `${VERDICT_LABEL[res.data.verdict]} rule ${res.data.id} added ${pos}.${dry}`);
+    await reloadPolicy();
+  });
+
+  document.getElementById("policy-filters")?.addEventListener("click", async (e) => {
+    const btn = /** @type {HTMLButtonElement | null} */ (/** @type {HTMLElement} */ (e.target).closest("button[data-act]"));
+    if (!btn || !cache.policy) return;
+    const id = btn.dataset.id || "";
+    const act = btn.dataset.act;
+    const filters = cache.policy.filters || [];
+    const idx = filters.findIndex((f) => f.id === id);
+    let res;
+    btn.disabled = true;
+    if (act === "up" || act === "down") {
+      res = await policyWrite("PUT", `/api/v1/policy/filters/${encodeURIComponent(id)}/position`, {
+        position: act === "up" ? idx - 1 : idx + 1,
+      });
+    } else if (act === "toggle") {
+      res = await policyWrite("PUT", `/api/v1/policy/filters/${encodeURIComponent(id)}/enabled`, {
+        enabled: btn.dataset.enabled !== "true",
+      });
+    } else if (act === "remove") {
+      if (!window.confirm(`Remove filter rule ${id}? Packets it matched will be handled by the rules below it.`)) {
+        btn.disabled = false;
+        return;
+      }
+      res = await policyWrite("DELETE", `/api/v1/policy/filters/${encodeURIComponent(id)}`);
+    }
+    if (res && !res.ok) {
+      btn.disabled = false;
+      showFormMessage("filters-error", res.error);
+      return;
+    }
+    showFormMessage("filters-error", "");
+    await reloadPolicy();
+    // Keep keyboard focus on the moved rule's matching control.
+    if (act === "up" || act === "down") {
+      const sel = (a) => `#policy-filters button[data-act="${a}"][data-id="${CSS.escape(id)}"]:not([disabled])`;
+      /** @type {HTMLElement | null} */ (
+        document.querySelector(sel(act)) || document.querySelector(sel(act === "up" ? "down" : "up")) || document.querySelector(sel("toggle"))
+      )?.focus();
+    }
+  });
+}
+
 setupThemeToggle();
 setupPauseToggle();
 setupRouter();
 setupPolicy();
+setupFilters();
 renderBuildInfo();
 tick();
 setInterval(tick, 3000);

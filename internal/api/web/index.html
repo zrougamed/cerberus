@@ -91,7 +91,7 @@
         <section class="panel">
           <h2>All devices</h2>
           <p class="muted">Select a device for full telemetry captured for that MAC. <span id="devices-paused-note" class="paused-badge" hidden>Updates paused</span></p>
-          <div id="devices-browser" class="detail-browser"></div>
+          <div id="devices-browser" class="detail-browser table-scroll"></div>
         </section>
       </div>
     </div>
@@ -113,7 +113,7 @@
         <section class="panel">
           <h2>Rule-based alerts</h2>
           <p class="muted">Threshold alerts from the monitor (DNS volume, TCP volume, target spread).</p>
-          <div id="alerts-browser" class="detail-browser"></div>
+          <div id="alerts-browser" class="detail-browser table-scroll"></div>
         </section>
       </div>
     </div>
@@ -163,7 +163,132 @@
         </section>
 
         <section class="panel">
-          <h2>Add a rule</h2>
+          <h2>Filter rules</h2>
+          <p class="muted">Checked top to bottom for every packet. The first <strong>Block</strong> or <strong>Allow</strong> that matches decides; <strong>Count</strong> rules record the packet and keep going. Allow also skips the blocklist below. <span id="policy-paused-note" class="paused-badge" hidden>Updates paused</span></p>
+          <p id="filters-error" class="form-error" role="alert" hidden></p>
+          <div id="policy-filters" class="detail-browser table-scroll"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Add a filter rule</h2>
+          <form id="filter-add" class="policy-form" novalidate>
+            <fieldset class="target-kind">
+              <legend>Action</legend>
+              <label><input type="radio" name="verdict" value="drop" checked /> Block</label>
+              <label><input type="radio" name="verdict" value="accept" /> Allow</label>
+              <label><input type="radio" name="verdict" value="continue" /> Count only</label>
+            </fieldset>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="filter-protocol">Protocol</label>
+                <select id="filter-protocol" name="protocol">
+                  <option value="">Any</option>
+                  <option value="tcp">TCP</option>
+                  <option value="udp">UDP</option>
+                  <option value="icmp">ICMP (IPv4)</option>
+                  <option value="icmpv6">ICMPv6</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="filter-iface">Interface <span class="muted">(optional)</span></label>
+                <input id="filter-iface" name="interface" type="text" list="filter-iface-list" autocomplete="off" spellcheck="false" />
+                <datalist id="filter-iface-list"></datalist>
+              </div>
+              <div class="field">
+                <label for="filter-src">Source address or range</label>
+                <input id="filter-src" name="src" type="text" autocomplete="off" spellcheck="false" aria-describedby="filter-addr-help" />
+                <label class="check"><input name="src_not" type="checkbox" /> Anything except this</label>
+              </div>
+              <div class="field">
+                <label for="filter-dst">Destination address or range</label>
+                <input id="filter-dst" name="dst" type="text" autocomplete="off" spellcheck="false" aria-describedby="filter-addr-help" />
+                <label class="check"><input name="dst_not" type="checkbox" /> Anything except this</label>
+              </div>
+              <p id="filter-addr-help" class="field-help field-wide">Leave empty to match any address. For example 203.0.113.0/24 or 2001:db8::/48.</p>
+              <div class="field" data-ports>
+                <label for="filter-sport">Source port</label>
+                <input id="filter-sport" name="src_port" type="text" inputmode="numeric" autocomplete="off" aria-describedby="filter-port-help" />
+                <label class="check"><input name="src_port_not" type="checkbox" /> Anything except this</label>
+              </div>
+              <div class="field" data-ports>
+                <label for="filter-dport">Destination port</label>
+                <input id="filter-dport" name="dst_port" type="text" inputmode="numeric" autocomplete="off" aria-describedby="filter-port-help" />
+                <label class="check"><input name="dst_port_not" type="checkbox" /> Anything except this</label>
+              </div>
+              <p id="filter-port-help" class="field-help field-wide" data-ports>A port such as 22, or a range such as 1024-65535. TCP and UDP only.</p>
+              <fieldset class="field field-wide flag-set" data-tcp hidden>
+                <legend>TCP flags</legend>
+                <div class="inline-fields">
+                  <label class="check"><input type="checkbox" name="flag" value="syn" /> SYN</label>
+                  <label class="check"><input type="checkbox" name="flag" value="ack" /> ACK</label>
+                  <label class="check"><input type="checkbox" name="flag" value="fin" /> FIN</label>
+                  <label class="check"><input type="checkbox" name="flag" value="rst" /> RST</label>
+                  <label class="check"><input type="checkbox" name="flag" value="psh" /> PSH</label>
+                  <label class="check"><input type="checkbox" name="flag" value="urg" /> URG</label>
+                </div>
+                <label for="filter-flag-mode" class="sub-label">Match when</label>
+                <select id="filter-flag-mode" name="flag_mode">
+                  <option value="any">any of the ticked flags is set</option>
+                  <option value="all">all of the ticked flags are set</option>
+                </select>
+              </fieldset>
+              <div class="field" data-icmp hidden>
+                <label for="filter-icmp-type">ICMP type <span class="muted">(optional)</span></label>
+                <input id="filter-icmp-type" name="icmp_type" type="number" min="0" max="255" inputmode="numeric" />
+              </div>
+              <div class="field" data-icmp hidden>
+                <label for="filter-icmp-code">ICMP code <span class="muted">(optional)</span></label>
+                <input id="filter-icmp-code" name="icmp_code" type="number" min="0" max="255" inputmode="numeric" />
+              </div>
+              <div class="field">
+                <label for="filter-smac">Source device MAC <span class="muted">(optional)</span></label>
+                <input id="filter-smac" name="src_mac" type="text" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="filter-position">Position</label>
+                <select id="filter-position" name="position">
+                  <option value="end">At the end</option>
+                  <option value="top">At the top</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="filter-ttl">Duration</label>
+                <select id="filter-ttl" name="ttl">
+                  <option value="0">Until removed</option>
+                  <option value="900">15 minutes</option>
+                  <option value="3600">1 hour</option>
+                  <option value="86400">24 hours</option>
+                  <option value="604800">7 days</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="check"><input id="filter-log" name="log" type="checkbox" /> Log matching packets</label>
+                <label for="filter-log-every" class="sub-label">At most one entry every (seconds)</label>
+                <input id="filter-log-every" name="log_every" type="number" min="0" max="3600" step="0.1" value="1" inputmode="decimal" />
+              </div>
+              <div class="field field-wide">
+                <label for="filter-comment">Reason <span class="muted">(optional)</span></label>
+                <input id="filter-comment" name="comment" type="text" maxlength="256" autocomplete="off" />
+              </div>
+            </div>
+
+            <label class="check"><input name="force" type="checkbox" /> Allow a block that matches every host, or covers this host or the gateway</label>
+            <p id="filter-add-error" class="form-error" role="alert" hidden></p>
+            <p id="filter-add-ok" class="form-ok" role="status" hidden></p>
+            <button id="filter-add-submit" class="toggle primary" type="submit">Add filter rule</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h2>Live log</h2>
+          <p class="muted">Packets matched by filter rules that have logging on, newest first.</p>
+          <div id="policy-log" class="detail-browser table-scroll"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Blocklist: quarantine a device or block an address</h2>
+          <p class="muted">Fast set lookups for long lists, checked after the filter rules.</p>
           <form id="policy-add" class="policy-form" novalidate>
             <fieldset class="target-kind">
               <legend>Match traffic by</legend>
@@ -212,13 +337,13 @@
 
             <p id="policy-add-error" class="form-error" role="alert" hidden></p>
             <p id="policy-add-ok" class="form-ok" role="status" hidden></p>
-            <button id="policy-add-submit" class="toggle primary" type="submit">Add rule</button>
+            <button id="policy-add-submit" class="toggle primary" type="submit">Add to blocklist</button>
           </form>
         </section>
 
         <section class="panel">
-          <h2>Rules</h2>
-          <p class="muted">Matches are counted in the kernel for every packet, in both modes. <span id="policy-paused-note" class="paused-badge" hidden>Updates paused</span></p>
+          <h2>Blocklist entries</h2>
+          <p class="muted">Matches are counted in the kernel for every packet, in both modes.</p>
           <p id="policy-rules-error" class="form-error" role="alert" hidden></p>
           <div id="policy-rules" class="detail-browser table-scroll"></div>
         </section>
@@ -245,6 +370,7 @@
                 <option value="alerts">GET /api/v1/alerts</option>
                 <option value="anomalies">GET /api/v1/anomalies</option>
                 <option value="policy">GET /api/v1/policy</option>
+                <option value="policylog">GET /api/v1/policy/log</option>
               </select>
             </label>
             <button type="button" id="raw-refresh" class="toggle">Refresh</button>

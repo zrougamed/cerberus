@@ -122,10 +122,10 @@ func (e *Engine) AddFilter(in FilterInput, actor string) (FilterRule, error) {
 
 	if r.Verdict == VerdictDrop && !in.Force {
 		if !c.hasAddress {
-			return FilterRule{}, fmt.Errorf("%w: a drop rule without src, dst or src_mac affects every host, this one included; set force to confirm", ErrProtected)
+			return FilterRule{}, fmt.Errorf("%w: a block with no source, destination or device matches traffic from every host, including this one and the gateway; set force to confirm", ErrProtected)
 		}
 		if p := e.protectedFilterHit(c); p != "" {
-			return FilterRule{}, fmt.Errorf("%w (%s); set force to override", ErrProtected, p)
+			return FilterRule{}, fmt.Errorf("%w: it covers %s, which is this host or the gateway; set force to override", ErrProtected, p)
 		}
 	}
 	if r.ID == "" {

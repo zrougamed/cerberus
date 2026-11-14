@@ -77,8 +77,9 @@ type RuleInput struct {
 	Force bool `json:"force,omitempty"`
 }
 
-// ErrProtected is returned when a rule would cut off a protected address.
-var ErrProtected = errors.New("rule covers a protected address")
+// ErrProtected is returned when a rule could cut off this host or the
+// gateway (or matches every host) and the request did not set force.
+var ErrProtected = errors.New("needs confirmation")
 
 var ruleIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
