@@ -1,4 +1,5 @@
 # Build stage. Base images are pinned by digest; bump tag and digest together.
+# The React Control Room is prebuilt into internal/api/web (see `make web`).
 FROM golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS builder
 
 # Install only what we need for BPF compilation

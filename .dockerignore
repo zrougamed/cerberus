@@ -27,6 +27,10 @@ LICENSE
 *.md
 data/
 
+# Frontend toolchain (SPA is prebuilt into internal/api/web)
+web/node_modules/
+web/dist/
+
 # Local-only notes (never part of the build context)
 local-track/
 .local/

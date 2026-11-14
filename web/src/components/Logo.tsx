@@ -1,0 +1,36 @@
+export function Logo({ className = 'h-10 w-10' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <path
+        className="fill-[#2a3d5c]"
+        d="M32 4.5
+           C35.2 4.5 38.2 5.6 40.6 7.2 L52.5 15.2 C53.4 15.8 54 16.8 54 18 V32.2
+           C54 40.8 49.2 48.6 41.4 54.2 L33.6 59.4 C32.6 60.1 31.4 60.1 30.4 59.4
+           L22.6 54.2 C14.8 48.6 10 40.8 10 32.2 V18 C10 16.8 10.6 15.8 11.5 15.2
+           L23.4 7.2 C25.8 5.6 28.8 4.5 32 4.5 Z"
+      />
+      <path
+        className="stroke-[#d4a017]"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+        d="M32 8.2
+           C34.5 8.2 36.8 9.1 38.7 10.3 L48.8 17.1 C49.3 17.4 49.6 18 49.6 18.6 V32
+           C49.6 39.2 45.5 45.9 38.8 50.6 L33.1 54.5 C32.4 55 31.6 55 30.9 54.5
+           L25.2 50.6 C18.5 45.9 14.4 39.2 14.4 32 V18.6 C14.4 18 14.7 17.4 15.2 17.1
+           L25.3 10.3 C27.2 9.1 29.5 8.2 32 8.2 Z"
+      />
+      <g stroke="#e8edf4" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" fill="none">
+        <path d="M32 18.5 L41.96 24.25 L41.96 35.75 L32 41.5 L22.04 35.75 L22.04 24.25 Z" />
+        <path d="M32 25.6 V20.9 M37.2 28.3 L40.1 25.4 M37.2 31.7 L40.1 34.6 M32 34.4 V39.1 M26.8 31.7 L23.9 34.6 M26.8 28.3 L23.9 25.4" />
+      </g>
+      <circle cx="32" cy="18.5" r="2.25" fill="#e8edf4" />
+      <circle cx="41.96" cy="24.25" r="2.25" fill="#e8edf4" />
+      <circle cx="41.96" cy="35.75" r="2.25" fill="#e8edf4" />
+      <circle cx="32" cy="41.5" r="2.25" fill="#e8edf4" />
+      <circle cx="22.04" cy="35.75" r="2.25" fill="#e8edf4" />
+      <circle cx="22.04" cy="24.25" r="2.25" fill="#e8edf4" />
+      <circle cx="32" cy="30" r="4.1" fill="#d4a017" />
+      <circle cx="32" cy="30" r="1.65" className="fill-[var(--sidebar)]" />
+    </svg>
+  )
+}

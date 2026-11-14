@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -389,36 +390,51 @@ func TestContentSecurityPolicy_Directives(t *testing.T) {
 }
 
 // The CSP forbids inline script and style; fail fast if the embedded UI
-// reintroduces them.
+// shell reintroduces them. Bundled JS is not scanned for the substring
+// "style=" (React/Chart.js may mention it without emitting HTML attrs).
 func TestEmbeddedWeb_NoInlineScriptOrStyle(t *testing.T) {
-	for _, name := range []string{"web/index.html", "web/app.js"} {
-		data, err := webFS.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		src := string(data)
-		for _, bad := range []string{"style=", "<style", " onclick=", " onload=", "javascript:"} {
-			if strings.Contains(src, bad) {
-				t.Errorf("%s contains %q, which the CSP blocks", name, bad)
-			}
+	html, err := webFS.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatalf("read index.html: %v", err)
+	}
+	src := string(html)
+	for _, bad := range []string{"style=", "<style", " onclick=", " onload=", "javascript:"} {
+		if strings.Contains(src, bad) {
+			t.Errorf("index.html contains %q, which the CSP blocks", bad)
 		}
 	}
-	html, _ := webFS.ReadFile("web/index.html")
-	if n := strings.Count(string(html), "<script"); n != strings.Count(string(html), `<script src="/`) {
-		t.Errorf("index.html has an inline <script>")
+	// Only external module/classic scripts with src= are allowed.
+	if strings.Contains(src, "<script>") {
+		t.Errorf("index.html has an inline <script> block")
+	}
+	if !strings.Contains(src, `<script type="module"`) && !strings.Contains(src, `<script src="`) {
+		t.Errorf("index.html must load the SPA via an external script")
 	}
 }
 
-// Several UI elements (the "Updates paused" badges, policy panels) set
-// display:inline-block/flex/grid, which overrides the hidden attribute
-// unless this rule exists. Without it "Updates paused" showed while live.
+// React/Tailwind CSS must keep the hidden attribute winning over utility
+// display classes (same bug class as the former plain CSS console).
 func TestEmbeddedCSS_HiddenAttributeWins(t *testing.T) {
-	css, err := webFS.ReadFile("web/styles.css")
+	entries, err := fs.ReadDir(webFS, "web/assets")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("list web/assets: %v", err)
+	}
+	var css []byte
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".css") {
+			css, err = webFS.ReadFile("web/assets/" + e.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if len(css) == 0 {
+		t.Fatal("no CSS asset embedded under web/assets")
 	}
 	compact := strings.Join(strings.Fields(string(css)), " ")
-	if !strings.Contains(compact, "[hidden] { display: none !important; }") {
-		t.Fatal("styles.css must keep `[hidden] { display: none !important; }`")
+	if !strings.Contains(compact, "[hidden]{display:none!important}") &&
+		!strings.Contains(compact, "[hidden] { display: none !important; }") {
+		t.Fatal("embedded CSS must keep `[hidden]{display:none!important}`")
 	}
 }
