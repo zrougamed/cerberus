@@ -8,6 +8,7 @@ import {
   Menu,
   Moon,
   PanelLeftClose,
+  PanelLeftOpen,
   Pause,
   Play,
   Radar,
@@ -64,6 +65,8 @@ const nav: Array<{ group: string; items: NavItem[] }> = [
   },
 ]
 
+const allNavItems = nav.flatMap((section) => section.items)
+
 function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => initTheme())
 
@@ -75,6 +78,20 @@ function useTheme() {
     theme,
     toggle: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')),
   }
+}
+
+function navClass(isActive: boolean, collapsed: boolean) {
+  return cn(
+    'flex items-center rounded no-underline transition-colors',
+    collapsed ? 'justify-center px-0 py-2.5' : 'gap-2 border-l-[3px] px-3 py-2.5 text-[0.95rem] font-semibold',
+    isActive
+      ? collapsed
+        ? 'bg-[#d4a017]/25 text-white'
+        : 'border-[#d4a017] bg-[#d4a017]/20 text-white'
+      : collapsed
+        ? 'text-[var(--sidebar-text)] hover:bg-white/10'
+        : 'border-transparent text-[var(--sidebar-text)] hover:bg-white/10',
+  )
 }
 
 export function Shell() {
@@ -99,6 +116,7 @@ export function Shell() {
       ? '/raw'
       : location.pathname
   const title = titles[path] || 'Control Room'
+  const collapsed = !open
 
   return (
     <div className="flex h-dvh overflow-hidden">
@@ -114,45 +132,83 @@ export function Shell() {
       <aside
         id="sidebar"
         className={cn(
-          'z-30 flex h-dvh w-[220px] shrink-0 flex-col border-r border-white/10 bg-[var(--sidebar)] text-[var(--sidebar-text)] transition-[transform,margin] duration-200',
-          'fixed inset-y-0 left-0 md:static',
-          open ? 'translate-x-0' : 'pointer-events-none -translate-x-full md:w-0 md:overflow-hidden md:border-0 md:translate-x-0',
+          'z-30 flex h-dvh shrink-0 flex-col border-r border-white/10 bg-[var(--sidebar)] text-[var(--sidebar-text)] transition-[width,transform] duration-200',
+          'fixed inset-y-0 left-0 md:static md:translate-x-0',
+          open ? 'w-[220px] translate-x-0' : 'w-[64px] -translate-x-full md:translate-x-0',
         )}
         aria-label="Primary"
-        aria-hidden={!open}
+        aria-expanded={open}
       >
-        <div
-          className={cn(
-            'flex h-full w-[220px] flex-col gap-2 p-3',
-            !open && 'md:invisible',
-          )}
-        >
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-1 pb-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <Logo />
-              <div className="min-w-0">
-                <p className="font-[family-name:var(--font-display)] text-lg font-bold leading-tight">Cerberus</p>
-                <p className="text-xs text-[var(--sidebar-muted)]">Control Room</p>
-              </div>
+        <div className={cn('flex h-full flex-col', open ? 'w-[220px] gap-2 p-3' : 'w-[64px] items-center gap-1 p-2')}>
+          <div
+            className={cn(
+              'flex shrink-0 border-b border-white/10',
+              open ? 'items-center justify-between gap-2 px-1 pb-3' : 'flex-col items-center gap-2 pb-2',
+            )}
+          >
+            <div className={cn('flex min-w-0 items-center', open ? 'gap-2.5' : 'justify-center')}>
+              <Logo className={open ? 'h-10 w-10' : 'h-9 w-9'} />
+              {open ? (
+                <div className="min-w-0">
+                  <p className="font-[family-name:var(--font-display)] text-lg font-bold leading-tight">Cerberus</p>
+                  <p className="text-xs text-[var(--sidebar-muted)]">Control Room</p>
+                </div>
+              ) : null}
             </div>
             <button
               type="button"
               className="btn shrink-0 border-white/20 bg-transparent text-[var(--sidebar-text)]"
-              aria-label="Hide menu"
-              title="Hide menu"
-              onClick={() => setOpen(false)}
+              aria-label={open ? 'Collapse menu' : 'Expand menu'}
+              title={open ? 'Collapse menu' : 'Expand menu'}
+              onClick={() => setOpen((v) => !v)}
             >
-              <PanelLeftClose size={16} aria-hidden />
+              {open ? <PanelLeftClose size={16} aria-hidden /> : <PanelLeftOpen size={16} aria-hidden />}
             </button>
           </div>
 
           <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto" aria-label="Main">
-            {nav.map((section) => (
-              <div key={section.group}>
-                <p className="mb-1 mt-3 px-2 font-mono text-[0.7rem] tracking-wide text-[var(--sidebar-muted)]">
-                  {section.group}
-                </p>
-                {section.items.map((item) => {
+            {open
+              ? nav.map((section) => (
+                  <div key={section.group}>
+                    <p className="mb-1 mt-3 px-2 font-mono text-[0.7rem] tracking-wide text-[var(--sidebar-muted)]">
+                      {section.group}
+                    </p>
+                    {section.items.map((item) => {
+                      const Icon = item.icon
+                      if (item.external) {
+                        return (
+                          <a
+                            key={item.to}
+                            href={item.to}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={item.label}
+                            className={navClass(false, false)}
+                          >
+                            <Icon size={16} aria-hidden />
+                            {item.label}
+                          </a>
+                        )
+                      }
+                      return (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          end={Boolean(item.end)}
+                          title={item.label}
+                          onClick={() => {
+                            if (window.matchMedia('(max-width: 759px)').matches) setOpen(false)
+                          }}
+                          className={({ isActive }) => navClass(isActive, false)}
+                        >
+                          <Icon size={16} aria-hidden />
+                          {item.label}
+                        </NavLink>
+                      )
+                    })}
+                  </div>
+                ))
+              : allNavItems.map((item) => {
                   const Icon = item.icon
                   if (item.external) {
                     return (
@@ -161,10 +217,11 @@ export function Shell() {
                         href={item.to}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-2 rounded border-l-[3px] border-transparent px-3 py-2.5 text-[0.95rem] font-semibold text-[var(--sidebar-text)] no-underline hover:bg-white/10"
+                        title={item.label}
+                        aria-label={item.label}
+                        className={navClass(false, true)}
                       >
-                        <Icon size={16} aria-hidden />
-                        {item.label}
+                        <Icon size={18} aria-hidden />
                       </a>
                     )
                   }
@@ -173,47 +230,38 @@ export function Shell() {
                       key={item.to}
                       to={item.to}
                       end={Boolean(item.end)}
-                      onClick={() => {
-                        if (window.matchMedia('(max-width: 759px)').matches) setOpen(false)
-                      }}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex items-center gap-2 rounded px-3 py-2.5 text-[0.95rem] font-semibold no-underline',
-                          isActive
-                            ? 'border-l-[3px] border-[#d4a017] bg-[#d4a017]/20 text-white'
-                            : 'border-l-[3px] border-transparent text-[var(--sidebar-text)] hover:bg-white/10',
-                        )
-                      }
+                      title={item.label}
+                      aria-label={item.label}
+                      className={({ isActive }) => navClass(isActive, true)}
                     >
-                      <Icon size={16} aria-hidden />
-                      {item.label}
+                      <Icon size={18} aria-hidden />
                     </NavLink>
                   )
                 })}
-              </div>
-            ))}
           </nav>
 
-          <p className="shrink-0 break-all border-t border-white/10 px-2 pt-3 font-mono text-[0.7rem] text-[var(--sidebar-muted)]">
-            Build: {version?.commit || '…'}
-            {version?.date ? ` (${version.date})` : ''}
-          </p>
+          {open ? (
+            <p className="shrink-0 break-all border-t border-white/10 px-2 pt-3 font-mono text-[0.7rem] text-[var(--sidebar-muted)]">
+              Build: {version?.commit || '…'}
+              {version?.date ? ` (${version.date})` : ''}
+            </p>
+          ) : null}
         </div>
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--line)] bg-[var(--surface)] px-5 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            {!open ? (
+            {collapsed ? (
               <button
                 type="button"
-                className="btn"
+                className="btn md:hidden"
                 onClick={() => setOpen(true)}
                 aria-expanded={open}
                 aria-controls="sidebar"
               >
                 <Menu size={16} aria-hidden />
-                Show menu
+                Menu
               </button>
             ) : null}
             <h1 className="m-0 truncate font-[family-name:var(--font-display)] text-[clamp(1.25rem,2.5vw,1.65rem)] font-bold">

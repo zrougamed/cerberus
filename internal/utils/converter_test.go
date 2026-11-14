@@ -140,9 +140,9 @@ func buildClientHelloWithSNI(host string) []byte {
 	var body []byte
 	body = append(body, 0x03, 0x03) // client_version TLS 1.2
 	body = append(body, make([]byte, 32)...)
-	body = append(body, 0)             // session_id length
+	body = append(body, 0)                // session_id length
 	body = append(body, 0, 2, 0x00, 0x2f) // cipher suites: one suite
-	body = append(body, 1, 0)          // compression methods
+	body = append(body, 1, 0)             // compression methods
 
 	name := []byte(host)
 	serverName := []byte{0, byte(len(name) >> 8), byte(len(name))}
