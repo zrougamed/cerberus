@@ -113,6 +113,74 @@ paths:
           description: No API token configured
         "404":
           description: Unknown device
+  /api/v1/baseline:
+    get:
+      summary: Industrial flow baseline
+      description: >-
+        Learning state, counts and flows. Each flow is a (client, server,
+        protocol, operation class) tuple with a status of learned, approved
+        or new.
+      operationId: getBaseline
+      tags: [Baseline]
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [learned, approved, new]}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 5000, default: 500}}
+      responses:
+        "200":
+          description: "{status: {state, started_at, learning_until, learned, approved, new, dropped, max_flows}, flows: [...]}"
+        "400":
+          description: Invalid status or limit
+  /api/v1/baseline/approve:
+    post:
+      summary: Approve new flows
+      operationId: approveBaselineFlows
+      tags: [Baseline]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, maxItems: 1000, items: {type: string, pattern: "^[0-9a-f]{16}$"}}
+      responses:
+        "200": {description: "{approved: n}"}
+        "400": {description: Invalid ids}
+        "401": {description: Missing or invalid token}
+        "409": {description: Baseline disabled}
+  /api/v1/baseline/forget:
+    post:
+      summary: Remove flows from the baseline
+      description: The next matching request is treated as never seen and alerts again.
+      operationId: forgetBaselineFlows
+      tags: [Baseline]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, maxItems: 1000, items: {type: string, pattern: "^[0-9a-f]{16}$"}}
+      responses:
+        "200": {description: "{forgotten: n}"}
+        "400": {description: Invalid ids}
+        "401": {description: Missing or invalid token}
+        "409": {description: Baseline disabled}
+  /api/v1/baseline/relearn:
+    post:
+      summary: Drop all flows and start a new learning period
+      operationId: relearnBaseline
+      tags: [Baseline]
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: New baseline status}
+        "401": {description: Missing or invalid token}
+        "409": {description: Baseline disabled}
   /api/v1/policy/mode:
     put:
       summary: Set enforcement mode

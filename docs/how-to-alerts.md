@@ -154,6 +154,16 @@ simulator on port 502 and write a register. Configuration and limits:
 
 ---
 
+### Flow baseline
+
+`baseline_new_flow` fires once for each industrial (client, server,
+protocol, operation) tuple first seen after the learning period. To test it,
+set `flow_baseline.learning_hours: 1`, wait an hour, then send a Modbus
+write from a host that only read before. See
+[industrial-protocols.md](industrial-protocols.md#flow-baseline).
+
+---
+
 ## 5. Prometheus (optional)
 
 `GET /metrics` exposes packet and device counters. You can **route Prometheus alerts** on those series for ops-level paging—outside Cerberus’s built-in alert list.

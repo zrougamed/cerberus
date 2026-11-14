@@ -60,6 +60,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	s.registerDocsRoutes(mux)
 	s.registerAssetRoutes(mux)
+	s.registerBaselineRoutes(mux)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)
 	}
@@ -328,6 +329,24 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 				escapeLabelValue(k.Protocol), escapeLabelValue(k.Class), direction, counts[k])
 		}
 		fmt.Fprintln(w)
+	}
+
+	if bs := s.monitor.GetBaselineStatus(); bs.State != monitor.BaselineDisabled {
+		fmt.Fprintln(w, "# HELP cerberus_baseline_flows Industrial flows in the baseline by status.")
+		fmt.Fprintln(w, "# TYPE cerberus_baseline_flows gauge")
+		fmt.Fprintf(w, "cerberus_baseline_flows{status=\"learned\"} %d\n", bs.Learned)
+		fmt.Fprintf(w, "cerberus_baseline_flows{status=\"approved\"} %d\n", bs.Approved)
+		fmt.Fprintf(w, "cerberus_baseline_flows{status=\"new\"} %d\n", bs.New)
+		fmt.Fprintln(w, "# HELP cerberus_baseline_dropped_total Flows not recorded because the baseline was full.")
+		fmt.Fprintln(w, "# TYPE cerberus_baseline_dropped_total counter")
+		fmt.Fprintf(w, "cerberus_baseline_dropped_total %d\n", bs.Dropped)
+		learning := 0
+		if bs.State == monitor.BaselineLearning {
+			learning = 1
+		}
+		fmt.Fprintln(w, "# HELP cerberus_baseline_learning 1 while the flow baseline is still learning.")
+		fmt.Fprintln(w, "# TYPE cerberus_baseline_learning gauge")
+		fmt.Fprintf(w, "cerberus_baseline_learning %d\n\n", learning)
 	}
 
 	fmt.Fprintln(w, "# HELP cerberus_devices_total Number of tracked devices.")

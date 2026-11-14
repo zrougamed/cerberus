@@ -30,6 +30,7 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **CIDR watchlists**: Named IPv4/IPv6 prefix sets that raise rate-limited `watchlist:<id>` alerts and per-list hit counters ([`docs/how-to-alerts.md`](docs/how-to-alerts.md#4-watchlists-cidr-sets))
 - **Kernel-side counters**: Packets/bytes seen by the TC hook and events lost to a full ring buffer, on `/metrics`
 - **Asset inventory**: vendor, model, firmware and serial reported by the devices themselves, inferred roles (controller, HMI, SCADA server, engineering workstation) with operator overrides, CSV export, and an alert when a device's firmware or model changes
+- **Flow baseline**: learns which hosts talk to which controllers with which operations (one week by default), then alerts on anything new; approve, forget or relearn from the console
 - **Industrial protocols**: Modbus/TCP, S7comm, DNP3, EtherNet/IP, BACnet/IP, IEC 104, OPC UA and MQTT decoding with per-device read/write/control/program counters, and alerts on Modbus writes, PLC stop/start, program download, block delete, DNP3 operate and restart, CIP writes and resets, IEC 104 commands, unencrypted OPC UA channels and anonymous MQTT logins, with an allow-list for known masters ([`docs/industrial-protocols.md`](docs/industrial-protocols.md))
 - **Outbound notifications**: Optional Slack, Microsoft Teams, generic webhook, and syslog for rule alerts, anomalies, and new devices ([`docs/notifications.md`](docs/notifications.md))
 

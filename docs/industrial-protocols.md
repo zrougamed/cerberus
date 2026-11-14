@@ -83,6 +83,41 @@ An operator can override it from the Assets page or with
 or `gateway`, `historian`, `other`. The override is saved with the device
 straight away; an empty role goes back to inference.
 
+## Flow baseline
+
+Industrial networks are quiet on purpose: the same HMI polls the same PLCs
+with the same operations all day. The flow baseline records every
+(client, server, protocol, operation class) tuple from decoded requests.
+
+- For the first `learning_hours` (default 168, one week) every tuple is
+  stored as `learned`.
+- After that, a tuple that is not in the baseline is stored as `new` and
+  raises `baseline_new_flow` once:
+  `New industrial flow 10.20.0.30 -> 10.20.0.60: S7comm program (not seen while learning)`.
+- On the **Flow baseline** page (or the API) an operator approves new flows
+  (`approved`), forgets them (the next matching request alerts again), or
+  drops everything and starts learning again after a planned change.
+
+The baseline is stored next to the device records and survives restarts:
+the learning period does not start over when Cerberus restarts. Changing
+`learning_hours` only affects the next relearn. At `max_flows` (default
+10,000) further new tuples are counted in `dropped` and neither stored nor
+alerted on; `cerberus_baseline_dropped_total` shows when that happens.
+
+```yaml
+flow_baseline:
+  enabled: true
+  learning_hours: 168
+  severity: medium
+  max_flows: 10000
+```
+
+API: `GET /api/v1/baseline` (`?status=new|learned|approved`, `?limit=`),
+`POST /api/v1/baseline/approve` and `/forget` with `{"ids": [...]}`, and
+`POST /api/v1/baseline/relearn`; the POSTs need the API token. Metrics:
+`cerberus_baseline_flows{status}`, `cerberus_baseline_dropped_total`,
+`cerberus_baseline_learning`.
+
 ## Modbus/TCP
 
 A frame is accepted only when the MBAP header is consistent: protocol id 0,

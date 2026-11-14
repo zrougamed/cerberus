@@ -18,6 +18,33 @@ export type DeviceSummary = {
   [key: string]: unknown
 }
 
+/** GET /api/v1/baseline */
+export type BaselineFlow = {
+  id: string
+  client: string
+  server: string
+  protocol: string
+  class: string
+  status: 'learned' | 'approved' | 'new'
+  first_seen: string
+  last_seen: string
+  count: number
+}
+
+export type BaselineState = {
+  status: {
+    state: 'learning' | 'enforcing' | 'disabled'
+    started_at?: string
+    learning_until?: string
+    learned: number
+    approved: number
+    new: number
+    dropped: number
+    max_flows: number
+  }
+  flows: BaselineFlow[]
+}
+
 /** One row of GET /api/v1/assets. */
 export type AssetEntry = {
   mac: string

@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   Boxes,
+  GitCompareArrows,
   BookOpen,
   HardDrive,
   LayoutDashboard,
@@ -32,6 +33,7 @@ const titles: Record<string, string> = {
   '/alerts': 'Rule alerts',
   '/anomalies': 'Anomalies',
   '/policy': 'Policy',
+  '/baseline': 'Flow baseline',
   '/raw': 'Raw JSON',
 }
 
@@ -57,7 +59,10 @@ const nav: Array<{ group: string; items: NavItem[] }> = [
   },
   {
     group: 'Response',
-    items: [{ to: '/policy', label: 'Policy', icon: Shield }],
+    items: [
+      { to: '/policy', label: 'Policy', icon: Shield },
+      { to: '/baseline', label: 'Flow baseline', icon: GitCompareArrows },
+    ],
   },
   {
     group: 'Tools',

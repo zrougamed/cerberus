@@ -130,6 +130,14 @@ industrial:
     enabled: true
     severity: high
 
+# Industrial flow baseline: learn (client, server, protocol, operation) tuples,
+# then alert on new ones. Survives restarts; relearn from the console.
+flow_baseline:
+  enabled: true
+  learning_hours: 168        # one week
+  severity: medium
+  max_flows: 10000
+
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:
   enabled: false

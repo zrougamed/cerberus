@@ -39,13 +39,14 @@ const (
 type Config struct {
 	// TargetHistorySize caps the rolling unique-destination list per device.
 	// Threshold unique_targets must stay below this or target_spread never fires.
-	TargetHistorySize int              `yaml:"target_history_size" json:"target_history_size"`
-	Thresholds        []ThresholdRule  `yaml:"thresholds" json:"thresholds"`
-	Baselines         BaselineConfig   `yaml:"baselines" json:"baselines"`
-	Anomaly           AnomalyConfig    `yaml:"anomaly" json:"anomaly"`
-	Notifications     notify.Config    `yaml:"notifications" json:"notifications"`
-	Watchlists        []Watchlist      `yaml:"watchlists" json:"watchlists"`
-	Industrial        IndustrialConfig `yaml:"industrial" json:"industrial"`
+	TargetHistorySize int                `yaml:"target_history_size" json:"target_history_size"`
+	Thresholds        []ThresholdRule    `yaml:"thresholds" json:"thresholds"`
+	Baselines         BaselineConfig     `yaml:"baselines" json:"baselines"`
+	Anomaly           AnomalyConfig      `yaml:"anomaly" json:"anomaly"`
+	Notifications     notify.Config      `yaml:"notifications" json:"notifications"`
+	Watchlists        []Watchlist        `yaml:"watchlists" json:"watchlists"`
+	Industrial        IndustrialConfig   `yaml:"industrial" json:"industrial"`
+	FlowBaseline      FlowBaselineConfig `yaml:"flow_baseline" json:"flow_baseline"`
 }
 
 // ThresholdRule is a declarative comparison against a device metric.
@@ -91,6 +92,7 @@ type fileOverlay struct {
 	Notifications     *notificationsOverlay `yaml:"notifications" json:"notifications"`
 	Watchlists        *[]watchlistOverlay   `yaml:"watchlists" json:"watchlists"`
 	Industrial        industrialOverlay     `yaml:"industrial" json:"industrial"`
+	FlowBaseline      *flowBaselineOverlay  `yaml:"flow_baseline" json:"flow_baseline"`
 }
 
 type notificationsOverlay struct {
@@ -205,7 +207,8 @@ func DefaultConfig() Config {
 				Tag:     "cerberus",
 			},
 		},
-		Industrial: defaultIndustrialConfig(),
+		Industrial:   defaultIndustrialConfig(),
+		FlowBaseline: defaultFlowBaseline(),
 	}
 }
 
@@ -303,6 +306,7 @@ func mergeOverlay(cfg *Config, o fileOverlay) error {
 			cfg.Watchlists = append(cfg.Watchlists, w.toWatchlist())
 		}
 	}
+	mergeFlowBaseline(&cfg.FlowBaseline, o.FlowBaseline)
 	return mergeIndustrial(&cfg.Industrial, o.Industrial)
 }
 
@@ -450,6 +454,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := validateIndustrial(c.Industrial); err != nil {
+		return err
+	}
+	if err := validateFlowBaseline(c.FlowBaseline); err != nil {
 		return err
 	}
 	if c.Notifications.Enabled &&

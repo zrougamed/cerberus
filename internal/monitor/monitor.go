@@ -47,6 +47,7 @@ type NetworkMonitor struct {
 	industrialRules  map[string]*industrialRule
 	industrialLast   map[string]time.Time // device|rule|target|unit -> last alert
 	industrialCounts map[IndustrialCountKey]uint64
+	flowBaseline     *flowBaseline // nil when disabled
 	Stats            struct {
 		TotalPackets uint64
 		ArpPackets   uint64
@@ -149,6 +150,7 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		industrialCounts: make(map[IndustrialCountKey]uint64),
 	}
 	nm.baselines = newSecurityBaselines(cfg.Baselines)
+	nm.flowBaseline = newFlowBaseline(cfg.FlowBaseline, db, time.Now())
 	if nm.anomaly != nil {
 		nm.anomaly.onAlert = nm.notifyAnomaly
 	}
@@ -169,6 +171,7 @@ func (nm *NetworkMonitor) Close() error {
 	if nm.geoipDB != nil {
 		_ = nm.geoipDB.Close()
 	}
+	nm.flushBaseline()
 	return nm.db.Close()
 }
 
@@ -964,6 +967,7 @@ func (nm *NetworkMonitor) persistWorker() {
 		if err != nil {
 			log.Printf("monitor: persisting devices failed: %v", err)
 		}
+		nm.flushBaseline()
 	}
 }
 

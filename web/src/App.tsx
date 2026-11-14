@@ -4,6 +4,7 @@ import { LiveProvider } from './lib/live'
 import { AlertsPage } from './pages/Alerts'
 import { AnalyticsPage } from './pages/Analytics'
 import { AnomaliesPage } from './pages/Anomalies'
+import { BaselinePage } from './pages/Baseline'
 import { DashboardPage } from './pages/Dashboard'
 import { DeviceDetailPage } from './pages/DeviceDetail'
 import { AssetsPage } from './pages/Assets'
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="alerts" element={<AlertsPage />} />
             <Route path="anomalies" element={<AnomaliesPage />} />
             <Route path="policy" element={<PolicyPage />} />
+            <Route path="baseline" element={<BaselinePage />} />
             <Route path="raw/:endpoint?" element={<RawPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

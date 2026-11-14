@@ -37,6 +37,7 @@ Dev: run the Go harness on `:18080`, then `npm run dev` in `web/` (Vite proxies 
 | `#/alerts` | Rule alerts |
 | `#/anomalies` | Anomaly snapshot |
 | `#/policy` | Active response |
+| `#/baseline` | Industrial flow baseline: learning state, new flows to approve or forget, known flows, relearn |
 | `#/raw/:endpoint` | Raw JSON |
 
 ## Charts
