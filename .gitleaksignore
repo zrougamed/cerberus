@@ -1,0 +1,4 @@
+# Placeholder Slack URL (all-zero team/bot IDs) in the example config.
+# Recorded in SECURITY-EXCEPTIONS.md.
+44cc54e36193a8a2d1cbb31e72daa7b756b036fc:configs/alerts.notifications.yaml:slack-webhook-url:24
+configs/alerts.notifications.yaml:slack-webhook-url:24
