@@ -30,7 +30,7 @@ func main() {
 	utils.CleanCards()
 
 	// Ensure the data directory exists
-	err := os.MkdirAll("./data", 0755)
+	err := os.MkdirAll("./data", 0o750)
 	if err != nil {
 		log.Fatalf("failed to create data directory: %v", err)
 	}
@@ -72,6 +72,9 @@ func main() {
 		Addr:              apiAddr,
 		Handler:           apiHandler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
 		fmt.Printf("Dashboard available at http://%s\n", apiAddr)

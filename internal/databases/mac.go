@@ -10,6 +10,7 @@ import (
 	"log"
 	"maps"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -308,7 +309,7 @@ func (db *OUIDatabase) ingestIEEEtxt(r io.Reader) int {
 }
 
 func (db *OUIDatabase) downloadIEEE() error {
-	if err := os.MkdirAll(DataDir(), 0755); err != nil {
+	if err := os.MkdirAll(DataDir(), 0o750); err != nil {
 		return err
 	}
 	client := &http.Client{Timeout: 45 * time.Second}
@@ -354,7 +355,7 @@ func (db *OUIDatabase) downloadIEEE() error {
 			return fmt.Errorf("IEEE download produced zero entries")
 		}
 		legacy := filepath.Join(DataDir(), ouiCacheLegacy)
-		if err := os.WriteFile(legacy, body, 0644); err != nil {
+		if err := os.WriteFile(legacy, body, 0o600); err != nil {
 			return err
 		}
 		db.mu.Lock()
@@ -386,7 +387,7 @@ func (db *OUIDatabase) downloadIEEE() error {
 		return err
 	}
 
-	if err := os.WriteFile(db.dbPath, combined.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(db.dbPath, combined.Bytes(), 0o600); err != nil {
 		return err
 	}
 
@@ -408,7 +409,7 @@ func (db *OUIDatabase) httpGetBody(client *http.Client, url string) ([]byte, err
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: status %d", url, resp.StatusCode)
 	}
-	return io.ReadAll(resp.Body)
+	return readLimited(resp.Body, maxRegistryBody)
 }
 
 // ParseMAC48 parses common MAC forms into six octets. Accepts ":", "-", ".", and 12 hex digits.
@@ -521,7 +522,7 @@ func keyFrom3(b [6]byte) string {
 
 func (db *OUIDatabase) queryOnlineAPI(mac string) string {
 	client := &http.Client{Timeout: 3 * time.Second}
-	url := fmt.Sprintf(MACVENDORS_API, strings.TrimSpace(mac))
+	url := fmt.Sprintf(MACVENDORS_API, neturl.PathEscape(strings.TrimSpace(mac)))
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return ""
@@ -535,7 +536,7 @@ func (db *OUIDatabase) queryOnlineAPI(mac string) string {
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimited(resp.Body, maxVendorBody)
 	if err != nil {
 		return ""
 	}
@@ -583,7 +584,7 @@ func (db *OUIDatabase) ClearOnlineCache() {
 
 // SaveToCache writes the in-memory map as IEEE-style CSV (Registry,Assignment,...).
 func (db *OUIDatabase) SaveToCache() error {
-	if err := os.MkdirAll(DataDir(), 0755); err != nil {
+	if err := os.MkdirAll(DataDir(), 0o750); err != nil {
 		return err
 	}
 	db.mu.RLock()
@@ -612,7 +613,7 @@ func (db *OUIDatabase) SaveToCache() error {
 	if err := w.Error(); err != nil {
 		return err
 	}
-	return os.WriteFile(db.dbPath, buf.Bytes(), 0644)
+	return os.WriteFile(db.dbPath, buf.Bytes(), 0o600)
 }
 
 func (db *OUIDatabase) loadFallbackDatabase() {

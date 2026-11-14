@@ -93,7 +93,7 @@ func LoadServiceDatabase() map[uint16]*models.ServiceInfo {
 
 // downloadIANADatabase downloads the official IANA service registry
 func (db *ServiceDatabase) downloadIANADatabase() error {
-	if err := os.MkdirAll(DataDir(), 0755); err != nil {
+	if err := os.MkdirAll(DataDir(), 0o750); err != nil {
 		return err
 	}
 
@@ -108,21 +108,13 @@ func (db *ServiceDatabase) downloadIANADatabase() error {
 		return fmt.Errorf("download failed: status %d", resp.StatusCode)
 	}
 
-	// Save to cache
-	cacheFile, err := os.Create(db.dbPath)
+	// Read the whole body before touching the cache so a failed or oversized
+	// download leaves the previous cache intact.
+	body, err := readLimited(resp.Body, maxRegistryBody)
 	if err != nil {
 		return err
 	}
-	defer cacheFile.Close()
-
-	// Parse CSV format
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	// Write to cache
-	if _, err := cacheFile.Write(body); err != nil {
+	if err := os.WriteFile(db.dbPath, body, 0o600); err != nil {
 		return err
 	}
 
