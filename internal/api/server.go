@@ -17,6 +17,7 @@ import (
 	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
+	"github.com/zrougamed/cerberus/internal/policy"
 	"github.com/zrougamed/cerberus/internal/version"
 )
 
@@ -28,6 +29,10 @@ type Server struct {
 	// Set once the BPF collection is loaded, which happens after the HTTP
 	// server has started, hence atomic.
 	kernelStats atomic.Pointer[kernelStatsFunc]
+
+	policy    *policy.Engine
+	tokenHash []byte // sha256 of CERBERUS_API_TOKEN; nil disables writes
+	authLimit authLimiter
 }
 
 type kernelStatsFunc func() (kstats.Snapshot, error)
@@ -52,6 +57,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/v1/anomalies", s.handleAnomalies)
 	mux.HandleFunc("/api/v1/version", s.handleVersion)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	if s.policy != nil {
+		s.registerPolicyRoutes(mux)
+	}
 
 	staticSub, err := fs.Sub(webFS, "web")
 	if err != nil {

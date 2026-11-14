@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -17,10 +18,12 @@ import (
 
 	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/api"
+	"github.com/zrougamed/cerberus/internal/databases"
 	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/network"
+	"github.com/zrougamed/cerberus/internal/policy"
 	"github.com/zrougamed/cerberus/internal/utils"
 	"github.com/zrougamed/cerberus/internal/version"
 )
@@ -68,6 +71,21 @@ func main() {
 		apiAddr = "127.0.0.1:8080"
 	}
 	apiServer := api.NewServer(mon)
+
+	// Active response: the policy is loaded now (so the API can serve it)
+	// and pushed to the kernel once the BPF collection exists.
+	policyEngine, err := openPolicy()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	apiServer.SetPolicy(policyEngine)
+	if err := apiServer.SetAPIToken(os.Getenv("CERBERUS_API_TOKEN")); err != nil {
+		log.Fatalf("CERBERUS_API_TOKEN: %v", err)
+	}
+	if os.Getenv("CERBERUS_API_TOKEN") == "" {
+		fmt.Println("Policy changes disabled: set CERBERUS_API_TOKEN to manage rules from the console/API")
+	}
+
 	apiHandler, err := apiServer.Handler()
 	if err != nil {
 		panic(fmt.Errorf("failed to create API handler: %w", err))
@@ -101,6 +119,19 @@ func main() {
 		panic(fmt.Errorf("failed to create BPF collection: %w", err))
 	}
 	defer coll.Close()
+
+	policyMaps, err := policy.NewBPFMaps(coll.Maps)
+	if err != nil {
+		log.Fatalf("policy: %v", err)
+	}
+	if err := policyEngine.Bind(policyMaps); err != nil {
+		log.Fatalf("%v", err)
+	}
+	st := policyEngine.Status()
+	fmt.Printf("Policy loaded: %d rule(s), mode=%s\n", len(st.Rules), st.Mode)
+	stopPolicy := make(chan struct{})
+	defer close(stopPolicy)
+	go policyLoop(policyEngine, mon, stopPolicy)
 
 	if countersMap := coll.Maps["counters"]; countersMap != nil {
 		apiServer.SetKernelStats(kstats.NewReader(countersMap).Read)
@@ -280,4 +311,58 @@ func main() {
 	fmt.Println("\n\nFinal Statistics:")
 	mon.PrintStats()
 	fmt.Println("Shutting down...")
+}
+
+// openPolicy loads the persisted policy from CERBERUS_POLICY_FILE (default
+// <data dir>/policy.json) and protects this host's and the gateway's
+// addresses from accidental blocking.
+func openPolicy() (*policy.Engine, error) {
+	path := os.Getenv("CERBERUS_POLICY_FILE")
+	if path == "" {
+		path = filepath.Join(databases.DataDir(), "policy.json")
+	}
+	topology, _ := network.DetectNetworkTopology()
+	addrs, macs := network.ProtectedTargets(topology)
+	return policy.Open(policy.Options{StatePath: path, Protected: addrs, ProtectedMAC: macs})
+}
+
+// policyLoop expires temporary rules and turns rule counter growth into
+// alerts (at most one per rule per 10 minutes).
+func policyLoop(e *policy.Engine, mon *monitor.NetworkMonitor, stop <-chan struct{}) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+		}
+		for _, r := range e.Expire() {
+			fmt.Printf("Policy rule %s expired\n", r.ID)
+		}
+		for _, h := range e.PollHits() {
+			mon.RecordAlert(policyHitAlert(h))
+		}
+	}
+}
+
+func policyHitAlert(h policy.Hit) models.AlertEvent {
+	target := h.Rule.CIDR
+	if h.Rule.MAC != "" {
+		target = "MAC " + h.Rule.MAC
+	}
+	verb, severity := "matched", "low"
+	switch {
+	case h.Enforced:
+		verb, severity = "dropped", "high"
+	case h.Rule.Action == policy.ActionDrop:
+		verb, severity = "would have dropped (monitor mode)", "medium"
+	}
+	return models.AlertEvent{
+		DeviceMAC: h.Rule.MAC,
+		Rule:      "policy:" + h.Rule.ID,
+		Severity:  severity,
+		Message: fmt.Sprintf("Policy rule %s %s %d packet(s) for %s (total %d)",
+			h.Rule.ID, verb, h.Delta.Packets, target, h.Total.Packets),
+	}
 }

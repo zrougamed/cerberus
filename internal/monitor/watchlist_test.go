@@ -131,3 +131,18 @@ func TestTrackEvent_WatchlistEndToEnd(t *testing.T) {
 		t.Fatalf("expected a watchlist:bad alert, got %+v", nm.GetAlerts())
 	}
 }
+
+func TestRecordAlert_FillsDefaultsAndCaps(t *testing.T) {
+	nm := newWatchlistMonitor(t)
+	nm.RecordAlert(models.AlertEvent{Rule: "policy:c2", Severity: "high", Message: "blocked"})
+	got := nm.GetAlerts()
+	if len(got) != 1 || got[0].ID == "" || got[0].ObservedAt.IsZero() {
+		t.Fatalf("defaults not filled: %+v", got)
+	}
+	for range 600 {
+		nm.RecordAlert(models.AlertEvent{Rule: "policy:c2"})
+	}
+	if n := len(nm.GetAlerts()); n != 500 {
+		t.Fatalf("alerts not capped: %d", n)
+	}
+}

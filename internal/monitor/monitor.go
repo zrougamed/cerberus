@@ -798,6 +798,24 @@ func (nm *NetworkMonitor) pruneWatchlistState(now time.Time) {
 	}
 }
 
+// RecordAlert adds an alert raised outside the packet path (for example a
+// policy rule hit) to the alert list and the notification sinks.
+func (nm *NetworkMonitor) RecordAlert(alert models.AlertEvent) {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	if alert.ObservedAt.IsZero() {
+		alert.ObservedAt = time.Now()
+	}
+	if alert.ID == "" {
+		alert.ID = fmt.Sprintf("%d-%s-%s", alert.ObservedAt.UnixNano(), alert.DeviceMAC, alert.Rule)
+	}
+	nm.alerts = append(nm.alerts, alert)
+	if len(nm.alerts) > 500 {
+		nm.alerts = nm.alerts[len(nm.alerts)-500:]
+	}
+	nm.notifyRule(alert)
+}
+
 // GetWatchlistHits returns packets matched per enabled watchlist since start.
 func (nm *NetworkMonitor) GetWatchlistHits() map[string]uint64 {
 	nm.mu.RLock()
