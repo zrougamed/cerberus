@@ -181,6 +181,18 @@ paths:
         "200": {description: New baseline status}
         "401": {description: Missing or invalid token}
         "409": {description: Baseline disabled}
+  /api/v1/zones:
+    get:
+      summary: Zones, conduits and violations
+      description: >-
+        Zones from the alerts file (id, name, level, cidrs, industrial,
+        enforce, devices), conduits (from, to, ports, bidirectional) and
+        packets per "from>to" zone pair that no conduit allows.
+      operationId: getZones
+      tags: [Zones]
+      responses:
+        "200":
+          description: "{zones: [...], conduits: [...], violations: {\"enterprise>control\": 12}}"
   /api/v1/policy/mode:
     put:
       summary: Set enforcement mode

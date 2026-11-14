@@ -130,6 +130,18 @@ industrial:
     enabled: true
     severity: high
 
+# Zones and conduits (IEC 62443). Empty by default: nothing is judged until
+# zones are defined. Industrial zones are watch-only for policy drop rules
+# unless enforce: true.
+segmentation:
+  zones: []
+  #  - {id: enterprise, name: Office LAN, level: 4, cidrs: [10.0.0.0/16]}
+  #  - {id: control, name: Line 1 control, level: 1, cidrs: [10.20.0.0/24], industrial: true}
+  conduits: []
+  #  - {from: enterprise, to: control, ports: [502]}
+  no_conduit: {enabled: true, severity: medium, realert_seconds: 3600}
+  level_skip: {enabled: true, severity: high, realert_seconds: 3600}
+
 # Industrial flow baseline: learn (client, server, protocol, operation) tuples,
 # then alert on new ones. Survives restarts; relearn from the console.
 flow_baseline:

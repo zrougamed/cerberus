@@ -15,7 +15,25 @@ export type DeviceSummary = {
   tls_connections?: number
   industrial?: Record<string, IndustrialStats>
   asset?: AssetInfo
+  zone?: string
   [key: string]: unknown
+}
+
+/** GET /api/v1/zones */
+export type ZoneInfo = {
+  id: string
+  name: string
+  level: number
+  cidrs: string[]
+  industrial: boolean
+  enforce: boolean
+  devices: number
+}
+
+export type ZoneSummary = {
+  zones: ZoneInfo[]
+  conduits: { from: string; to: string; ports?: number[] | null; bidirectional: boolean }[]
+  violations: Record<string, number> | null
 }
 
 /** GET /api/v1/baseline */

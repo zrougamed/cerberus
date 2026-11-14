@@ -11,6 +11,7 @@ import { AssetsPage } from './pages/Assets'
 import { DevicesPage } from './pages/Devices'
 import { PolicyPage } from './pages/Policy'
 import { RawPage } from './pages/Raw'
+import { ZonesPage } from './pages/Zones'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="devices" element={<DevicesPage />} />
             <Route path="assets" element={<AssetsPage />} />
+            <Route path="zones" element={<ZonesPage />} />
             <Route path="device/:mac" element={<DeviceDetailPage />} />
             <Route path="alerts" element={<AlertsPage />} />
             <Route path="anomalies" element={<AnomaliesPage />} />
