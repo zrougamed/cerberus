@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -41,7 +42,7 @@ func main() {
 
 	merged := map[string]string{}
 	for _, path := range flag.Args() {
-		f, err := os.Open(path)
+		f, err := os.Open(filepath.Clean(path))
 		if err != nil {
 			log.Fatal(err)
 		}
