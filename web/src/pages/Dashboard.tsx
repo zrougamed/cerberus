@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom'
 import { TrafficDoughnut } from '../components/charts/TrafficDoughnut'
 import { TrafficSparkline } from '../components/charts/Sparkline'
+import { BarRankChart } from '../components/charts/BarRankChart'
 import { useLive } from '../lib/live'
+import { sumRecord } from '../lib/types'
 
 const PACKET_LABELS: Array<[string, string]> = [
   ['total', 'Total'],
@@ -17,9 +19,21 @@ const PACKET_LABELS: Array<[string, string]> = [
 export function DashboardPage() {
   const { summary, anomalies } = useLive()
   const stats = summary?.packet_stats || {}
+  const features = anomalies?.last_features
   const generated = summary?.generated_at
     ? `Last refresh: ${new Date(summary.generated_at).toLocaleTimeString()}`
     : 'Waiting for telemetry…'
+
+  const kpis: Array<[string, string | number]> = [
+    ['Devices', summary?.device_count ?? 0],
+    ['DNS domains', sumRecord(summary?.dns_response_domains)],
+    ['TLS SNIs', sumRecord(summary?.top_tls_snis)],
+    ['Correlated', sumRecord(summary?.dns_correlated_domains)],
+    ['Encrypted DNS', sumRecord(summary?.encrypted_dns)],
+    ['Anomaly score', anomalies?.current_score != null ? anomalies.current_score.toFixed(2) : '—'],
+    ['Robust Z', anomalies?.robust_z_score != null ? anomalies.robust_z_score.toFixed(2) : '—'],
+    ['Recent anomalies', anomalies?.recent_anomaly_count ?? 0],
+  ]
 
   return (
     <div className="grid gap-4">
@@ -36,10 +50,18 @@ export function DashboardPage() {
               <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{stats[key] || 0}</div>
             </article>
           ))}
-          <article className="border-b border-r border-[var(--line)] p-3">
-            <div className="font-mono text-xs font-semibold text-[var(--text-soft)]">Devices</div>
-            <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{summary?.device_count ?? 0}</div>
-          </article>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-bold">KPIs</h2>
+        <div className="grid gap-0 overflow-hidden rounded border border-[var(--line)] bg-[var(--surface-muted)] sm:grid-cols-4 grid-cols-2">
+          {kpis.map(([label, value]) => (
+            <article key={label} className="border-b border-r border-[var(--line)] p-3">
+              <div className="font-mono text-xs font-semibold text-[var(--text-soft)]">{label}</div>
+              <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{value}</div>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -51,6 +73,17 @@ export function DashboardPage() {
         <section className="panel">
           <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-bold">Packets per refresh</h2>
           <TrafficSparkline total={Number(stats.total || 0)} />
+        </section>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="panel">
+          <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-bold">Top TLS SNIs</h2>
+          <BarRankChart title="SNI" values={summary?.top_tls_snis} />
+        </section>
+        <section className="panel">
+          <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-bold">DNS response domains</h2>
+          <BarRankChart title="DNS domains" values={summary?.dns_response_domains} />
         </section>
       </div>
 
@@ -96,21 +129,21 @@ export function DashboardPage() {
             </Link>
           </header>
           <p className="muted m-0 text-sm">
-            {anomalies?.insight_plain || anomalies?.insight || anomalies?.status || 'Model warming up…'}
+            {anomalies?.last_summary || anomalies?.status || 'Model warming up…'}
           </p>
           <div className="mt-3 grid grid-cols-3 gap-0 overflow-hidden rounded border border-[var(--line)] bg-[var(--surface-muted)]">
             {[
-              ['Score', anomalies?.score],
-              ['Robust Z', anomalies?.robust_z],
+              ['Score', anomalies?.current_score],
+              ['Robust Z', anomalies?.robust_z_score],
               ['Centroid', anomalies?.centroid_distance],
-              ['Packet/s', anomalies?.packets_per_sec],
-              ['Entropy', anomalies?.entropy],
-              ['Unusual ports', anomalies?.unusual_ports],
+              ['Packet/s', features?.packet_rate],
+              ['Entropy', features?.port_entropy],
+              ['Unusual ports', features?.unusual_port_count],
             ].map(([label, value]) => (
               <article key={String(label)} className="border-b border-r border-[var(--line)] p-2.5">
                 <div className="font-mono text-[0.7rem] font-semibold text-[var(--text-soft)]">{label}</div>
                 <div className="font-mono text-lg font-semibold tabular-nums">
-                  {typeof value === 'number' ? value.toFixed(2) : value ?? '0'}
+                  {typeof value === 'number' ? value.toFixed(2) : value ?? '—'}
                 </div>
               </article>
             ))}

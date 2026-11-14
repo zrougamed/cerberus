@@ -122,6 +122,44 @@ func TestInspectDNSDetailsResponseAnswerParsing(t *testing.T) {
 	}
 }
 
+func TestInspectTLSExtractsSNI(t *testing.T) {
+	hello := buildClientHelloWithSNI("cdn.example.com")
+	var payload [models.L7PayloadSize]byte
+	copy(payload[:], hello)
+	if got := InspectTLS(payload); got != "cdn.example.com" {
+		t.Fatalf("expected cdn.example.com, got %q", got)
+	}
+	var empty [models.L7PayloadSize]byte
+	if got := InspectTLS(empty); got != "" {
+		t.Fatalf("expected empty SNI, got %q", got)
+	}
+}
+
+func buildClientHelloWithSNI(host string) []byte {
+	// Minimal ClientHello body (after handshake header).
+	var body []byte
+	body = append(body, 0x03, 0x03) // client_version TLS 1.2
+	body = append(body, make([]byte, 32)...)
+	body = append(body, 0)                // session_id length
+	body = append(body, 0, 2, 0x00, 0x2f) // cipher suites: one suite
+	body = append(body, 1, 0)             // compression methods
+
+	name := []byte(host)
+	serverName := []byte{0, byte(len(name) >> 8), byte(len(name))}
+	serverName = append(serverName, name...)
+	sniList := []byte{byte((len(serverName)) >> 8), byte(len(serverName))}
+	sniList = append(sniList, serverName...)
+	ext := []byte{0, 0, byte(len(sniList) >> 8), byte(len(sniList))}
+	ext = append(ext, sniList...)
+	body = append(body, byte(len(ext)>>8), byte(len(ext)))
+	body = append(body, ext...)
+
+	hs := []byte{0x01, byte(len(body) >> 16), byte(len(body) >> 8), byte(len(body))}
+	hs = append(hs, body...)
+	rec := []byte{0x16, 0x03, 0x01, byte(len(hs) >> 8), byte(len(hs))}
+	return append(rec, hs...)
+}
+
 func TestTLSVersionFromPayload(t *testing.T) {
 	var tls12 [models.L7PayloadSize]byte
 	tls12[0] = 0x16

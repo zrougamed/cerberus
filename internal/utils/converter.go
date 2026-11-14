@@ -393,24 +393,100 @@ func InspectDNSDetails(payload [models.L7PayloadSize]byte) (domain, queryType, r
 	return domain, queryType, responseCode, responseDomain, isResponse
 }
 
-// InspectTLS extracts SNI from TLS Client Hello
+// InspectTLS extracts the Server Name Indication from a TLS Client Hello
+// record, if present in the captured payload. Returns empty when the buffer
+// is truncated or is not a Client Hello with an SNI extension.
 func InspectTLS(payload [models.L7PayloadSize]byte) string {
-	// TLS Client Hello starts with: 0x16 (handshake), 0x03 0x01/0x03 (version)
-	if len(payload) < 5 {
+	return parseClientHelloSNI(payload[:])
+}
+
+func parseClientHelloSNI(b []byte) string {
+	// TLS record: type(1)=0x16, ver(2), len(2), handshake…
+	if len(b) < 5 || b[0] != 0x16 {
 		return ""
 	}
-
-	if payload[0] != 0x16 {
+	recLen := int(b[3])<<8 | int(b[4])
+	if recLen < 4 || 5+recLen > len(b) {
+		// Use whatever we captured; truncated records are common with small L7 buffers.
+		recLen = len(b) - 5
+	}
+	hs := b[5 : 5+recLen]
+	if len(hs) < 4 || hs[0] != 0x01 { // ClientHello
 		return ""
 	}
-
-	// Simple SNI extraction would require parsing the full TLS handshake
-	// TODO: Full SNI parsing may require deeper handshake parsing.
-
-	if version := TLSVersionFromPayload(payload); version != "" {
-		return version
+	bodyLen := int(hs[1])<<16 | int(hs[2])<<8 | int(hs[3])
+	body := hs[4:]
+	if bodyLen > len(body) {
+		bodyLen = len(body)
 	}
-	return "TLS"
+	body = body[:bodyLen]
+	// client_version(2) + random(32)
+	if len(body) < 34 {
+		return ""
+	}
+	off := 34
+	if off >= len(body) {
+		return ""
+	}
+	sidLen := int(body[off])
+	off++
+	off += sidLen
+	if off+2 > len(body) {
+		return ""
+	}
+	csLen := int(body[off])<<8 | int(body[off+1])
+	off += 2 + csLen
+	if off+1 > len(body) {
+		return ""
+	}
+	compLen := int(body[off])
+	off++
+	off += compLen
+	if off+2 > len(body) {
+		return "" // no extensions
+	}
+	extLen := int(body[off])<<8 | int(body[off+1])
+	off += 2
+	if off+extLen > len(body) {
+		extLen = len(body) - off
+	}
+	exts := body[off : off+extLen]
+	for len(exts) >= 4 {
+		et := int(exts[0])<<8 | int(exts[1])
+		el := int(exts[2])<<8 | int(exts[3])
+		exts = exts[4:]
+		if el > len(exts) {
+			return ""
+		}
+		data := exts[:el]
+		exts = exts[el:]
+		if et != 0x0000 { // server_name
+			continue
+		}
+		if len(data) < 2 {
+			return ""
+		}
+		listLen := int(data[0])<<8 | int(data[1])
+		list := data[2:]
+		if listLen > len(list) {
+			listLen = len(list)
+		}
+		list = list[:listLen]
+		for len(list) >= 3 {
+			nameType := list[0]
+			nameLen := int(list[1])<<8 | int(list[2])
+			list = list[3:]
+			if nameLen > len(list) {
+				return ""
+			}
+			if nameType == 0 { // host_name
+				return strings.ToLower(string(list[:nameLen]))
+			}
+			list = list[nameLen:]
+		}
+		return ""
+	}
+	return ""
 }
 
 func TLSVersionFromPayload(payload [models.L7PayloadSize]byte) string {

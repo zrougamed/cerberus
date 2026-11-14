@@ -24,34 +24,64 @@ export type Summary = {
   top_vendors?: Record<string, number>
   dns_query_types?: Record<string, number>
   dns_response_codes?: Record<string, number>
+  dns_response_domains?: Record<string, number>
+  encrypted_dns?: Record<string, number>
+  tls_versions?: Record<string, number>
+  top_tls_snis?: Record<string, number>
+  dns_correlated_domains?: Record<string, number>
   recent_devices?: DeviceSummary[]
 }
 
 export type AlertEvent = {
   time?: string
+  observed_at?: string
   severity?: string
   rule_id?: string
+  rule?: string
   device_mac?: string
   device_ip?: string
   message?: string
   [key: string]: unknown
 }
 
-export type AnomalySnapshot = {
-  ready?: boolean
-  windows?: number
-  baseline_windows?: number
-  status?: string
-  insight?: string
-  insight_plain?: string
-  score?: number
+export type AnomalyContribution = {
+  feature?: string
+  label?: string
+  value?: number
+  baseline_median?: number
   robust_z?: number
+  [key: string]: unknown
+}
+
+export type AnomalySnapshot = {
+  status?: string
+  window_seconds?: number
+  baseline_windows?: number
+  current_score?: number
+  robust_z_score?: number
   centroid_distance?: number
-  packets_per_sec?: number
-  entropy?: number
-  unusual_ports?: number
-  last_contributors?: Array<Record<string, unknown>>
-  alerts?: Array<Record<string, unknown>>
+  is_anomaly?: boolean
+  recent_anomaly_count?: number
+  last_summary?: string
+  last_summary_detail?: string
+  last_contributions?: AnomalyContribution[]
+  last_features?: {
+    packet_rate?: number
+    dns_rate?: number
+    http_rate?: number
+    tls_rate?: number
+    port_entropy?: number
+    unusual_port_count?: number
+    [key: string]: unknown
+  }
+  recent_alerts?: Array<{
+    observed_at?: string
+    score?: number
+    severity?: string
+    summary?: string
+    detail?: string
+    [key: string]: unknown
+  }>
   [key: string]: unknown
 }
 
@@ -73,25 +103,31 @@ export type FilterRule = {
   match?: Record<string, unknown>
   log?: boolean
   hits?: number
+  counters?: { packets?: number; bytes?: number }
   comment?: string
+  summary?: string
   [key: string]: unknown
 }
 
 export type BlockRule = {
   id: string
-  target?: string
-  kind?: string
+  mac?: string
+  cidr?: string
+  hostname?: string
+  host_match?: string
+  parent_id?: string
   action?: string
   direction?: string
-  hits?: number
-  bytes?: number
+  counters?: { packets?: number; bytes?: number }
   comment?: string
   [key: string]: unknown
 }
 
 export type AuditEntry = {
-  time?: string
+  at?: string
+  actor?: string
   action?: string
+  rule_id?: string
   detail?: string
   [key: string]: unknown
 }
@@ -106,4 +142,18 @@ export type PolicyLogEntry = {
 export type VersionInfo = {
   commit?: string
   date?: string
+}
+
+export function sumRecord(values?: Record<string, number>): number {
+  if (!values) return 0
+  return Object.values(values).reduce((a, b) => a + (Number(b) || 0), 0)
+}
+
+export function ruleTarget(r: BlockRule): string {
+  if (r.hostname) {
+    return `${r.host_match || 'any'} ${r.hostname}`
+  }
+  if (r.mac) return `MAC ${r.mac}`
+  if (r.cidr) return r.cidr
+  return r.id
 }

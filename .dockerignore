@@ -27,7 +27,7 @@ LICENSE
 *.md
 data/
 
-# Frontend toolchain (SPA is prebuilt into internal/api/web)
+# Frontend toolchain (UI stage runs npm ci / npm run build)
 web/node_modules/
 web/dist/
 

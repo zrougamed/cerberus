@@ -155,6 +155,10 @@ func Open(opts Options) (*Engine, error) {
 	}
 	now := opts.Now()
 	for _, r := range st.Rules {
+		if r.ParentID != "" {
+			// Legacy or hand-edited derived rules are ignored; SyncHostnames recreates them.
+			continue
+		}
 		if r.ExpiresAt != nil && !now.Before(*r.ExpiresAt) {
 			continue
 		}
@@ -225,6 +229,9 @@ func (e *Engine) Bind(k Kernel) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, en := range e.rules {
+		if en.t.userspaceOnly() {
+			continue
+		}
 		if err := k.ResetCounter(en.slot); err != nil {
 			return fmt.Errorf("policy: reset counter: %w", err)
 		}
@@ -248,6 +255,9 @@ func (e *Engine) Bind(k Kernel) error {
 }
 
 func put(k Kernel, en *entry) error {
+	if en.t.userspaceOnly() {
+		return nil
+	}
 	v := encode(en.rule, en.slot)
 	if en.t.mac != nil {
 		return k.PutMAC(en.t.mac, v)
@@ -256,6 +266,9 @@ func put(k Kernel, en *entry) error {
 }
 
 func del(k Kernel, en *entry) error {
+	if en.t.userspaceOnly() {
+		return nil
+	}
 	if en.t.mac != nil {
 		return k.DeleteMAC(en.t.mac)
 	}
@@ -343,6 +356,20 @@ func (e *Engine) removeAndSaveLocked(id, actor, action string) error {
 	en := e.rules[id]
 	if en == nil {
 		return ErrNotFound
+	}
+	// Cascade: drop derived MAC quarantines before the parent hostname rule.
+	if en.rule.Hostname != "" && en.rule.ParentID == "" {
+		for childID, child := range e.rules {
+			if child.rule.ParentID != id {
+				continue
+			}
+			if e.kernel != nil {
+				if err := del(e.kernel, child); err != nil {
+					return fmt.Errorf("remove derived rule from kernel: %w", err)
+				}
+			}
+			e.removeLocked(childID)
+		}
 	}
 	if e.kernel != nil {
 		if err := del(e.kernel, en); err != nil {
@@ -535,6 +562,9 @@ func (e *Engine) saveLocked() error {
 	}
 	st := stateFile{Version: 1, Mode: e.mode, Rules: make([]Rule, 0, len(e.rules))}
 	for _, en := range e.rules {
+		if en.rule.ParentID != "" {
+			continue // derived MAC quarantines are rebuilt by SyncHostnames
+		}
 		st.Rules = append(st.Rules, en.rule)
 	}
 	sort.Slice(st.Rules, func(i, j int) bool { return st.Rules[i].ID < st.Rules[j].ID })
@@ -573,8 +603,14 @@ func (e *Engine) saveLocked() error {
 
 func describe(r Rule) string {
 	what := r.CIDR + " (" + string(r.Direction) + ")"
-	if r.MAC != "" {
+	switch {
+	case r.Hostname != "" && r.ParentID == "":
+		what = string(r.HostMatch) + " " + r.Hostname
+	case r.MAC != "":
 		what = "mac " + r.MAC
+		if r.ParentID != "" {
+			what += " (from " + r.ParentID + ")"
+		}
 	}
 	s := string(r.Action) + " " + what
 	if r.ExpiresAt != nil {

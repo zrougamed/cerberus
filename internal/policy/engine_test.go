@@ -130,8 +130,8 @@ func TestAdd_Validation(t *testing.T) {
 	}{
 		{"no action", RuleInput{CIDR: "10.0.0.0/8"}, "action is required"},
 		{"bad action", RuleInput{Action: "reject", CIDR: "10.0.0.0/8"}, "unknown action"},
-		{"no target", RuleInput{Action: "drop"}, "mac or cidr is required"},
-		{"both targets", RuleInput{Action: "drop", CIDR: "10.0.0.1", MAC: "02:00:00:00:00:01"}, "not both"},
+		{"no target", RuleInput{Action: "drop"}, "mac, cidr, or hostname is required"},
+		{"both targets", RuleInput{Action: "drop", CIDR: "10.0.0.1", MAC: "02:00:00:00:00:01"}, "exactly one"},
 		{"bad cidr", RuleInput{Action: "drop", CIDR: "10.0.0.0/40"}, "bad cidr"},
 		{"bad address", RuleInput{Action: "drop", CIDR: "nope"}, "bad address"},
 		{"match all v4", RuleInput{Action: "drop", CIDR: "0.0.0.0/0"}, "every address"},

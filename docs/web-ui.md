@@ -10,8 +10,9 @@ serving `/` for every client route.
 | Path | Role |
 |------|------|
 | `web/` | React source |
-| `internal/api/web/` | Production build output (committed; embedded) |
+| `internal/api/web/` | Production build output (committed for local/`make build`; embedded) |
 | `make web` | `npm ci` + production build into `internal/api/web` |
+| Dockerfile `ui` stage | Builds the SPA in Docker and overlays `internal/api/web` before the Go compile |
 
 Dev: run the Go harness on `:18080`, then `npm run dev` in `web/` (Vite proxies `/api`).
 

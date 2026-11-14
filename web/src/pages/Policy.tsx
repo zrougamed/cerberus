@@ -4,6 +4,7 @@ import { policyWrite } from '../lib/api'
 import { useLive } from '../lib/live'
 import { getToken, setToken } from '../lib/token'
 import { cn } from '../lib/cn'
+import { ruleTarget, type BlockRule } from '../lib/types'
 
 const VERDICT: Record<string, string> = { drop: 'Block', accept: 'Allow', continue: 'Count' }
 
@@ -41,16 +42,25 @@ export function PolicyPage() {
   async function addBlocklist(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
-    setBusy(true)
-    const res = await policyWrite('POST', '/api/v1/policy/rules', {
-      kind: String(fd.get('kind') || 'cidr'),
-      target: String(fd.get('target') || ''),
-      direction: String(fd.get('direction') || 'any'),
+    const kind = String(fd.get('kind') || 'cidr')
+    const value = String(fd.get('target') || '').trim()
+    const body: Record<string, unknown> = {
       action: String(fd.get('action') || 'drop'),
       ttl_seconds: Number(fd.get('ttl') || 0),
       comment: String(fd.get('comment') || ''),
       force: fd.get('force') === 'on',
-    })
+    }
+    if (kind === 'mac') {
+      body.mac = value
+    } else if (kind === 'dns' || kind === 'sni' || kind === 'host') {
+      body.hostname = value
+      body.host_match = kind === 'host' ? 'any' : kind
+    } else {
+      body.cidr = value
+      body.direction = String(fd.get('direction') || 'any')
+    }
+    setBusy(true)
+    const res = await policyWrite('POST', '/api/v1/policy/rules', body)
     setBusy(false)
     if (!res.ok) {
       setMsg({ kind: 'err', text: res.error })
@@ -327,11 +337,27 @@ export function PolicyPage() {
             <label className="inline-flex items-center gap-2">
               <input type="radio" name="kind" value="mac" /> Device (MAC)
             </label>
+            <label className="inline-flex items-center gap-2">
+              <input type="radio" name="kind" value="dns" /> DNS name
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input type="radio" name="kind" value="sni" /> TLS SNI
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input type="radio" name="kind" value="host" /> DNS or SNI
+            </label>
           </fieldset>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="field">
-              <label htmlFor="policy-target">Address</label>
-              <input id="policy-target" name="target" required autoComplete="off" spellCheck={false} />
+              <label htmlFor="policy-target">Address or hostname</label>
+              <input
+                id="policy-target"
+                name="target"
+                required
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="203.0.113.0/24, MAC, or *.evil.com"
+              />
             </div>
             <div className="field">
               <label htmlFor="policy-direction">Direction</label>
@@ -386,16 +412,21 @@ export function PolicyPage() {
               </tr>
             </thead>
             <tbody>
-              {rules.map((r) => (
+              {rules.map((r: BlockRule) => (
                 <tr key={r.id} className="border-b border-[var(--line)]">
-                  <td className="px-2 py-2 font-mono">{r.target}</td>
+                  <td className="px-2 py-2 font-mono">
+                    {ruleTarget(r)}
+                    {r.parent_id ? <span className="badge ml-2">auto</span> : null}
+                    {r.comment ? <div className="muted text-xs">{String(r.comment)}</div> : null}
+                  </td>
                   <td className="px-2 py-2"><span className="badge">{r.action}</span></td>
-                  <td className="px-2 py-2 font-mono tabular-nums">{Number(r.hits || 0)}</td>
+                  <td className="px-2 py-2 font-mono tabular-nums">{Number(r.counters?.packets || 0)}</td>
                   <td className="px-2 py-2">
                     <button
                       type="button"
                       className="btn btn-danger"
-                      disabled={!unlocked || busy}
+                      disabled={!unlocked || busy || Boolean(r.parent_id)}
+                      title={r.parent_id ? 'Derived from a hostname rule; remove the parent instead' : undefined}
                       onClick={() =>
                         void (async () => {
                           setBusy(true)
@@ -434,7 +465,7 @@ export function PolicyPage() {
           <ul className="m-0 grid list-none gap-2 p-0">
             {audit.map((a, i) => (
               <li key={i} className="border-b border-[var(--line)] pb-2">
-                <div className="font-mono text-xs text-[var(--text-soft)]">{a.time ? new Date(String(a.time)).toLocaleString() : '—'}</div>
+                <div className="font-mono text-xs text-[var(--text-soft)]">{a.at ? new Date(String(a.at)).toLocaleString() : '—'}</div>
                 <div className="text-sm">
                   <strong>{String(a.action || '')}</strong> {String(a.detail || '')}
                 </div>

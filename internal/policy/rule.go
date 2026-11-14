@@ -49,17 +49,22 @@ const (
 // MaxRules matches MAX_POLICY_RULES in ebpf/cerberus_tc.c.
 const MaxRules = 1024
 
-// Rule is one entry of the policy. Exactly one of MAC and CIDR is set.
+// Rule is one entry of the policy. Exactly one of MAC, CIDR, or Hostname is set
+// (derived MAC rules also set ParentID + Hostname for audit).
 type Rule struct {
 	ID        string     `json:"id"`
 	Action    Action     `json:"action"`
 	MAC       string     `json:"mac,omitempty"`
 	CIDR      string     `json:"cidr,omitempty"`
-	Direction Direction  `json:"direction,omitempty"` // IP rules only
+	Hostname  string     `json:"hostname,omitempty"`
+	HostMatch string     `json:"host_match,omitempty"` // dns|sni|any
+	Direction Direction  `json:"direction,omitempty"`  // IP rules only
 	Comment   string     `json:"comment,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
 	CreatedBy string     `json:"created_by,omitempty"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// ParentID is set on MAC rules derived from a hostname rule by SyncHostnames.
+	ParentID string `json:"parent_id,omitempty"`
 }
 
 // RuleInput is what a client submits to create a rule.
@@ -68,6 +73,8 @@ type RuleInput struct {
 	Action    Action    `json:"action"`
 	MAC       string    `json:"mac,omitempty"`
 	CIDR      string    `json:"cidr,omitempty"`
+	Hostname  string    `json:"hostname,omitempty"`
+	HostMatch string    `json:"host_match,omitempty"` // dns|sni|any; default any
 	Direction Direction `json:"direction,omitempty"`
 	Comment   string    `json:"comment,omitempty"`
 	// TTLSeconds > 0 makes the rule expire automatically (temporary block).
@@ -90,15 +97,24 @@ const (
 
 // target is the parsed match of a rule.
 type target struct {
-	mac    net.HardwareAddr // set for MAC rules
-	prefix netip.Prefix     // set for IP rules
+	mac       net.HardwareAddr // set for MAC rules
+	prefix    netip.Prefix     // set for IP rules
+	hostname  string           // set for hostname (DNS/SNI) rules
+	hostMatch HostMatch
 }
 
 func (t target) key() string {
+	if t.hostname != "" {
+		return "host:" + string(t.hostMatch) + ":" + t.hostname
+	}
 	if t.mac != nil {
 		return "mac:" + t.mac.String()
 	}
 	return "ip:" + t.prefix.String()
+}
+
+func (t target) userspaceOnly() bool {
+	return t.hostname != "" && t.mac == nil && !t.prefix.IsValid()
 }
 
 // normalize validates in and returns the rule and its parsed target.
@@ -128,10 +144,22 @@ func normalize(in RuleInput) (Rule, target, error) {
 	}
 
 	mac, cidr := strings.TrimSpace(in.MAC), strings.TrimSpace(in.CIDR)
+	host := strings.TrimSpace(in.Hostname)
+	set := 0
+	if mac != "" {
+		set++
+	}
+	if cidr != "" {
+		set++
+	}
+	if host != "" {
+		set++
+	}
+	if set > 1 {
+		return Rule{}, target{}, errors.New("set exactly one of mac, cidr, or hostname")
+	}
 	var t target
 	switch {
-	case mac != "" && cidr != "":
-		return Rule{}, target{}, errors.New("set either mac or cidr, not both")
 	case mac != "":
 		hw, err := net.ParseMAC(mac)
 		if err != nil || len(hw) != 6 {
@@ -163,8 +191,27 @@ func normalize(in RuleInput) (Rule, target, error) {
 		}
 		r.CIDR = p.String()
 		t.prefix = p
+	case host != "":
+		hn, err := normalizeHostname(host)
+		if err != nil {
+			return Rule{}, target{}, err
+		}
+		hm := HostMatch(strings.ToLower(strings.TrimSpace(in.HostMatch)))
+		if hm == "" {
+			hm = HostMatchAny
+		}
+		switch hm {
+		case HostMatchDNS, HostMatchSNI, HostMatchAny:
+		default:
+			return Rule{}, target{}, fmt.Errorf("unknown host_match %q (want dns|sni|any)", hm)
+		}
+		if r.Direction != "" {
+			return Rule{}, target{}, errors.New("hostname rules have no direction; omit direction")
+		}
+		r.Hostname, r.HostMatch = hn, string(hm)
+		t.hostname, t.hostMatch = hn, hm
 	default:
-		return Rule{}, target{}, errors.New("mac or cidr is required")
+		return Rule{}, target{}, errors.New("mac, cidr, or hostname is required")
 	}
 	return r, t, nil
 }
@@ -193,8 +240,13 @@ func parsePrefix(s string) (netip.Prefix, error) {
 
 // targetOf re-parses a stored rule (used when loading the state file).
 func targetOf(r Rule) (target, error) {
+	if r.ParentID != "" {
+		// Derived rules are ephemeral; they should not appear in the state file.
+		return target{}, errors.New("derived hostname rules are not persisted")
+	}
 	_, t, err := normalize(RuleInput{
-		ID: r.ID, Action: r.Action, MAC: r.MAC, CIDR: r.CIDR, Direction: r.Direction,
+		ID: r.ID, Action: r.Action, MAC: r.MAC, CIDR: r.CIDR,
+		Hostname: r.Hostname, HostMatch: r.HostMatch, Direction: r.Direction,
 	})
 	return t, err
 }

@@ -1,6 +1,7 @@
 services:
   cerberus:
-    image: ghcr.io/zrougamed/cerberus:latest
+    build: .
+    # image: ghcr.io/zrougamed/cerberus:latest
     container_name: cerberus
     privileged: true
     network_mode: host
