@@ -7,6 +7,8 @@ import type {
   VersionInfo,
   AlertEvent,
   AssetEntry,
+  BaselineState,
+  ZoneSummary,
 } from './types'
 import { getToken, setToken } from './token'
 
@@ -38,6 +40,14 @@ export function fetchVersion() {
 
 export function fetchAssets() {
   return getJSON<AssetEntry[]>('/api/v1/assets')
+}
+
+export function fetchBaseline() {
+  return getJSON<BaselineState>('/api/v1/baseline?limit=2000')
+}
+
+export function fetchZones() {
+  return getJSON<ZoneSummary>('/api/v1/zones')
 }
 
 export function fetchPolicy() {

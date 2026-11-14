@@ -14,6 +14,10 @@ Base URL is whatever host/port `CERBERUS_HTTP_ADDR` binds to (default `http://12
 | `GET /api/v1/anomalies` | Single **anomaly snapshot** object: model status, scores, last features, recent alerts with `summary` (plain) and `detail` (technical), `last_summary` / `last_summary_detail` / `last_contributions`, etc. |
 | `GET /api/v1/assets` | Industrial asset inventory. Each entry: `mac`, `ip`, `oui_vendor`, `role`, `role_source` (`inferred`, `override` or empty), `protocols`, `asset` (reported identity), `last_seen`. Filters: `?role=`, `?protocol=`; `?format=csv` returns a CSV download with formula-like cells prefixed by `'`. |
 | `PUT /api/v1/assets/{mac}/role` | Bearer token. Body `{"role": "scada_server"}`; one of `controller`, `hmi`, `scada_server`, `engineering_workstation`, `gateway`, `historian`, `other`, or `""` to go back to the inferred role. Stored with the device immediately. Works without the policy engine. |
+| `GET /api/v1/baseline` | Industrial flow baseline: `status` (`state` learning/enforcing/disabled, `started_at`, `learning_until`, counts, `dropped`, `max_flows`) and `flows` (`id`, `client`, `server`, `protocol`, `class`, `status`, `first_seen`, `last_seen`, `count`). `?status=` filters, `?limit=` caps the list (default 500, max 5000). |
+| `POST /api/v1/baseline/approve`, `/forget` | Bearer token. Body `{"ids": ["<16 hex>", ...]}` (1 to 1000). Approve marks new flows approved; forget removes flows so they alert again. 409 when the baseline is disabled. |
+| `POST /api/v1/baseline/relearn` | Bearer token. Drops all flows and starts a new learning period. |
+| `GET /api/v1/zones` | Segmentation: `zones` (id, name, level, cidrs, industrial, enforce, devices), `conduits` (from, to, ports, bidirectional) and `violations` (`"from>to"` -> packets with no conduit). Empty `zones` when none are configured. |
 | `GET /api/v1/version` | `{ "commit": "<short-sha>", "date": "<RFC3339>" }` build metadata stamped at compile time via `-ldflags -X`. Both fields are `"unknown"` for builds without git or ldflags. |
 
 Errors: non-GET returns **405** with plain text body `method not allowed`.
@@ -49,6 +53,10 @@ change in the audit trail.
 | Path | Description |
 |------|-------------|
 | `GET /metrics` | Prometheus text exposition format; scrapes monitor packet counters and related gauges/counters. Includes `cerberus_build_info{commit="…",date="…"} 1` for build provenance. |
+
+`cerberus_zone_violations_total{from,to}` counts packets between zones that no conduit allows.
+
+`cerberus_baseline_flows{status}`, `cerberus_baseline_dropped_total` and `cerberus_baseline_learning` describe the flow baseline (omitted when it is disabled).
 
 `cerberus_industrial_messages_total{protocol,class,direction}` counts decoded
 industrial messages (see [industrial-protocols.md](industrial-protocols.md)).

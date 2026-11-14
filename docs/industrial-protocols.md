@@ -83,6 +83,86 @@ An operator can override it from the Assets page or with
 or `gateway`, `historian`, `other`. The override is saved with the device
 straight away; an empty role goes back to inference.
 
+## Flow baseline
+
+Industrial networks are quiet on purpose: the same HMI polls the same PLCs
+with the same operations all day. The flow baseline records every
+(client, server, protocol, operation class) tuple from decoded requests.
+
+- For the first `learning_hours` (default 168, one week) every tuple is
+  stored as `learned`.
+- After that, a tuple that is not in the baseline is stored as `new` and
+  raises `baseline_new_flow` once:
+  `New industrial flow 10.20.0.30 -> 10.20.0.60: S7comm program (not seen while learning)`.
+- On the **Flow baseline** page (or the API) an operator approves new flows
+  (`approved`), forgets them (the next matching request alerts again), or
+  drops everything and starts learning again after a planned change.
+
+The baseline is stored next to the device records and survives restarts:
+the learning period does not start over when Cerberus restarts. Changing
+`learning_hours` only affects the next relearn. At `max_flows` (default
+10,000) further new tuples are counted in `dropped` and neither stored nor
+alerted on; `cerberus_baseline_dropped_total` shows when that happens.
+
+```yaml
+flow_baseline:
+  enabled: true
+  learning_hours: 168
+  severity: medium
+  max_flows: 10000
+```
+
+API: `GET /api/v1/baseline` (`?status=new|learned|approved`, `?limit=`),
+`POST /api/v1/baseline/approve` and `/forget` with `{"ids": [...]}`, and
+`POST /api/v1/baseline/relearn`; the POSTs need the API token. Metrics:
+`cerberus_baseline_flows{status}`, `cerberus_baseline_dropped_total`,
+`cerberus_baseline_learning`.
+
+## Zones and conduits
+
+Zones and conduits describe how the site is meant to be segmented (IEC
+62443). Each zone is a set of networks at one Purdue level; a conduit
+allows traffic from one zone to another.
+
+```yaml
+segmentation:
+  zones:
+    - {id: enterprise, name: Office LAN, level: 4, cidrs: [10.0.0.0/16]}
+    - {id: dmz, name: Plant DMZ, level: 3, cidrs: [10.30.0.0/24]}
+    - {id: supervisory, name: SCADA, level: 2, cidrs: [10.20.0.0/27]}
+    - {id: control, name: Line 1 control, level: 1, cidrs: [10.20.0.0/24], industrial: true}
+  conduits:
+    - {from: supervisory, to: control, ports: [502, 102]}
+    - {from: enterprise, to: dmz, ports: [443]}
+    - {from: dmz, to: supervisory, bidirectional: true}
+  no_conduit: {enabled: true, severity: medium, realert_seconds: 3600}
+  level_skip: {enabled: true, severity: high, realert_seconds: 3600}
+```
+
+- An address belongs to the zone with the most specific matching prefix,
+  so a `/27` for the SCADA servers can sit inside the `/24` control network.
+- A conduit `from -> to` allows packets from `from` to the listed ports
+  (any port when `ports` is empty) and the replies from those ports back.
+  A TCP SYN from the `to` side is never treated as a reply.
+  `bidirectional: true` lets either side open connections.
+- Traffic between two different zones that no conduit allows raises
+  `zone_no_conduit`, or `zone_level_skip` when the levels are more than one
+  apart (enterprise straight to control):
+  `No conduit for TCP 10.0.4.7:51000 -> 10.20.0.50:502 from Office LAN (level 4) to Line 1 control (level 1), skips 2 levels`.
+  Alerts repeat at most once per `realert_seconds` for the same pair of
+  addresses; `cerberus_zone_violations_total{from,to}` counts every packet.
+- Traffic to or from an address outside every zone (the internet, an
+  unlisted subnet) is not judged.
+- **Watch-only**: zones with `industrial: true` default to `enforce: false`.
+  A policy drop rule that overlaps one is refused unless the request sets
+  `force` (see [active-response.md](active-response.md#safety-rails)). A
+  dropped packet on a control network can stop a process; set
+  `enforce: true` on a zone only when that is understood.
+
+The **Zones** page draws the zones by Purdue level with their devices, and
+lists the conduits and the zone pairs that saw traffic without one.
+`GET /api/v1/zones` returns the same data. Each device carries its `zone`.
+
 ## Modbus/TCP
 
 A frame is accepted only when the MBAP header is consistent: protocol id 0,

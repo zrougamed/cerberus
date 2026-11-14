@@ -60,6 +60,8 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	s.registerDocsRoutes(mux)
 	s.registerAssetRoutes(mux)
+	s.registerBaselineRoutes(mux)
+	mux.HandleFunc("GET /api/v1/zones", s.handleZones)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)
 	}
@@ -244,6 +246,12 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleZones returns the configured zones (with device counts), conduits
+// and violation counters.
+func (s *Server) handleZones(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.monitor.GetZoneSummary())
+}
+
 func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -326,6 +334,34 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			}
 			fmt.Fprintf(w, "cerberus_industrial_messages_total{protocol=\"%s\",class=\"%s\",direction=\"%s\"} %d\n",
 				escapeLabelValue(k.Protocol), escapeLabelValue(k.Class), direction, counts[k])
+		}
+		fmt.Fprintln(w)
+	}
+
+	if bs := s.monitor.GetBaselineStatus(); bs.State != monitor.BaselineDisabled {
+		fmt.Fprintln(w, "# HELP cerberus_baseline_flows Industrial flows in the baseline by status.")
+		fmt.Fprintln(w, "# TYPE cerberus_baseline_flows gauge")
+		fmt.Fprintf(w, "cerberus_baseline_flows{status=\"learned\"} %d\n", bs.Learned)
+		fmt.Fprintf(w, "cerberus_baseline_flows{status=\"approved\"} %d\n", bs.Approved)
+		fmt.Fprintf(w, "cerberus_baseline_flows{status=\"new\"} %d\n", bs.New)
+		fmt.Fprintln(w, "# HELP cerberus_baseline_dropped_total Flows not recorded because the baseline was full.")
+		fmt.Fprintln(w, "# TYPE cerberus_baseline_dropped_total counter")
+		fmt.Fprintf(w, "cerberus_baseline_dropped_total %d\n", bs.Dropped)
+		learning := 0
+		if bs.State == monitor.BaselineLearning {
+			learning = 1
+		}
+		fmt.Fprintln(w, "# HELP cerberus_baseline_learning 1 while the flow baseline is still learning.")
+		fmt.Fprintln(w, "# TYPE cerberus_baseline_learning gauge")
+		fmt.Fprintf(w, "cerberus_baseline_learning %d\n\n", learning)
+	}
+
+	if zs := s.monitor.GetZoneSummary(); len(zs.Violations) > 0 {
+		fmt.Fprintln(w, "# HELP cerberus_zone_violations_total Packets between zones that no conduit allows.")
+		fmt.Fprintln(w, "# TYPE cerberus_zone_violations_total counter")
+		for _, k := range slices.Sorted(maps.Keys(zs.Violations)) {
+			from, to, _ := strings.Cut(k, ">")
+			fmt.Fprintf(w, "cerberus_zone_violations_total{from=\"%s\",to=\"%s\"} %d\n", escapeLabelValue(from), escapeLabelValue(to), zs.Violations[k])
 		}
 		fmt.Fprintln(w)
 	}

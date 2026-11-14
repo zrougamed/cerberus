@@ -118,6 +118,7 @@ func (nm *NetworkMonitor) trackIndustrial(device *models.DeviceInfo, evt *models
 	nm.industrialCounts[IndustrialCountKey{Protocol: msg.Protocol, Class: string(msg.Class), Response: msg.Response}]++
 	if !msg.Response {
 		nm.checkIndustrialAlert(device, msg, srcIP, dstIP, now)
+		nm.observeFlow(device, msg, srcIP, dstIP, now)
 	}
 }
 
