@@ -20,6 +20,7 @@ import (
 	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
+	"github.com/zrougamed/cerberus/internal/network"
 	"github.com/zrougamed/cerberus/internal/utils"
 	"github.com/zrougamed/cerberus/internal/version"
 )
@@ -119,15 +120,16 @@ func main() {
 
 	fmt.Println("Scanning for network interfaces...")
 
+	// CERBERUS_INTERFACES narrows the attach set (names/globs, "!" excludes).
+	ifaceFilter, err := network.ParseInterfaceFilter(os.Getenv("CERBERUS_INTERFACES"))
+	if err != nil {
+		log.Fatalf("CERBERUS_INTERFACES: %v", err)
+	}
+
 	var links []link.Link
 	attachedCount := 0
 
-	for _, iface := range ifaces {
-		// Skip loopback and down interfaces
-		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-
+	for _, iface := range ifaceFilter.Select(ifaces) {
 		fmt.Printf("Attaching to %s...\n", iface.Name)
 
 		// Attach using TCX (modern TC hook mechanism)
