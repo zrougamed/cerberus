@@ -22,7 +22,7 @@ Core responsibilities:
 | Concern | Behavior |
 |---------|----------|
 | **Devices** | LRU cache keyed by source MAC; merge with BuntDB persistence for `DeviceInfo` across restarts. |
-| **Vendor** | `internal/databases` OUI lookup (IEEE MA-L CSV cache or fallback; optional online lookup when enabled). |
+| **Vendor** | `internal/databases` OUI lookup: the full IEEE registry is embedded in the binary; a newer downloaded cache and optional online lookup layer on top. |
 | **Service labels** | Port + protocol → IANA-style name via `internal/databases` service registry (CSV cache or fallback). |
 | **Traffic typing** | Heuristics classify ARP/TCP/UDP/ICMP/DNS/HTTP/TLS-style flows and correlated DNS→connection patterns where possible. |
 | **Aggregates** | Per-device counters and maps: services, DNS domains/types/response codes, HTTP hosts, TLS SNIs/versions, encrypted-DNS hints, targets, GeoIP fields (optional). |
@@ -38,7 +38,7 @@ Optional **MaxMind GeoLite2** enrichment: set `CERBERUS_GEOIP_DB` to a `.mmdb` p
 
 | Database | Purpose |
 |----------|---------|
-| **OUI** | MA-L / MA-M / MA-S vendor strings; cache under `CERBERUS_DATA_DIR` (default `./data`); stale cache preferred over tiny fallback; optional refresh when `CERBERUS_DB_ONLINE` is set. Locally administered MACs resolve known virtualization prefixes (QEMU, Docker) before the privacy-MAC label. |
+| **OUI** | Full IEEE registry (MA-L, MA-M, MA-S, IAB; about 59,000 assignments) embedded as `internal/databases/oui_embedded.tsv.gz`, so vendors resolve offline from the first start. Longest assignment wins (36-bit, then 28-bit, then 24-bit). A downloaded cache in `CERBERUS_DATA_DIR` adds missing entries and overrides when newer; with `CERBERUS_DB_ONLINE` set, data older than 30 days is refreshed from IEEE in the background (requests identify as `Cerberus-Network-Monitor/<commit>`). Known locally administered prefixes (QEMU, Docker, VirtualBox host-only) are labelled before the generic privacy-MAC label. Regenerate the snapshot with `tools/ouigen`. |
 | **Services** | IANA service-name / port assignments (TCP/UDP); CSV cache with quoted-field parsing and modest port-range expansion. |
 
 These are **offline-first**: embedded fallbacks work without downloads.

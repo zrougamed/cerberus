@@ -408,3 +408,17 @@ func TestEmbeddedWeb_NoInlineScriptOrStyle(t *testing.T) {
 		t.Errorf("index.html has an inline <script>")
 	}
 }
+
+// Several UI elements (the "Updates paused" badges, policy panels) set
+// display:inline-block/flex/grid, which overrides the hidden attribute
+// unless this rule exists. Without it "Updates paused" showed while live.
+func TestEmbeddedCSS_HiddenAttributeWins(t *testing.T) {
+	css, err := webFS.ReadFile("web/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact := strings.Join(strings.Fields(string(css)), " ")
+	if !strings.Contains(compact, "[hidden] { display: none !important; }") {
+		t.Fatal("styles.css must keep `[hidden] { display: none !important; }`")
+	}
+}

@@ -3,7 +3,15 @@ package databases
 import (
 	"fmt"
 	"io"
+
+	"github.com/zrougamed/cerberus/internal/version"
 )
+
+// userAgent identifies Cerberus honestly to registry servers, with a link
+// operators of those servers can follow.
+func userAgent() string {
+	return "Cerberus-Network-Monitor/" + version.Commit + " (+https://github.com/zrougamed/cerberus)"
+}
 
 // Upper bounds for bodies fetched from remote registries. The IEEE and IANA
 // CSVs are a few MB today; the caps leave headroom while keeping a hostile or

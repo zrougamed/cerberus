@@ -98,7 +98,12 @@ func (db *ServiceDatabase) downloadIANADatabase() error {
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(IANA_SERVICES_URL)
+	req, err := http.NewRequest(http.MethodGet, IANA_SERVICES_URL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", userAgent())
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

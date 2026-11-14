@@ -27,6 +27,7 @@ type OUIDatabase struct {
 	dbPath   string // primary cache: combined IEEE CSV
 	lastSync time.Time
 	stale    bool
+	snapshot time.Time // date of the embedded IEEE snapshot
 }
 
 type ouiCacheEntry struct {
@@ -39,6 +40,7 @@ const (
 	IEEE_MAM_CSV_URL   = "https://standards-oui.ieee.org/oui28/mam.csv"
 	IEEE_OUI36_CSV_URL = "https://standards-oui.ieee.org/oui36/oui36.csv"
 	IEEE_OUI_TXT_URL   = "https://standards-oui.ieee.org/oui/oui.txt"
+	IEEE_IAB_CSV_URL   = "https://standards-oui.ieee.org/iab/iab.csv"
 
 	MACVENDORS_API = "https://api.macvendors.com/%s"
 
@@ -53,8 +55,10 @@ const (
 	VendorUnknown    = "Unknown"
 )
 
-// NewOUIDatabase loads cached IEEE data from DataDir(), or downloads when enableOnline is true.
-// A stale cache is preferred over the tiny embedded fallback; online mode refreshes in the background.
+// NewOUIDatabase starts from the IEEE snapshot embedded in the binary, layers
+// a newer on-disk cache from DataDir() on top, and, when enableOnline is
+// true and the data is older than cacheValidDays, refreshes from IEEE in the
+// background.
 func NewOUIDatabase(enableOnline bool) (*OUIDatabase, error) {
 	db := &OUIDatabase{
 		vendors: make(map[string]string),
@@ -63,23 +67,42 @@ func NewOUIDatabase(enableOnline bool) (*OUIDatabase, error) {
 		dbPath:  filepath.Join(DataDir(), ouiCacheCSV),
 	}
 
-	if err := db.loadFromDisk(); err != nil {
-		if enableOnline {
-			if err := db.downloadIEEE(); err != nil {
-				log.Printf("databases: IEEE OUI download failed: %v", err)
-				db.loadFallbackDatabase()
+	if vendors, snap, err := parseEmbeddedOUI(embeddedOUI); err == nil && len(vendors) > 0 {
+		db.vendors, db.snapshot, db.lastSync = vendors, snap, snap
+		log.Printf("databases: loaded %d OUI vendors from embedded IEEE snapshot (%s)", len(vendors), snap.Format("2006-01-02"))
+	} else {
+		log.Printf("databases: embedded OUI snapshot unusable (%v); using minimal fallback", err)
+		db.loadFallbackDatabase()
+	}
+
+	// A downloaded cache adds entries the snapshot lacks, and overrides
+	// existing ones only when it is newer than the snapshot.
+	if disk, err := loadDiskCache(); err == nil {
+		newer := disk.lastSync.After(db.lastSync)
+		added := 0
+		for k, v := range disk.vendors {
+			if _, have := db.vendors[k]; !have || newer {
+				db.vendors[k] = v
+				added++
 			}
-		} else {
-			db.loadFallbackDatabase()
 		}
-	} else if enableOnline && db.stale {
+		if newer {
+			db.lastSync = disk.lastSync
+		}
+		log.Printf("databases: merged %d OUI vendors from cache in %s (newer than snapshot: %v)", added, DataDir(), newer)
+	}
+	// Locally administered prefixes used by hypervisors and container
+	// runtimes are not in the IEEE registry; label them explicitly.
+	maps.Copy(db.vendors, wellKnownLocalPrefixes)
+	db.stale = time.Since(db.lastSync) > cacheValidDays*24*time.Hour
+
+	if enableOnline && db.stale {
 		go func() {
 			if err := db.downloadIEEE(); err != nil {
-				log.Printf("databases: background IEEE OUI refresh failed: %v", err)
+				log.Printf("databases: IEEE OUI refresh failed, keeping current data: %v", err)
 			}
 		}()
 	}
-
 	return db, nil
 }
 
@@ -93,22 +116,18 @@ func LoadOUIDatabase() map[string]string {
 	return out
 }
 
-func (db *OUIDatabase) loadFromDisk() error {
-	if err := db.tryLoadCSV(db.dbPath); err == nil {
-		return nil
+// loadDiskCache reads the downloaded registry cache (or the legacy TXT one)
+// into a separate database, so a bad file never disturbs the loaded data.
+func loadDiskCache() (*OUIDatabase, error) {
+	disk := &OUIDatabase{vendors: make(map[string]string)}
+	if err := disk.tryLoadCSV(filepath.Join(DataDir(), ouiCacheCSV)); err == nil {
+		return disk, nil
 	}
-	db.mu.Lock()
-	db.vendors = make(map[string]string)
-	db.mu.Unlock()
-
-	legacy := filepath.Join(DataDir(), ouiCacheLegacy)
-	if err := db.tryLoadTXT(legacy); err == nil {
-		return nil
+	disk = &OUIDatabase{vendors: make(map[string]string)}
+	if err := disk.tryLoadTXT(filepath.Join(DataDir(), ouiCacheLegacy)); err == nil {
+		return disk, nil
 	}
-	db.mu.Lock()
-	db.vendors = make(map[string]string)
-	db.mu.Unlock()
-	return fmt.Errorf("no valid OUI cache in %s", DataDir())
+	return nil, fmt.Errorf("no valid OUI cache in %s", DataDir())
 }
 
 func (db *OUIDatabase) tryLoadCSV(path string) error {
@@ -160,6 +179,15 @@ func (db *OUIDatabase) tryLoadTXT(path string) error {
 		log.Printf("databases: loaded %d OUI vendors from legacy %s", n, path)
 	}
 	return nil
+}
+
+// ParseIEEERegistryCSV parses an IEEE registry CSV (MA-L, MA-M, MA-S/OUI36
+// or IAB) into lookup key -> organisation name, using the same keys Lookup
+// uses. tools/ouigen builds the embedded snapshot with it.
+func ParseIEEERegistryCSV(r io.Reader) (map[string]string, error) {
+	tmp := &OUIDatabase{vendors: make(map[string]string)}
+	_, err := tmp.ingestIEEEcsv(r)
+	return tmp.vendors, err
 }
 
 func (db *OUIDatabase) ingestIEEEcsv(r io.Reader) (int, error) {
@@ -322,6 +350,7 @@ func (db *OUIDatabase) downloadIEEE() error {
 		IEEE_OUI_CSV_URL,
 		IEEE_MAM_CSV_URL,
 		IEEE_OUI36_CSV_URL,
+		IEEE_IAB_CSV_URL,
 	}
 
 	tmp := &OUIDatabase{vendors: make(map[string]string)}
@@ -359,7 +388,7 @@ func (db *OUIDatabase) downloadIEEE() error {
 			return err
 		}
 		db.mu.Lock()
-		db.vendors = tmp.vendors
+		maps.Copy(db.vendors, tmp.vendors)
 		db.lastSync = time.Now()
 		db.stale = false
 		db.mu.Unlock()
@@ -391,8 +420,10 @@ func (db *OUIDatabase) downloadIEEE() error {
 		return err
 	}
 
+	// Merge rather than replace: if one registry file failed to download,
+	// its entries stay from the snapshot instead of disappearing.
 	db.mu.Lock()
-	db.vendors = tmp.vendors
+	maps.Copy(db.vendors, tmp.vendors)
 	db.lastSync = time.Now()
 	db.stale = false
 	db.mu.Unlock()
@@ -401,13 +432,18 @@ func (db *OUIDatabase) downloadIEEE() error {
 }
 
 func (db *OUIDatabase) httpGetBody(client *http.Client, url string) ([]byte, error) {
-	resp, err := client.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent())
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d", url, resp.StatusCode)
+		return nil, fmt.Errorf("GET %s: status %d (the embedded snapshot stays in use)", url, resp.StatusCode)
 	}
 	return readLimited(resp.Body, maxRegistryBody)
 }
@@ -527,7 +563,7 @@ func (db *OUIDatabase) queryOnlineAPI(mac string) string {
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("User-Agent", "Cerberus-Network-Monitor/1.0")
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return ""
@@ -573,6 +609,7 @@ func (db *OUIDatabase) GetStats() map[string]any {
 		"cache_file":     db.dbPath,
 		"data_dir":       DataDir(),
 		"cache_age":      time.Since(db.lastSync).Round(time.Hour).String(),
+		"snapshot_date":  db.snapshot.Format("2006-01-02"),
 	}
 }
 
@@ -614,6 +651,16 @@ func (db *OUIDatabase) SaveToCache() error {
 		return err
 	}
 	return os.WriteFile(db.dbPath, buf.Bytes(), 0o600)
+}
+
+// wellKnownLocalPrefixes are locally administered (U/L bit set) prefixes
+// with a conventional owner. Lookup checks the registry before applying the
+// generic privacy-MAC label, so these resolve to something useful.
+var wellKnownLocalPrefixes = map[string]string{
+	"52:54:00": "QEMU/KVM",
+	"02:42:00": "Docker Container",
+	"02:42:AC": "Docker Container",
+	"0A:00:27": "Oracle VirtualBox (host-only)",
 }
 
 func (db *OUIDatabase) loadFallbackDatabase() {
