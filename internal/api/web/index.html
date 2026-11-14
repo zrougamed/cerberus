@@ -34,6 +34,7 @@
       <a href="#/devices" data-route>All devices</a>
       <a href="#/alerts" data-route>Rule alerts</a>
       <a href="#/anomalies" data-route>Anomalies</a>
+      <a href="#/policy" data-route>Policy</a>
       <a href="#/raw/summary" data-route>Raw JSON</a>
     </nav>
 
@@ -133,6 +134,102 @@
       </div>
     </div>
 
+    <!-- Policy: active response (block / count by MAC or IP range) -->
+    <div id="page-policy" class="page">
+      <div class="page-inner policy-page">
+        <section id="policy-mode" class="mode-banner" aria-live="polite">
+          <div>
+            <h2 id="policy-mode-title">Policy</h2>
+            <p id="policy-mode-text" class="mode-text">Loading policy…</p>
+          </div>
+          <button id="policy-mode-toggle" class="toggle mode-button" type="button" hidden>Start enforcing</button>
+        </section>
+
+        <section class="panel">
+          <h2>Console access</h2>
+          <p id="policy-access-note" class="muted">Checking whether this server accepts changes…</p>
+          <form id="policy-unlock" class="policy-form unlock-form" hidden>
+            <label for="policy-token">API token</label>
+            <div class="inline-fields">
+              <input id="policy-token" name="token" type="password" autocomplete="current-password" minlength="16" required aria-describedby="policy-token-help" />
+              <button class="toggle" type="submit">Unlock changes</button>
+            </div>
+            <p id="policy-token-help" class="field-help">The value of CERBERUS_API_TOKEN. Kept in this browser tab only and cleared when you close it.</p>
+          </form>
+          <div id="policy-locked-actions" class="inline-fields" hidden>
+            <span class="badge">Changes unlocked</span>
+            <button id="policy-lock" class="toggle" type="button">Lock changes</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Add a rule</h2>
+          <form id="policy-add" class="policy-form" novalidate>
+            <fieldset class="target-kind">
+              <legend>Match traffic by</legend>
+              <label><input type="radio" name="kind" value="cidr" checked /> IP address or range</label>
+              <label><input type="radio" name="kind" value="mac" /> Device (MAC address)</label>
+            </fieldset>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="policy-target">Address</label>
+                <input id="policy-target" name="target" type="text" autocomplete="off" spellcheck="false" required aria-describedby="policy-target-help" />
+                <p id="policy-target-help" class="field-help">For example 203.0.113.0/24, 198.51.100.7 or 2001:db8::/48.</p>
+              </div>
+              <div class="field" id="policy-direction-field">
+                <label for="policy-direction">Direction</label>
+                <select id="policy-direction" name="direction">
+                  <option value="any">To or from it</option>
+                  <option value="dst">Traffic going to it</option>
+                  <option value="src">Traffic coming from it</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="policy-action">Action</label>
+                <select id="policy-action" name="action">
+                  <option value="drop">Block</option>
+                  <option value="log">Count only</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="policy-ttl">Duration</label>
+                <select id="policy-ttl" name="ttl">
+                  <option value="0">Until removed</option>
+                  <option value="900">15 minutes</option>
+                  <option value="3600">1 hour</option>
+                  <option value="86400">24 hours</option>
+                  <option value="604800">7 days</option>
+                </select>
+              </div>
+              <div class="field field-wide">
+                <label for="policy-comment">Reason <span class="muted">(optional)</span></label>
+                <input id="policy-comment" name="comment" type="text" maxlength="256" autocomplete="off" />
+              </div>
+            </div>
+
+            <label class="check"><input id="policy-force" name="force" type="checkbox" /> Allow rules that cover this host or the gateway</label>
+
+            <p id="policy-add-error" class="form-error" role="alert" hidden></p>
+            <p id="policy-add-ok" class="form-ok" role="status" hidden></p>
+            <button id="policy-add-submit" class="toggle primary" type="submit">Add rule</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h2>Rules</h2>
+          <p class="muted">Matches are counted in the kernel for every packet, in both modes. <span id="policy-paused-note" class="paused-badge" hidden>Updates paused</span></p>
+          <p id="policy-rules-error" class="form-error" role="alert" hidden></p>
+          <div id="policy-rules" class="detail-browser table-scroll"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Recent changes</h2>
+          <ul id="policy-audit" class="audit-list"></ul>
+        </section>
+      </div>
+    </div>
+
     <!-- Raw JSON explorer -->
     <div id="page-raw" class="page">
       <div class="page-inner">
@@ -147,6 +244,7 @@
                 <option value="devices">GET /api/v1/devices</option>
                 <option value="alerts">GET /api/v1/alerts</option>
                 <option value="anomalies">GET /api/v1/anomalies</option>
+                <option value="policy">GET /api/v1/policy</option>
               </select>
             </label>
             <button type="button" id="raw-refresh" class="toggle">Refresh</button>

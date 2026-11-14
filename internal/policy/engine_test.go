@@ -363,7 +363,7 @@ func TestExpire(t *testing.T) {
 		t.Fatalf("expired rule still in kernel: %v", k.prefixes)
 	}
 	last := e.Status().Audit
-	if a := last[len(last)-1]; a.Action != "expire" || a.Actor != "ttl" {
+	if a := last[len(last)-1]; a.Action != "expire" || a.Actor != "ttl" || !strings.HasPrefix(a.Detail, "Expired: ") {
 		t.Fatalf("audit: %+v", a)
 	}
 }

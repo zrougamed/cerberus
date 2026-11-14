@@ -22,6 +22,12 @@ var ErrNotFound = errors.New("rule not found")
 // ErrConflict is returned when a rule id or target already exists.
 var ErrConflict = errors.New("rule conflicts with an existing rule")
 
+// ErrInvalid wraps validation failures of client input.
+var ErrInvalid = errors.New("invalid rule")
+
+// ErrFull is returned when all MaxRules slots are in use.
+var ErrFull = errors.New("policy is full")
+
 // Options configures an Engine.
 type Options struct {
 	// StatePath is the JSON file the policy is persisted to. Empty keeps
@@ -167,7 +173,7 @@ func (e *Engine) insertLocked(r Rule, t target) error {
 	}
 	slot, ok := e.freeSlotLocked()
 	if !ok {
-		return fmt.Errorf("policy is full (%d rules)", MaxRules)
+		return fmt.Errorf("%w (%d rules)", ErrFull, MaxRules)
 	}
 	e.slots[slot] = true
 	e.rules[r.ID] = &entry{rule: r, t: t, slot: slot}
@@ -258,7 +264,7 @@ func newRuleID() string {
 func (e *Engine) Add(in RuleInput, actor string) (Rule, error) {
 	r, t, err := normalize(in)
 	if err != nil {
-		return Rule{}, err
+		return Rule{}, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -297,7 +303,7 @@ func (e *Engine) Add(in RuleInput, actor string) (Rule, error) {
 		e.removeLocked(r.ID)
 		return Rule{}, err
 	}
-	e.auditLocked(actor, "add", r.ID, describe(r))
+	e.auditLocked(actor, "add", r.ID, "Added: "+describe(r))
 	return r, nil
 }
 
@@ -325,14 +331,18 @@ func (e *Engine) removeAndSaveLocked(id, actor, action string) error {
 		e.auditLocked(actor, action, id, "removed, but saving the policy failed: "+err.Error())
 		return err
 	}
-	e.auditLocked(actor, action, id, describe(en.rule))
+	verb := "Removed: "
+	if action == "expire" {
+		verb = "Expired: "
+	}
+	e.auditLocked(actor, action, id, verb+describe(en.rule))
 	return nil
 }
 
 // SetMode switches between monitor (dry run) and enforce.
 func (e *Engine) SetMode(m Mode, actor string) error {
 	if m != ModeMonitor && m != ModeEnforce {
-		return fmt.Errorf("unknown mode %q (want monitor|enforce)", m)
+		return fmt.Errorf("%w: unknown mode %q (want monitor|enforce)", ErrInvalid, m)
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -353,7 +363,7 @@ func (e *Engine) SetMode(m Mode, actor string) error {
 		e.mode = prev
 		return err
 	}
-	e.auditLocked(actor, "mode", "", fmt.Sprintf("%s -> %s", prev, m))
+	e.auditLocked(actor, "mode", "", fmt.Sprintf("Mode changed from %s to %s", prev, m))
 	return nil
 }
 

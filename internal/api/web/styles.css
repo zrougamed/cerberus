@@ -8,6 +8,10 @@
   --accent: #1f7a65;
   --accent-soft: #dbeee8;
   --shadow: 0 12px 30px rgba(31, 42, 42, 0.08);
+  --danger: #a8322a;
+  --danger-soft: #fbe9e7;
+  --warn: #7a5300;
+  --warn-soft: #fdf1d6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,10 +25,18 @@
     --accent: #56c4a3;
     --accent-soft: #1d3b33;
     --shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
+    --danger: #ff9a8c;
+    --danger-soft: #3a1f1c;
+    --warn: #f2c46b;
+    --warn-soft: #382d16;
   }
 }
 
 [data-theme="dark"] {
+  --danger: #ff9a8c;
+  --danger-soft: #3a1f1c;
+  --warn: #f2c46b;
+  --warn-soft: #382d16;
   --bg: #131817;
   --surface: #1b2321;
   --surface-muted: #25302d;
@@ -38,6 +50,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Classes below set display:flex/grid; keep the hidden attribute winning. */
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -533,4 +550,369 @@ h3 {
 
 .section-gap {
   margin-top: 18px;
+}
+
+/* ---------- Policy (active response) ---------- */
+
+.policy-page {
+  display: grid;
+  gap: 16px;
+}
+
+/* Grid items default to min-width:auto and would grow to the table's
+   content width, pushing the page past the viewport. */
+.policy-page > * {
+  min-width: 0;
+}
+
+.policy-page .panel h2,
+.mode-banner h2 {
+  margin-top: 0;
+}
+
+/* The one loud element on the page: what the kernel is doing right now. */
+.mode-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 18px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-left: 8px solid var(--text-soft);
+  background: var(--surface);
+}
+
+.mode-banner.is-monitor {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.mode-banner.is-enforce {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.mode-banner h2 {
+  margin-bottom: 4px;
+  font-size: 1.25rem;
+}
+
+.mode-banner.is-monitor h2 {
+  color: var(--warn);
+}
+
+.mode-banner.is-enforce h2 {
+  color: var(--danger);
+}
+
+.mode-text {
+  margin: 0;
+  max-width: 62ch;
+}
+
+.policy-form {
+  display: grid;
+  gap: 14px;
+}
+
+.policy-form label,
+.policy-form legend {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.policy-form input[type="text"],
+.policy-form input[type="password"],
+.policy-form select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.policy-form input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.toggle:focus-visible,
+.policy-form input:focus-visible,
+.policy-form select:focus-visible,
+.app-nav a:focus-visible,
+.rule-remove:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.target-kind {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.target-kind legend {
+  margin-bottom: 6px;
+}
+
+.target-kind label,
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  min-height: 32px;
+}
+
+.target-kind input,
+.check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-help {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.inline-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.inline-fields input {
+  flex: 1 1 240px;
+}
+
+.form-error,
+.form-ok {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.form-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.form-ok {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.toggle.primary {
+  justify-self: start;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.toggle.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.toggle:disabled,
+.rule-remove:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.rules-table th {
+  width: auto;
+  white-space: nowrap;
+}
+
+.rules-table code {
+  word-break: break-all;
+}
+
+.rules-table code.rule-id {
+  word-break: normal;
+  white-space: nowrap;
+}
+
+.verdict {
+  display: inline-block;
+  white-space: nowrap;
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid currentColor;
+}
+
+.verdict-drop {
+  color: var(--danger);
+}
+
+.verdict-log {
+  color: var(--text-soft);
+}
+
+.rule-remove {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--danger);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.audit-list li {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.audit-meta {
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.device-actions a {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+@media (min-width: 760px) {
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (min-width: 1100px) {
+  .form-grid {
+    grid-template-columns: 2fr 1.4fr 1fr 1fr;
+  }
+
+  .field-wide {
+    grid-column: span 4;
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.rules-table caption {
+  text-align: left;
+  padding-bottom: 8px;
+}
+
+/* Narrow screens: each rule becomes a stacked label/value card. */
+@media (max-width: 759px) {
+  .rules-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .rules-table,
+  .rules-table tbody,
+  .rules-table tr,
+  .rules-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .rules-table tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rules-table td {
+    display: grid;
+    grid-template-columns: 7.5em 1fr;
+    gap: 8px;
+    padding: 3px 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .rules-table td::before {
+    content: attr(data-label);
+    color: var(--text-soft);
+    font-weight: 700;
+  }
+
+  .rules-table td.rule-actions {
+    display: block;
+    padding-top: 8px;
+  }
+
+  .rules-table td.rule-actions::before {
+    content: none;
+  }
+
+  .rules-table caption {
+    display: block;
+    width: 100%;
+  }
+
+  .rules-table td.num {
+    text-align: left;
+  }
 }
