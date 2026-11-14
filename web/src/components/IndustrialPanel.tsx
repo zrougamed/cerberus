@@ -2,19 +2,24 @@ import type { IndustrialStats } from '../lib/types'
 
 const protocolNames: Record<string, string> = {
   modbus: 'Modbus/TCP',
+  s7comm: 'S7comm',
+  s7comm_plus: 'S7comm-plus',
 }
 
 // Operations that change what the controller does; shown in the danger colour.
-const riskyClasses = new Set(['write', 'diagnostic'])
+const riskyClasses = new Set(['write', 'diagnostic', 'control', 'program'])
 
-const classOrder = ['read', 'write', 'diagnostic', 'other']
+const classOrder = ['read', 'write', 'diagnostic', 'control', 'program', 'other']
 
 function sortedEntries(values?: Record<string, number>): [string, number][] {
   return Object.entries(values || {}).sort((a, b) => b[1] - a[1])
 }
 
+const acronyms = new Set(['cotp', 'plc', 'cpu', 'fifo', 'ram', 'rom', 'pi'])
+
 function humanize(name: string): string {
-  const text = name.replace(/_/g, ' ')
+  const words = name.split('_').map((w) => (acronyms.has(w) ? w.toUpperCase() : w))
+  const text = words.join(' ')
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
@@ -85,6 +90,18 @@ function ProtocolSection({ protocol, stats }: { protocol: string; stats: Industr
               ))}
             </tbody>
           </table>
+        )}
+        {stats.details && Object.keys(stats.details).length > 0 && (
+          <div>
+            <p className="muted m-0 pb-1 text-sm">Connection targets</p>
+            <ul className="m-0 flex list-none flex-wrap gap-1 p-0 text-sm">
+              {sortedEntries(stats.details).map(([detail, n]) => (
+                <li key={detail} className="rounded bg-[var(--surface-muted)] px-2 py-0.5">
+                  {humanize(detail)} <span className="font-mono">({n})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {stats.peers && stats.peers.length > 0 && (
           <div>

@@ -17,17 +17,31 @@ const (
 	ClassRead       Class = "read"
 	ClassWrite      Class = "write"
 	ClassDiagnostic Class = "diagnostic"
-	ClassOther      Class = "other"
+	// ClassControl changes the run state of a controller (start, stop).
+	ClassControl Class = "control"
+	// ClassProgram changes the logic on a controller (download, delete).
+	ClassProgram Class = "program"
+	ClassOther   Class = "other"
 )
 
 // Protocol names as they appear in the device JSON, metrics and alert rules.
 const (
 	ProtocolModbus = "modbus"
+	ProtocolS7     = "s7comm"
+	// ProtocolS7Plus is the newer, integrity-protected S7 protocol. It is
+	// only detected and counted, not decoded.
+	ProtocolS7Plus = "s7comm_plus"
 )
 
 const (
 	ipProtoTCP uint8 = 6
 )
+
+// functionInfo is a function code's name and class in a decoder table.
+type functionInfo struct {
+	name  string
+	class Class
+}
 
 // Message is one decoded protocol data unit.
 type Message struct {
@@ -35,7 +49,9 @@ type Message struct {
 	Function     uint8
 	FunctionName string
 	Class        Class
-	Unit         uint8
+	// Unit is the Modbus unit id; HasUnit is false for protocols without one.
+	Unit    uint8
+	HasUnit bool
 	// Address and Quantity describe the register or coil range of a read or
 	// write request; HasRange is false when the function carries none.
 	Address  uint16
@@ -45,6 +61,9 @@ type Message struct {
 	Response bool
 	// Exception holds the exception code of an error response, 0 otherwise.
 	Exception uint8
+	// Detail is a short protocol-specific note worth counting, such as the
+	// S7 rack and slot a client connects to. Empty when there is none.
+	Detail string
 }
 
 // Decode picks a decoder from the transport and ports and runs it on
@@ -56,6 +75,9 @@ func Decode(ipProto uint8, srcPort, dstPort uint16, payload []byte) (Message, bo
 		// write is never mistaken for a harmless reply.
 		response := srcPort == ModbusPort && dstPort != ModbusPort
 		return DecodeModbus(payload, response)
+	}
+	if ipProto == ipProtoTCP && (dstPort == S7Port || srcPort == S7Port) {
+		return DecodeS7(payload, srcPort == S7Port && dstPort != S7Port)
 	}
 	return Message{}, false
 }

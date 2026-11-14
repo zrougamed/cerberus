@@ -245,6 +245,9 @@ type IndustrialStats struct {
 	Operations map[string]int `json:"operations"`
 	// Functions counts requests by function name.
 	Functions map[string]int `json:"functions"`
+	// Details counts protocol-specific notes, such as the S7 rack and slot
+	// a client connected to.
+	Details map[string]int `json:"details,omitempty"`
 	// Peers holds the most recent remote addresses, oldest first.
 	Peers    []string  `json:"peers"`
 	LastSeen time.Time `json:"last_seen"`

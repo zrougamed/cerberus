@@ -20,6 +20,9 @@ const (
 	// maxIndustrialAlertKeys bounds the re-alert state, same policy as the
 	// watchlists.
 	maxIndustrialAlertKeys = 4096
+	// maxIndustrialDetails bounds IndustrialStats.Details (e.g. distinct
+	// rack/slot pairs); a device rarely has more than a few.
+	maxIndustrialDetails = 16
 )
 
 // IndustrialCountKey identifies one series of cerberus_industrial_messages_total.
@@ -50,24 +53,28 @@ func (r *industrialRule) allows(addr string) bool {
 	return false
 }
 
+// industrialRuleClasses says which decoded operation each rule alerts on.
+var industrialRuleClasses = map[string]struct {
+	protocol string
+	class    industrial.Class
+}{
+	alerts.RuleModbusWrite:      {industrial.ProtocolModbus, industrial.ClassWrite},
+	alerts.RuleModbusDiagnostic: {industrial.ProtocolModbus, industrial.ClassDiagnostic},
+	alerts.RuleS7Write:          {industrial.ProtocolS7, industrial.ClassWrite},
+	alerts.RuleS7Control:        {industrial.ProtocolS7, industrial.ClassControl},
+	alerts.RuleS7Program:        {industrial.ProtocolS7, industrial.ClassProgram},
+}
+
 // newIndustrialRules maps "<protocol>|<class>" to the enabled rule that
 // alerts on it.
 func newIndustrialRules(cfg alerts.IndustrialConfig) map[string]*industrialRule {
-	defs := []struct {
-		protocol string
-		class    industrial.Class
-		id       string
-		rule     alerts.IndustrialRule
-	}{
-		{industrial.ProtocolModbus, industrial.ClassWrite, alerts.RuleModbusWrite, cfg.ModbusWrite},
-		{industrial.ProtocolModbus, industrial.ClassDiagnostic, alerts.RuleModbusDiagnostic, cfg.ModbusDiagnostic},
-	}
-	rules := make(map[string]*industrialRule, len(defs))
-	for _, d := range defs {
-		if !d.rule.Enabled {
+	rules := make(map[string]*industrialRule)
+	for _, r := range cfg.Rules() {
+		target, ok := industrialRuleClasses[r.ID]
+		if !ok || !r.Rule.Enabled {
 			continue
 		}
-		rules[d.protocol+"|"+string(d.class)] = &industrialRule{id: d.id, cfg: d.rule, allow: d.rule.SourcePrefixes()}
+		rules[target.protocol+"|"+string(target.class)] = &industrialRule{id: r.ID, cfg: *r.Rule, allow: r.Rule.SourcePrefixes()}
 	}
 	return rules
 }
@@ -107,6 +114,14 @@ func recordIndustrial(device *models.DeviceInfo, msg industrial.Message, peer st
 		s.Functions = make(map[string]int)
 	}
 	s.LastSeen = now
+	if msg.Detail != "" {
+		if s.Details == nil {
+			s.Details = make(map[string]int)
+		}
+		if _, seen := s.Details[msg.Detail]; seen || len(s.Details) < maxIndustrialDetails {
+			s.Details[msg.Detail]++
+		}
+	}
 	if msg.Response {
 		s.Responses++
 		if msg.Exception != 0 {
@@ -156,10 +171,15 @@ func (nm *NetworkMonitor) checkIndustrialAlert(device *models.DeviceInfo, msg in
 
 var protocolLabels = map[string]string{
 	industrial.ProtocolModbus: "Modbus",
+	industrial.ProtocolS7:     "S7comm",
+	industrial.ProtocolS7Plus: "S7comm-plus",
 }
 
 func industrialAlertMessage(msg industrial.Message, srcIP, dstIP string) string {
-	text := fmt.Sprintf("%s %s from %s to %s unit %d", protocolLabels[msg.Protocol], msg.FunctionName, srcIP, dstIP, msg.Unit)
+	text := fmt.Sprintf("%s %s from %s to %s", protocolLabels[msg.Protocol], msg.FunctionName, srcIP, dstIP)
+	if msg.HasUnit {
+		text += fmt.Sprintf(" unit %d", msg.Unit)
+	}
 	if msg.HasRange {
 		text += fmt.Sprintf(", address %d count %d", msg.Address, msg.Quantity)
 	}
@@ -201,6 +221,7 @@ func cloneIndustrial(in map[string]*models.IndustrialStats) map[string]*models.I
 		c.Operations = cloneStringIntMap(s.Operations)
 		c.Functions = cloneStringIntMap(s.Functions)
 		c.Peers = append([]string(nil), s.Peers...)
+		c.Details = cloneStringIntMap(s.Details)
 		out[proto] = &c
 	}
 	return out
