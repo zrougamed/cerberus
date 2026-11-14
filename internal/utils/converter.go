@@ -4,18 +4,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/zrougamed/cerberus/internal/models"
 )
 
 func Contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 func Max(a, b int) int {
@@ -368,7 +364,7 @@ func InspectDNSDetails(payload [models.L7PayloadSize]byte) (domain, queryType, r
 		}
 	}
 	if isResponse && anCount > 0 {
-		for i := 0; i < anCount; i++ {
+		for range anCount {
 			ansName, next, ok := parseDNSName(wire, offset)
 			if !ok || next+10 > len(wire) {
 				break

@@ -39,7 +39,7 @@ func getInterfaces() ([]string, error) {
 	}
 
 	var ifaces []string
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if line == "" {
 			continue
 		}

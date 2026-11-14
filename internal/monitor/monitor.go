@@ -3,6 +3,7 @@ package monitor
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"strings"
@@ -906,9 +907,7 @@ func cloneStringIntMap(m map[string]int) map[string]int {
 		return nil
 	}
 	out := make(map[string]int, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }
 
@@ -917,9 +916,7 @@ func cloneTrafficTypeIntMap(m map[models.TrafficType]int) map[models.TrafficType
 		return nil
 	}
 	out := make(map[models.TrafficType]int, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }
 

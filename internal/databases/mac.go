@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -86,9 +87,7 @@ func LoadOUIDatabase() map[string]string {
 	db, _ := NewOUIDatabase(false)
 	out := make(map[string]string, len(db.vendors))
 	db.mu.RLock()
-	for k, v := range db.vendors {
-		out[k] = v
-	}
+	maps.Copy(out, db.vendors)
 	db.mu.RUnlock()
 	return out
 }
@@ -435,7 +434,7 @@ func ParseMAC48(s string) ([6]byte, bool) {
 	if len(parts) != 6 {
 		return z, false
 	}
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		if len(parts[i]) == 0 || len(parts[i]) > 2 {
 			return z, false
 		}
@@ -561,10 +560,10 @@ func (db *OUIDatabase) SetOnlineMode(enabled bool) {
 	db.online = enabled
 }
 
-func (db *OUIDatabase) GetStats() map[string]interface{} {
+func (db *OUIDatabase) GetStats() map[string]any {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
-	return map[string]interface{}{
+	return map[string]any{
 		"total_vendors":  len(db.vendors),
 		"cached_lookups": len(db.cache),
 		"last_sync":      db.lastSync,

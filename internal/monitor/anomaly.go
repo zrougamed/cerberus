@@ -329,10 +329,7 @@ func buildAnomalySummary(c []models.AnomalyContribution) string {
 	if len(c) == 0 {
 		return ""
 	}
-	n := 3
-	if len(c) < n {
-		n = len(c)
-	}
+	n := min(len(c), 3)
 	parts := make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		parts = append(parts, fmt.Sprintf(

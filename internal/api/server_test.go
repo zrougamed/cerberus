@@ -123,7 +123,7 @@ func TestAlertsEndpointReturnsRecentAlertsFirst(t *testing.T) {
 		_ = os.Remove(dbPath)
 	}()
 
-	for i := 0; i < 201; i++ {
+	for range 201 {
 		mon.TrackEvent(&models.NetworkEvent{
 			EventType: models.EVENT_TYPE_DNS,
 			SrcMac:    [6]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01},
@@ -133,7 +133,7 @@ func TestAlertsEndpointReturnsRecentAlertsFirst(t *testing.T) {
 		})
 	}
 	time.Sleep(2 * time.Millisecond)
-	for i := 0; i < 501; i++ {
+	for range 501 {
 		mon.TrackEvent(&models.NetworkEvent{
 			EventType: models.EVENT_TYPE_TCP,
 			SrcMac:    [6]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x02},

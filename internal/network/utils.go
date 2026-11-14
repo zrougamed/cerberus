@@ -185,8 +185,8 @@ func detectGatewayLinux() net.IP {
 	// Fallback: try route command
 	output, err = exec.Command("route", "-n").Output()
 	if err == nil {
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(string(output), "\n")
+		for line := range lines {
 			if strings.HasPrefix(line, "0.0.0.0") {
 				fields := strings.Fields(line)
 				if len(fields) > 1 {
@@ -224,8 +224,8 @@ func detectGatewayWindows() net.IP {
 	}
 
 	// Parse Windows route output
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(output), "\n")
+	for line := range lines {
 		if strings.Contains(line, "0.0.0.0") {
 			fields := strings.Fields(line)
 			if len(fields) > 2 {

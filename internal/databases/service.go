@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -86,9 +87,7 @@ func LoadServiceDatabase() map[uint16]*models.ServiceInfo {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 	out := make(map[uint16]*models.ServiceInfo, len(db.services))
-	for k, v := range db.services {
-		out[k] = v
-	}
+	maps.Copy(out, db.services)
 	return out
 }
 
