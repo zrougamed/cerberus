@@ -108,7 +108,8 @@ struct {
 #define CNT_OTHER        4  // other ethertypes, or too short to parse
 #define CNT_RINGBUF_FULL 5  // events lost because the ring buffer was full
 #define CNT_POLICY_DROP  6  // packets dropped by an enforced policy rule
-#define CNT_MAX          7
+#define CNT_FILTER_LOST  7  // filter log events lost (log ring buffer full)
+#define CNT_MAX          8
 
 struct counter {
     __u64 packets;
@@ -279,6 +280,351 @@ static __always_inline int policy_check_v6(struct __sk_buff *skb, struct ipv6hdr
         drop |= policy_hit(skb, v);
 
     return policy_should_drop(skb, drop);
+}
+
+// ------------------- Filter chain (bpfilter-style rules) -------------------
+// An ordered list of rules. Every matcher set on a rule must match. The first
+// rule with a terminal verdict decides: ACCEPT (pass, skip the blocklists)
+// or DROP. CONTINUE counts/logs and goes on. User space writes the inactive
+// half of filter_rules, then flips filter_cfg in one 32-bit store, so a
+// packet never sees a half-written chain. Layouts must match internal/policy.
+#define MAX_FILTER_RULES 64
+
+#define FV_ACCEPT   1
+#define FV_DROP     2
+#define FV_CONTINUE 3
+
+#define FM_ICMP_TYPE (1 << 0)
+#define FM_ICMP_CODE (1 << 1)
+#define FM_SMAC      (1 << 2)
+#define FM_NOT_SRC   (1 << 3)
+#define FM_NOT_DST   (1 << 4)
+#define FM_NOT_SPORT (1 << 5)
+#define FM_NOT_DPORT (1 << 6)
+
+// Chain outcome for the classifier.
+#define FR_NONE   0  // no terminal match
+#define FR_ACCEPT 1  // pass, skip blocklists
+#define FR_DROP   2  // drop (enforcing)
+
+struct filter_rule {
+    __u32 slot;            // index into filter_counters / filter_log_state
+    __u8  verdict;         // FV_*
+    __u8  log;             // 1 = publish a log event on match
+    __u8  family;          // 0 any, 4 IPv4, 6 IPv6
+    __u8  l4proto;         // 0 any, else IP protocol number
+    __u32 ifindex;         // 0 any
+    __u16 sport_lo, sport_hi;  // sport_hi == 0: any
+    __u16 dport_lo, dport_hi;  // dport_hi == 0: any
+    __u8  tcp_any;         // match if (flags & tcp_any) != 0; 0 ignores
+    __u8  tcp_all;         // match if (flags & tcp_all) == tcp_all; 0 ignores
+    __u8  icmp_type;
+    __u8  icmp_code;
+    __u8  mflags;          // FM_*
+    __u8  src_plen;        // 0: any source address
+    __u8  dst_plen;        // 0: any destination address
+    __u8  pad0;
+    __u8  src[16];         // IPv4 uses the first 4 bytes
+    __u8  dst[16];
+    __u8  smac[6];
+    __u16 pad1;
+    __u32 pad2;            // explicit: keeps the u64 below 8-byte aligned
+    __u64 log_interval_ns; // minimum gap between two log events; 0 = every match
+};
+
+// Parsed once per packet.
+struct pkt_info {
+    __u32 ifindex;
+    __u32 len;
+    __u8  family;          // 0 (not IP), 4, 6
+    __u8  proto;
+    __u8  has_ports;       // TCP or UDP header present
+    __u8  tcp_flags;
+    __u8  has_icmp;
+    __u8  icmp_type;
+    __u8  icmp_code;
+    __u8  pad;
+    __u16 sport, dport;
+    __u8  src[16];
+    __u8  dst[16];
+    __u8  smac[6];
+};
+
+struct filter_log_event {
+    __u64 ts_ns;           // bpf_ktime_get_ns (monotonic)
+    __u32 slot;
+    __u32 ifindex;
+    __u32 pkt_len;
+    __u8  verdict;
+    __u8  enforced;        // 1 if a DROP verdict really dropped
+    __u8  family;
+    __u8  proto;
+    __u16 sport, dport;
+    __u8  tcp_flags;
+    __u8  icmp_type;
+    __u8  icmp_code;
+    __u8  pad;
+    __u8  src[16];
+    __u8  dst[16];
+    __u8  smac[6];
+    __u16 pad1;
+};
+
+// filter_cfg[0]: bit 16 selects the active half, low 16 bits are the count.
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u32);
+} filter_cfg SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 2 * MAX_FILTER_RULES);
+    __type(key, __u32);
+    __type(value, struct filter_rule);
+} filter_rules SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, MAX_FILTER_RULES);
+    __type(key, __u32);
+    __type(value, struct counter);
+} filter_counters SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, MAX_FILTER_RULES);
+    __type(key, __u32);
+    __type(value, __u64);
+} filter_log_state SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 64 * 1024);
+} filter_log SEC(".maps");
+
+static __always_inline void parse_pkt(struct __sk_buff *skb, struct ethhdr *eth, struct pkt_info *p)
+{
+    void *data_end = (void *)(long)skb->data_end;
+    void *l4 = 0;
+
+    p->ifindex = skb->ifindex;
+    p->len = skb->len;
+    __builtin_memcpy(p->smac, eth->h_source, 6);
+
+    __u16 proto = bpf_ntohs(eth->h_proto);
+    if (proto == ETH_P_IP) {
+        struct iphdr *iph = (void *)(eth + 1);
+        if ((void *)(iph + 1) > data_end)
+            return;
+        __u32 ihl = iph->ihl * 4;
+        if (ihl < sizeof(*iph))
+            return;
+        p->family = 4;
+        p->proto = iph->protocol;
+        __builtin_memcpy(p->src, &iph->saddr, 4);
+        __builtin_memcpy(p->dst, &iph->daddr, 4);
+        // Only the first fragment carries the L4 header.
+        if (bpf_ntohs(iph->frag_off) & 0x1FFF)
+            return;
+        l4 = (void *)iph + ihl;
+    } else if (proto == ETH_P_IPV6) {
+        struct ipv6hdr *ip6h = (void *)(eth + 1);
+        if ((void *)(ip6h + 1) > data_end)
+            return;
+        p->family = 6;
+        p->proto = ip6h->nexthdr;   // extension headers are not walked
+        __builtin_memcpy(p->src, &ip6h->saddr, 16);
+        __builtin_memcpy(p->dst, &ip6h->daddr, 16);
+        l4 = (void *)(ip6h + 1);
+    } else {
+        return;
+    }
+
+    if (p->proto == PROTO_TCP) {
+        struct tcphdr *th = l4;
+        if ((void *)(th + 1) > data_end)
+            return;
+        p->has_ports = 1;
+        p->sport = bpf_ntohs(th->source);
+        p->dport = bpf_ntohs(th->dest);
+        p->tcp_flags = ((__u8 *)th)[13];
+    } else if (p->proto == PROTO_UDP) {
+        struct udphdr *uh = l4;
+        if ((void *)(uh + 1) > data_end)
+            return;
+        p->has_ports = 1;
+        p->sport = bpf_ntohs(uh->source);
+        p->dport = bpf_ntohs(uh->dest);
+    } else if (p->proto == PROTO_ICMP || p->proto == PROTO_ICMPV6) {
+        __u8 *ih = l4;
+        if ((void *)(ih + 2) > data_end)
+            return;
+        p->has_icmp = 1;
+        p->icmp_type = ih[0];
+        p->icmp_code = ih[1];
+    }
+}
+
+// Bounded loop (kernel >= 5.3 verifies these without unrolling).
+static __always_inline int prefix_match(const __u8 *addr, const __u8 *pfx, __u8 plen)
+{
+    for (int i = 0; i < 16; i++) {
+        if (plen == 0)
+            return 1;
+        if (plen >= 8) {
+            if (addr[i] != pfx[i])
+                return 0;
+            plen -= 8;
+        } else {
+            __u8 mask = (__u8)(0xFF << (8 - plen));
+            return (addr[i] & mask) == (pfx[i] & mask);
+        }
+    }
+    return 1;
+}
+
+static __always_inline int port_match(__u16 port, __u16 lo, __u16 hi, int negate)
+{
+    if (hi == 0)
+        return 1;
+    int in = port >= lo && port <= hi;
+    return negate ? !in : in;
+}
+
+static __always_inline int rule_match(struct filter_rule *r, struct pkt_info *p)
+{
+    if (r->ifindex && r->ifindex != p->ifindex)
+        return 0;
+    if ((r->mflags & FM_SMAC) && __builtin_memcmp(r->smac, p->smac, 6) != 0)
+        return 0;
+    if (r->family && r->family != p->family)
+        return 0;
+    if (r->l4proto && r->l4proto != p->proto)
+        return 0;
+    if (r->src_plen || r->dst_plen) {
+        if (!p->family)
+            return 0;
+        if (r->src_plen) {
+            int m = prefix_match(p->src, r->src, r->src_plen);
+            if ((r->mflags & FM_NOT_SRC) ? m : !m)
+                return 0;
+        }
+        if (r->dst_plen) {
+            int m = prefix_match(p->dst, r->dst, r->dst_plen);
+            if ((r->mflags & FM_NOT_DST) ? m : !m)
+                return 0;
+        }
+    }
+    if (r->sport_hi || r->dport_hi) {
+        if (!p->has_ports)
+            return 0;
+        if (!port_match(p->sport, r->sport_lo, r->sport_hi, r->mflags & FM_NOT_SPORT))
+            return 0;
+        if (!port_match(p->dport, r->dport_lo, r->dport_hi, r->mflags & FM_NOT_DPORT))
+            return 0;
+    }
+    if (r->tcp_any || r->tcp_all) {
+        if (p->proto != PROTO_TCP || !p->has_ports)
+            return 0;
+        if (r->tcp_any && !(p->tcp_flags & r->tcp_any))
+            return 0;
+        if ((p->tcp_flags & r->tcp_all) != r->tcp_all)
+            return 0;
+    }
+    if (r->mflags & (FM_ICMP_TYPE | FM_ICMP_CODE)) {
+        if (!p->has_icmp)
+            return 0;
+        if ((r->mflags & FM_ICMP_TYPE) && p->icmp_type != r->icmp_type)
+            return 0;
+        if ((r->mflags & FM_ICMP_CODE) && p->icmp_code != r->icmp_code)
+            return 0;
+    }
+    return 1;
+}
+
+static __always_inline void filter_publish(struct __sk_buff *skb, struct filter_rule *r,
+                                           struct pkt_info *p, __u8 enforced)
+{
+    __u32 slot = r->slot;
+    __u64 now = bpf_ktime_get_ns();
+    __u64 *last = bpf_map_lookup_elem(&filter_log_state, &slot);
+    if (!last)
+        return;
+    if (r->log_interval_ns && *last && now - *last < r->log_interval_ns)
+        return;
+    *last = now;
+
+    struct filter_log_event *e = bpf_ringbuf_reserve(&filter_log, sizeof(*e), 0);
+    if (!e) {
+        count(CNT_FILTER_LOST, skb);
+        return;
+    }
+    e->ts_ns = now;
+    e->slot = slot;
+    e->ifindex = p->ifindex;
+    e->pkt_len = p->len;
+    e->verdict = r->verdict;
+    e->enforced = enforced;
+    e->family = p->family;
+    e->proto = p->proto;
+    e->sport = p->sport;
+    e->dport = p->dport;
+    e->tcp_flags = p->tcp_flags;
+    e->icmp_type = p->icmp_type;
+    e->icmp_code = p->icmp_code;
+    e->pad = 0;
+    __builtin_memcpy(e->src, p->src, 16);
+    __builtin_memcpy(e->dst, p->dst, 16);
+    __builtin_memcpy(e->smac, p->smac, 6);
+    e->pad1 = 0;
+    bpf_ringbuf_submit(e, 0);
+}
+
+static __always_inline int filter_chain(struct __sk_buff *skb, struct pkt_info *p)
+{
+    __u32 k0 = 0;
+    __u32 *cfg = bpf_map_lookup_elem(&filter_cfg, &k0);
+    if (!cfg)
+        return FR_NONE;
+    __u32 n = *cfg & 0xFFFF;
+    __u32 base = (*cfg & 0x10000) ? MAX_FILTER_RULES : 0;
+    int enforcing = policy_enforcing();
+
+    for (__u32 i = 0; i < MAX_FILTER_RULES; i++) {
+        if (i >= n)
+            break;
+        __u32 idx = base + i;
+        struct filter_rule *r = bpf_map_lookup_elem(&filter_rules, &idx);
+        if (!r)
+            break;
+        if (!rule_match(r, p))
+            continue;
+
+        __u32 slot = r->slot;
+        struct counter *c = bpf_map_lookup_elem(&filter_counters, &slot);
+        if (c) {
+            c->packets++;
+            c->bytes += skb->len;
+        }
+
+        __u8 enforced = r->verdict == FV_DROP && enforcing;
+        if (r->log)
+            filter_publish(skb, r, p, enforced);
+
+        if (r->verdict == FV_ACCEPT)
+            return FR_ACCEPT;
+        if (r->verdict == FV_DROP) {
+            if (enforced) {
+                count(CNT_POLICY_DROP, skb);
+                return FR_DROP;
+            }
+            return FR_NONE; // dry run: decided, but the packet passes
+        }
+        // FV_CONTINUE: keep evaluating
+    }
+    return FR_NONE;
 }
 
 // Records a lost event and lets the packet through unchanged.
@@ -693,8 +1039,16 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         return CERB_PASS;
     }
 
+    // Policy: the ordered filter chain first (an ACCEPT match is an
+    // exception that also skips the blocklists), then the blocklist sets.
+    struct pkt_info pi = {};
+    parse_pkt(skb, eth, &pi);
+    int chain = filter_chain(skb, &pi);
+    if (chain == FR_DROP) return CERB_DROP;
+    int skip_sets = chain == FR_ACCEPT;
+
     // Quarantined devices: drop every frame from the MAC, ARP included.
-    if (policy_check_mac(skb, eth)) return CERB_DROP;
+    if (!skip_sets && policy_check_mac(skb, eth)) return CERB_DROP;
 
     __u16 proto = bpf_ntohs(eth->h_proto);
 
@@ -706,7 +1060,7 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         count(CNT_IPV4, skb);
         struct iphdr *iph = (void *)(eth + 1);
         if ((void *)(iph + 1) > data_end) return CERB_PASS;
-        if (policy_check_v4(skb, iph)) return CERB_DROP;
+        if (!skip_sets && policy_check_v4(skb, iph)) return CERB_DROP;
 
         if (iph->protocol == PROTO_TCP) return handle_tcp(skb, eth, iph);
         if (iph->protocol == PROTO_UDP) return handle_udp(skb, eth, iph);
@@ -716,7 +1070,7 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         count(CNT_IPV6, skb);
         struct ipv6hdr *ip6h = (void *)(eth + 1);
         if ((void *)(ip6h + 1) > data_end) return CERB_PASS;
-        if (policy_check_v6(skb, ip6h)) return CERB_DROP;
+        if (!skip_sets && policy_check_v6(skb, ip6h)) return CERB_DROP;
         if (ip6h->nexthdr == PROTO_TCP) return handle_tcp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_UDP) return handle_udp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_ICMPV6) return handle_icmp6(skb, eth, ip6h);

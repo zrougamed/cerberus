@@ -13,6 +13,7 @@ const (
 	idxOther
 	idxRingbufFull
 	idxPolicyDrop
+	idxFilterLogLost
 	numCounters
 )
 
@@ -35,6 +36,8 @@ type Snapshot struct {
 	RingbufFull Counter `json:"ringbuf_full"`
 	// PolicyDropped counts packets dropped by an enforced policy rule.
 	PolicyDropped Counter `json:"policy_dropped"`
+	// FilterLogLost counts filter log events lost to a full log ring buffer.
+	FilterLogLost Counter `json:"filter_log_lost"`
 }
 
 // PerCPULookup fetches one key of a per-CPU map into a slice with one entry
@@ -74,5 +77,6 @@ func (r *Reader) Read() (Snapshot, error) {
 		Other:         sums[idxOther],
 		RingbufFull:   sums[idxRingbufFull],
 		PolicyDropped: sums[idxPolicyDrop],
+		FilterLogLost: sums[idxFilterLogLost],
 	}, nil
 }

@@ -61,16 +61,20 @@ type RuleStatus struct {
 
 // Status is a point-in-time view of the policy.
 type Status struct {
-	Mode           Mode         `json:"mode"`
-	KernelAttached bool         `json:"kernel_attached"`
-	MaxRules       int          `json:"max_rules"`
-	Rules          []RuleStatus `json:"rules"`
-	Audit          []AuditEntry `json:"audit"`
+	Mode           Mode           `json:"mode"`
+	KernelAttached bool           `json:"kernel_attached"`
+	MaxRules       int            `json:"max_rules"`
+	Rules          []RuleStatus   `json:"rules"`
+	MaxFilters     int            `json:"max_filters"`
+	Filters        []FilterStatus `json:"filters"`
+	Audit          []AuditEntry   `json:"audit"`
 }
 
 // Hit reports that a rule matched traffic since the previous report.
+// Exactly one of Rule (blocklist) and Filter is meaningful.
 type Hit struct {
 	Rule     Rule
+	Filter   *FilterRule
 	Delta    Counter // packets/bytes since the last report
 	Total    Counter
 	Enforced bool // true when the packets were actually dropped
@@ -83,9 +87,10 @@ type entry struct {
 }
 
 type stateFile struct {
-	Version int    `json:"version"`
-	Mode    Mode   `json:"mode"`
-	Rules   []Rule `json:"rules"`
+	Version int          `json:"version"`
+	Mode    Mode         `json:"mode"`
+	Rules   []Rule       `json:"rules"`
+	Filters []FilterRule `json:"filters,omitempty"` // in evaluation order
 }
 
 const maxAudit = 200
@@ -100,6 +105,10 @@ type Engine struct {
 	slots    [MaxRules]bool
 	kernel   Kernel
 	audit    []AuditEntry
+
+	filters     []*filterEntry // evaluation order
+	filterSlots [MaxFilterRules]bool
+	logs        []FilterLogEntry // newest last, capped at maxLogs
 
 	lastPackets map[string]uint64
 	lastReport  map[string]time.Time
@@ -160,12 +169,20 @@ func Open(opts Options) (*Engine, error) {
 			return nil, fmt.Errorf("policy: %s: rule %q: %w", opts.StatePath, r.ID, err)
 		}
 	}
+	for _, f := range st.Filters {
+		if f.ExpiresAt != nil && !now.Before(*f.ExpiresAt) {
+			continue
+		}
+		if err := e.loadFilterLocked(f); err != nil {
+			return nil, fmt.Errorf("policy: %s: filter %q: %w", opts.StatePath, f.ID, err)
+		}
+	}
 	return e, nil
 }
 
 // insertLocked adds a rule to the in-memory index and assigns a slot.
 func (e *Engine) insertLocked(r Rule, t target) error {
-	if _, dup := e.rules[r.ID]; dup {
+	if _, dup := e.rules[r.ID]; dup || e.filterIndexLocked(r.ID) >= 0 {
 		return fmt.Errorf("%w: id %q exists", ErrConflict, r.ID)
 	}
 	if other, dup := e.byTarget[t.key()]; dup {
@@ -214,6 +231,14 @@ func (e *Engine) Bind(k Kernel) error {
 		if err := put(k, en); err != nil {
 			return fmt.Errorf("policy: load rule %q: %w", en.rule.ID, err)
 		}
+	}
+	for _, f := range e.filters {
+		if err := k.ResetFilterCounter(f.slot); err != nil {
+			return fmt.Errorf("policy: reset filter counter: %w", err)
+		}
+	}
+	if err := k.WriteChain(e.chainLocked()); err != nil {
+		return fmt.Errorf("policy: load filter chain: %w", err)
 	}
 	if err := k.SetEnforce(e.mode == ModeEnforce); err != nil {
 		return fmt.Errorf("policy: set mode: %w", err)
@@ -273,7 +298,7 @@ func (e *Engine) Add(in RuleInput, actor string) (Rule, error) {
 		return Rule{}, fmt.Errorf("%w (%s); set force to override", ErrProtected, p)
 	}
 	if r.ID == "" {
-		for r.ID = newRuleID(); e.rules[r.ID] != nil; r.ID = newRuleID() {
+		for r.ID = newRuleID(); e.idTakenLocked(r.ID); r.ID = newRuleID() {
 		}
 	}
 	now := e.opts.Now().UTC()
@@ -388,6 +413,14 @@ func (e *Engine) Expire() []Rule {
 			out = append(out, en.rule)
 		}
 	}
+	for _, f := range slices.Clone(e.filters) {
+		if f.rule.ExpiresAt == nil || now.Before(*f.rule.ExpiresAt) {
+			continue
+		}
+		if err := e.removeFilterLocked(f.rule.ID, "ttl", "expire"); err == nil {
+			out = append(out, Rule{ID: f.rule.ID, Comment: f.rule.Comment, ExpiresAt: f.rule.ExpiresAt})
+		}
+	}
 	return out
 }
 
@@ -416,6 +449,15 @@ func (e *Engine) Status() Status {
 		}
 		return st.Rules[i].ID < st.Rules[j].ID
 	})
+	st.MaxFilters = MaxFilterRules
+	st.Filters = make([]FilterStatus, 0, len(e.filters))
+	for i, f := range e.filters {
+		fs := FilterStatus{FilterRule: f.rule, Position: i, Summary: f.rule.Match.Summary()}
+		if e.kernel != nil {
+			fs.Counters, _ = e.kernel.ReadFilterCounter(f.slot)
+		}
+		st.Filters = append(st.Filters, fs)
+	}
 	return st
 }
 
@@ -451,6 +493,30 @@ func (e *Engine) PollHits() []Hit {
 		e.lastPackets[id] = c.Packets
 		e.lastReport[id] = now
 	}
+	for _, f := range e.filters {
+		c, err := e.kernel.ReadFilterCounter(f.slot)
+		if err != nil {
+			continue
+		}
+		id := f.rule.ID
+		last := e.lastPackets[id]
+		if c.Packets <= last {
+			continue
+		}
+		if t, ok := e.lastReport[id]; ok && now.Sub(t) < e.opts.HitRealert {
+			continue
+		}
+		fr := f.rule
+		hits = append(hits, Hit{
+			Rule:     Rule{ID: id},
+			Filter:   &fr,
+			Delta:    Counter{Packets: c.Packets - last},
+			Total:    c,
+			Enforced: fr.Verdict == VerdictDrop && e.mode == ModeEnforce,
+		})
+		e.lastPackets[id] = c.Packets
+		e.lastReport[id] = now
+	}
 	sort.Slice(hits, func(i, j int) bool { return hits[i].Rule.ID < hits[j].Rule.ID })
 	return hits
 }
@@ -472,6 +538,9 @@ func (e *Engine) saveLocked() error {
 		st.Rules = append(st.Rules, en.rule)
 	}
 	sort.Slice(st.Rules, func(i, j int) bool { return st.Rules[i].ID < st.Rules[j].ID })
+	for _, f := range e.filters {
+		st.Filters = append(st.Filters, f.rule)
+	}
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err

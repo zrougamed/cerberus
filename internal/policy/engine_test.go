@@ -18,15 +18,32 @@ type fakeKernel struct {
 	prefixes map[netip.Prefix]value
 	counters map[uint32]Counter
 	failPut  error
+
+	chain       []filterValue
+	fcounters   map[uint32]Counter
+	failChain   error
+	chainWrites int
 }
 
 func newFakeKernel() *fakeKernel {
 	return &fakeKernel{
-		macs:     map[string]value{},
-		prefixes: map[netip.Prefix]value{},
-		counters: map[uint32]Counter{},
+		macs:      map[string]value{},
+		prefixes:  map[netip.Prefix]value{},
+		counters:  map[uint32]Counter{},
+		fcounters: map[uint32]Counter{},
 	}
 }
+
+func (f *fakeKernel) WriteChain(v []filterValue) error {
+	if f.failChain != nil {
+		return f.failChain
+	}
+	f.chain = append([]filterValue(nil), v...)
+	f.chainWrites++
+	return nil
+}
+func (f *fakeKernel) ReadFilterCounter(s uint32) (Counter, error) { return f.fcounters[s], nil }
+func (f *fakeKernel) ResetFilterCounter(s uint32) error           { delete(f.fcounters, s); return nil }
 
 func (f *fakeKernel) SetEnforce(on bool) error { f.enforce = on; return nil }
 func (f *fakeKernel) PutMAC(m net.HardwareAddr, v value) error {

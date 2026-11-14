@@ -42,6 +42,11 @@ type Kernel interface {
 	DeletePrefix(p netip.Prefix) error
 	ReadCounter(slot uint32) (Counter, error)
 	ResetCounter(slot uint32) error
+
+	// WriteChain replaces the whole filter chain atomically.
+	WriteChain(rules []filterValue) error
+	ReadFilterCounter(slot uint32) (Counter, error)
+	ResetFilterCounter(slot uint32) error
 }
 
 func encode(r Rule, slot uint32) value {
@@ -82,11 +87,16 @@ type perCPUCounter struct {
 
 // BPFMaps is the production Kernel backed by the loaded collection.
 type BPFMaps struct {
-	cfg, mac, v4, v6, counters *ebpf.Map
+	cfg, mac, v4, v6, counters             *ebpf.Map
+	filterCfg, filterRules, filterCounters *ebpf.Map
+	activeHalf                             uint32 // 0 or 1; the half packets read
 }
 
 // MapNames lists the maps NewBPFMaps needs from the collection.
-var MapNames = []string{"policy_cfg", "policy_mac", "policy_v4", "policy_v6", "policy_counters"}
+var MapNames = []string{
+	"policy_cfg", "policy_mac", "policy_v4", "policy_v6", "policy_counters",
+	"filter_cfg", "filter_rules", "filter_counters",
+}
 
 // NewBPFMaps picks the policy maps out of a loaded collection.
 func NewBPFMaps(maps map[string]*ebpf.Map) (*BPFMaps, error) {
@@ -98,7 +108,38 @@ func NewBPFMaps(maps map[string]*ebpf.Map) (*BPFMaps, error) {
 	return &BPFMaps{
 		cfg: maps["policy_cfg"], mac: maps["policy_mac"], v4: maps["policy_v4"],
 		v6: maps["policy_v6"], counters: maps["policy_counters"],
+		filterCfg: maps["filter_cfg"], filterRules: maps["filter_rules"],
+		filterCounters: maps["filter_counters"],
 	}, nil
+}
+
+// WriteChain writes the inactive half of filter_rules, then publishes it by
+// flipping filter_cfg in one 32-bit update (bit 16 = half, low bits = count).
+func (b *BPFMaps) WriteChain(rules []filterValue) error {
+	if len(rules) > MaxFilterRules {
+		return fmt.Errorf("chain has %d rules, max %d", len(rules), MaxFilterRules)
+	}
+	next := 1 - b.activeHalf
+	base := next * MaxFilterRules
+	for i, r := range rules {
+		if err := b.filterRules.Update(base+uint32(i), r, ebpf.UpdateAny); err != nil {
+			return fmt.Errorf("write filter rule %d: %w", i, err)
+		}
+	}
+	cfg := next<<16 | uint32(len(rules))
+	if err := b.filterCfg.Update(uint32(0), cfg, ebpf.UpdateAny); err != nil {
+		return fmt.Errorf("publish filter chain: %w", err)
+	}
+	b.activeHalf = next
+	return nil
+}
+
+func (b *BPFMaps) ReadFilterCounter(slot uint32) (Counter, error) {
+	return sumPerCPU(b.filterCounters, slot)
+}
+
+func (b *BPFMaps) ResetFilterCounter(slot uint32) error {
+	return resetPerCPU(b.filterCounters, slot)
 }
 
 func (b *BPFMaps) SetEnforce(on bool) error {
@@ -138,8 +179,16 @@ func (b *BPFMaps) DeletePrefix(p netip.Prefix) error {
 }
 
 func (b *BPFMaps) ReadCounter(slot uint32) (Counter, error) {
+	return sumPerCPU(b.counters, slot)
+}
+
+func (b *BPFMaps) ResetCounter(slot uint32) error {
+	return resetPerCPU(b.counters, slot)
+}
+
+func sumPerCPU(m *ebpf.Map, slot uint32) (Counter, error) {
 	var perCPU []perCPUCounter
-	if err := b.counters.Lookup(slot, &perCPU); err != nil {
+	if err := m.Lookup(slot, &perCPU); err != nil {
 		return Counter{}, err
 	}
 	var c Counter
@@ -150,12 +199,12 @@ func (b *BPFMaps) ReadCounter(slot uint32) (Counter, error) {
 	return c, nil
 }
 
-func (b *BPFMaps) ResetCounter(slot uint32) error {
+func resetPerCPU(m *ebpf.Map, slot uint32) error {
 	n, err := ebpf.PossibleCPU()
 	if err != nil {
 		return err
 	}
-	return b.counters.Update(slot, make([]perCPUCounter, n), ebpf.UpdateAny)
+	return m.Update(slot, make([]perCPUCounter, n), ebpf.UpdateAny)
 }
 
 // prefixLen is the LPM key length; netip guarantees 0..128 for valid

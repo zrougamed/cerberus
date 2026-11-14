@@ -9,7 +9,12 @@ import (
 	"testing"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/ringbuf"
 )
+
+func ringbufReader(coll *ebpf.Collection) (*ringbuf.Reader, error) {
+	return ringbuf.NewReader(coll.Maps["filter_log"])
+}
 
 // End-to-end check of the classifier's policy code: load build/cerberus_tc.o,
 // drive the engine against the real maps, and run crafted frames through the
@@ -185,11 +190,15 @@ func TestObjectPolicyMapsMatchLayout(t *testing.T) {
 		typ        ebpf.MapType
 		key, value uint32
 	}{
-		"policy_cfg":      {ebpf.Array, 4, 4},
-		"policy_mac":      {ebpf.Hash, uint32(binary.Size(macKey{})), uint32(binary.Size(value{}))},
-		"policy_v4":       {ebpf.LPMTrie, uint32(binary.Size(v4Key{})), uint32(binary.Size(value{}))},
-		"policy_v6":       {ebpf.LPMTrie, uint32(binary.Size(v6Key{})), uint32(binary.Size(value{}))},
-		"policy_counters": {ebpf.PerCPUArray, 4, uint32(binary.Size(perCPUCounter{}))},
+		"policy_cfg":       {ebpf.Array, 4, 4},
+		"policy_mac":       {ebpf.Hash, uint32(binary.Size(macKey{})), uint32(binary.Size(value{}))},
+		"policy_v4":        {ebpf.LPMTrie, uint32(binary.Size(v4Key{})), uint32(binary.Size(value{}))},
+		"policy_v6":        {ebpf.LPMTrie, uint32(binary.Size(v6Key{})), uint32(binary.Size(value{}))},
+		"policy_counters":  {ebpf.PerCPUArray, 4, uint32(binary.Size(perCPUCounter{}))},
+		"filter_cfg":       {ebpf.Array, 4, 4},
+		"filter_rules":     {ebpf.Array, 4, uint32(binary.Size(filterValue{}))},
+		"filter_counters":  {ebpf.PerCPUArray, 4, uint32(binary.Size(perCPUCounter{}))},
+		"filter_log_state": {ebpf.Array, 4, 8},
 	}
 	for name, w := range want {
 		m := spec.Maps[name]
@@ -201,8 +210,122 @@ func TestObjectPolicyMapsMatchLayout(t *testing.T) {
 			t.Errorf("%s: type=%v key=%d value=%d, want type=%v key=%d value=%d",
 				name, m.Type, m.KeySize, m.ValueSize, w.typ, w.key, w.value)
 		}
-		if name != "policy_cfg" && m.MaxEntries != MaxRules {
-			t.Errorf("%s: max_entries %d, want %d", name, m.MaxEntries, MaxRules)
+		wantMax := uint32(MaxRules)
+		switch name {
+		case "policy_cfg", "filter_cfg":
+			wantMax = 1
+		case "filter_rules":
+			wantMax = 2 * MaxFilterRules
+		case "filter_counters", "filter_log_state":
+			wantMax = MaxFilterRules
 		}
+		if m.MaxEntries != wantMax {
+			t.Errorf("%s: max_entries %d, want %d", name, m.MaxEntries, wantMax)
+		}
+	}
+}
+
+// udpFrame builds Ethernet + IPv4 + UDP to dport.
+func udpFrame(srcMAC string, src, dst netip.Addr, dport uint16) []byte {
+	b := frame(srcMAC, src, dst)
+	// Rewrite protocol to UDP and the L4 header to an 8-byte UDP header.
+	b[14+9] = 17
+	l4 := b[14+20:]
+	binary.BigEndian.PutUint16(l4[2:], dport)
+	return b
+}
+
+func TestBPF_FilterChain(t *testing.T) {
+	coll, prog := loadClassifier(t)
+	k, err := NewBPFMaps(coll.Maps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := openTest(t, Options{})
+	if err := e.Bind(k); err != nil {
+		t.Fatal(err)
+	}
+	logs, err := ringbufReader(coll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logs.Close()
+
+	a := netip.MustParseAddr
+	host := "02:00:00:00:00:10"
+	lan, admin, outside := a("10.0.0.5"), a("10.0.0.99"), a("203.0.113.9")
+	add := func(in FilterInput) {
+		t.Helper()
+		in.Force = true
+		if _, err := e.AddFilter(in, "test"); err != nil {
+			t.Fatalf("add %+v: %v", in, err)
+		}
+	}
+	// 1. allow the admin box to SSH anywhere (exception, also skips sets)
+	add(FilterInput{ID: "admin-ssh", Verdict: "accept", Match: FilterMatch{Protocol: "tcp", Src: admin.String(), DstPort: "22"}})
+	// 2. count and log every SYN to 22
+	add(FilterInput{ID: "ssh-syn", Verdict: "continue", Log: true, Match: FilterMatch{Protocol: "tcp", DstPort: "22", TCPFlagsAll: []string{"syn"}}})
+	// 3. drop all other SSH
+	add(FilterInput{ID: "ssh-drop", Verdict: "drop", Match: FilterMatch{Protocol: "tcp", DstPort: "22"}})
+	// 4. drop DNS to anything but the LAN resolver
+	add(FilterInput{ID: "dns-only-lan", Verdict: "drop", Match: FilterMatch{Protocol: "udp", DstPort: "53", Dst: "10.0.0.53", DstNot: true}})
+	// blocklist set entry the accept rule must bypass
+	if _, err := e.Add(RuleInput{ID: "bl-admin", Action: "drop", CIDR: admin.String(), Direction: "src", Force: true}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetMode(ModeEnforce, "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	sshFrom := func(src netip.Addr) []byte {
+		b := frame(host, src, lan)
+		binary.BigEndian.PutUint16(b[14+20+2:], 22)
+		return b
+	}
+	cases := []struct {
+		name string
+		pkt  []byte
+		want uint32
+	}{
+		{"admin ssh accepted despite blocklist", sshFrom(admin), verdictNext},
+		{"other ssh dropped", sshFrom(outside), verdictDrop},
+		{"https untouched", frame(host, lan, outside), verdictNext},
+		{"dns to lan resolver ok", udpFrame(host, lan, a("10.0.0.53"), 53), verdictNext},
+		{"dns elsewhere dropped", udpFrame(host, lan, a("1.1.1.1"), 53), verdictDrop},
+	}
+	for _, tc := range cases {
+		if got := run(t, prog, tc.pkt); got != tc.want {
+			t.Errorf("%s: verdict %#x, want %#x", tc.name, got, tc.want)
+		}
+	}
+
+	byID := map[string]uint64{}
+	for _, f := range e.Status().Filters {
+		byID[f.ID] = f.Counters.Packets
+	}
+	for id, n := range map[string]uint64{"admin-ssh": 1, "ssh-syn": 1, "ssh-drop": 1, "dns-only-lan": 1} {
+		if byID[id] != n {
+			t.Errorf("filter %s: %d packets, want %d", id, byID[id], n)
+		}
+	}
+
+	// The SYN logged by ssh-syn reaches user space.
+	rec, err := logs.Read()
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if err := e.RecordLog(rec.RawSample); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Logs(1); len(got) != 1 || got[0].RuleID != "ssh-syn" || got[0].DstPort != 22 || got[0].TCPFlags != "syn" {
+		t.Fatalf("log entry: %+v", got)
+	}
+
+	// Moving the drop above the accept takes effect immediately.
+	if err := e.MoveFilter("ssh-drop", 0, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(t, prog, sshFrom(admin)); got != verdictDrop {
+		t.Fatalf("after move: verdict %#x, want drop", got)
 	}
 }
