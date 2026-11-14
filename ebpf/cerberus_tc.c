@@ -93,6 +93,44 @@ struct {
     __uint(max_entries, 256 * 1024);
 } events SEC(".maps");
 
+// Kernel-side counters, read by user space for /metrics. Indexes must match
+// internal/kstats. Per-CPU so the hot path needs no atomics.
+#define CNT_TOTAL        0  // every packet seen by the classifier
+#define CNT_ARP          1
+#define CNT_IPV4         2
+#define CNT_IPV6         3
+#define CNT_OTHER        4  // other ethertypes, or too short to parse
+#define CNT_RINGBUF_FULL 5  // events lost because the ring buffer was full
+#define CNT_MAX          6
+
+struct counter {
+    __u64 packets;
+    __u64 bytes;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, CNT_MAX);
+    __type(key, __u32);
+    __type(value, struct counter);
+} counters SEC(".maps");
+
+static __always_inline void count(__u32 idx, struct __sk_buff *skb)
+{
+    struct counter *c = bpf_map_lookup_elem(&counters, &idx);
+    if (c) {
+        c->packets++;
+        c->bytes += skb->len;
+    }
+}
+
+// Records a lost event and lets the packet through unchanged.
+static __always_inline int ringbuf_full(struct __sk_buff *skb)
+{
+    count(CNT_RINGBUF_FULL, skb);
+    return TC_ACT_OK;
+}
+
 // Helper to check if payload looks like HTTP
 static __always_inline int is_http_request(__u8 *payload, void *data_end)
 {
@@ -146,7 +184,7 @@ static __always_inline int handle_arp(struct __sk_buff *skb, struct ethhdr *eth)
         return TC_ACT_OK;
 
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) return TC_ACT_OK;
+    if (!e) return ringbuf_full(skb);
 
     e->event_type = EVENT_TYPE_ARP;
     __builtin_memcpy(e->src_mac, eth->h_source, 6);
@@ -183,7 +221,7 @@ static __always_inline int handle_tcp(struct __sk_buff *skb, struct ethhdr *eth,
     __u16 dst_port = bpf_ntohs(tcph->dest);
     
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) return TC_ACT_OK;
+    if (!e) return ringbuf_full(skb);
 
     // Default to TCP event type
     e->event_type = EVENT_TYPE_TCP;
@@ -266,7 +304,7 @@ static __always_inline int handle_udp(struct __sk_buff *skb, struct ethhdr *eth,
     __u16 dst_port = bpf_ntohs(udph->dest);
     
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) return TC_ACT_OK;
+    if (!e) return ringbuf_full(skb);
 
     // Default to UDP event type
     e->event_type = EVENT_TYPE_UDP;
@@ -326,7 +364,7 @@ static __always_inline int handle_icmp(struct __sk_buff *skb, struct ethhdr *eth
     if ((void *)(icmph + 1) > data_end) return TC_ACT_OK;
 
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) return TC_ACT_OK;
+    if (!e) return ringbuf_full(skb);
 
     e->event_type = EVENT_TYPE_ICMP;
     __builtin_memcpy(e->src_mac, eth->h_source, 6);
@@ -361,7 +399,7 @@ static __always_inline int handle_tcp6(struct __sk_buff *skb, struct ethhdr *eth
     __u16 src_port = bpf_ntohs(tcph->source);
     __u16 dst_port = bpf_ntohs(tcph->dest);
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) return TC_ACT_OK;
+    if (!e) return ringbuf_full(skb);
     e->event_type = EVENT_TYPE_TCP;
     __builtin_memcpy(e->src_mac, eth->h_source, 6);
     __builtin_memcpy(e->dst_mac, eth->h_dest, 6);
@@ -417,7 +455,7 @@ static __always_inline int handle_udp6(struct __sk_buff *skb, struct ethhdr *eth
     __u16 src_port = bpf_ntohs(udph->source);
     __u16 dst_port = bpf_ntohs(udph->dest);
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) return TC_ACT_OK;
+    if (!e) return ringbuf_full(skb);
     e->event_type = EVENT_TYPE_UDP;
     if (src_port == DNS_PORT || dst_port == DNS_PORT) e->event_type = EVENT_TYPE_DNS;
     __builtin_memcpy(e->src_mac, eth->h_source, 6);
@@ -460,7 +498,7 @@ static __always_inline int handle_icmp6(struct __sk_buff *skb, struct ethhdr *et
     struct icmp_hdr *icmph = (void *)(ip6h + 1);
     if ((void *)(icmph + 1) > data_end) return TC_ACT_OK;
     struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) return TC_ACT_OK;
+    if (!e) return ringbuf_full(skb);
     e->event_type = EVENT_TYPE_ICMP;
     __builtin_memcpy(e->src_mac, eth->h_source, 6);
     __builtin_memcpy(e->dst_mac, eth->h_dest, 6);
@@ -492,12 +530,20 @@ int xdp_arp_monitor(struct __sk_buff *skb)
     void *data = (void *)(long)skb->data;
     struct ethhdr *eth = data;
 
-    if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
+    count(CNT_TOTAL, skb);
+    if ((void *)(eth + 1) > data_end) {
+        count(CNT_OTHER, skb);
+        return TC_ACT_OK;
+    }
 
     __u16 proto = bpf_ntohs(eth->h_proto);
 
-    if (proto == ETH_P_ARP) return handle_arp(skb, eth);
+    if (proto == ETH_P_ARP) {
+        count(CNT_ARP, skb);
+        return handle_arp(skb, eth);
+    }
     if (proto == ETH_P_IP) {
+        count(CNT_IPV4, skb);
         struct iphdr *iph = (void *)(eth + 1);
         if ((void *)(iph + 1) > data_end) return TC_ACT_OK;
 
@@ -506,13 +552,16 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         if (iph->protocol == PROTO_ICMP) return handle_icmp(skb, eth, iph);
     }
     if (proto == ETH_P_IPV6) {
+        count(CNT_IPV6, skb);
         struct ipv6hdr *ip6h = (void *)(eth + 1);
         if ((void *)(ip6h + 1) > data_end) return TC_ACT_OK;
         if (ip6h->nexthdr == PROTO_TCP) return handle_tcp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_UDP) return handle_udp6(skb, eth, ip6h);
         if (ip6h->nexthdr == PROTO_ICMPV6) return handle_icmp6(skb, eth, ip6h);
+        return TC_ACT_OK;
     }
 
+    count(CNT_OTHER, skb);
     return TC_ACT_OK;
 }
 

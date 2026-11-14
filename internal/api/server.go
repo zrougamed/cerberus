@@ -4,12 +4,15 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/version"
@@ -20,10 +23,22 @@ var webFS embed.FS
 
 type Server struct {
 	monitor *monitor.NetworkMonitor
+	// Set once the BPF collection is loaded, which happens after the HTTP
+	// server has started, hence atomic.
+	kernelStats atomic.Pointer[kernelStatsFunc]
 }
+
+type kernelStatsFunc func() (kstats.Snapshot, error)
 
 func NewServer(mon *monitor.NetworkMonitor) *Server {
 	return &Server{monitor: mon}
+}
+
+// SetKernelStats registers the source of the BPF-side counters exported in
+// /metrics. Without it those series are omitted.
+func (s *Server) SetKernelStats(fn func() (kstats.Snapshot, error)) {
+	f := kernelStatsFunc(fn)
+	s.kernelStats.Store(&f)
 }
 
 func (s *Server) Handler() (http.Handler, error) {
@@ -249,6 +264,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "cerberus_packets_total{protocol=\"tls\"} %d\n", pkt["tls"])
 	fmt.Fprintln(w)
 
+	s.writeKernelMetrics(w)
+
 	fmt.Fprintln(w, "# HELP cerberus_devices_total Number of tracked devices.")
 	fmt.Fprintln(w, "# TYPE cerberus_devices_total gauge")
 	fmt.Fprintf(w, "cerberus_devices_total %d\n\n", len(devices))
@@ -293,6 +310,44 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "cerberus_dns_correlated_connections_total{mac=\"%s\",domain=\"%s\"} %d\n", escapeLabelValue(d.MAC), escapeLabelValue(domain), count)
 		}
 	}
+}
+
+// writeKernelMetrics exports the classifier's own counters. They count every
+// packet the hook saw, including ones that produced no event, and the events
+// lost to a full ring buffer.
+func (s *Server) writeKernelMetrics(w io.Writer) {
+	fn := s.kernelStats.Load()
+	if fn == nil {
+		return
+	}
+	snap, err := (*fn)()
+	if err != nil {
+		fmt.Fprintf(w, "# kernel counters unavailable: %s\n\n", strings.ReplaceAll(err.Error(), "\n", " "))
+		return
+	}
+	classes := []struct {
+		name string
+		c    kstats.Counter
+	}{
+		{"total", snap.Total},
+		{"arp", snap.ARP},
+		{"ipv4", snap.IPv4},
+		{"ipv6", snap.IPv6},
+		{"other", snap.Other},
+	}
+	fmt.Fprintln(w, "# HELP cerberus_kernel_packets_total Packets seen by the TC hook, by L3 class.")
+	fmt.Fprintln(w, "# TYPE cerberus_kernel_packets_total counter")
+	for _, c := range classes {
+		fmt.Fprintf(w, "cerberus_kernel_packets_total{class=\"%s\"} %d\n", c.name, c.c.Packets)
+	}
+	fmt.Fprintln(w, "# HELP cerberus_kernel_bytes_total Bytes seen by the TC hook, by L3 class.")
+	fmt.Fprintln(w, "# TYPE cerberus_kernel_bytes_total counter")
+	for _, c := range classes {
+		fmt.Fprintf(w, "cerberus_kernel_bytes_total{class=\"%s\"} %d\n", c.name, c.c.Bytes)
+	}
+	fmt.Fprintln(w, "# HELP cerberus_ringbuf_dropped_events_total Events lost because the ring buffer was full.")
+	fmt.Fprintln(w, "# TYPE cerberus_ringbuf_dropped_events_total counter")
+	fmt.Fprintf(w, "cerberus_ringbuf_dropped_events_total %d\n\n", snap.RingbufFull.Packets)
 }
 
 func escapeLabelValue(value string) string {

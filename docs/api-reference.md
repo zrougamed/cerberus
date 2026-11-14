@@ -22,6 +22,21 @@ Errors: non-GET returns **405** with plain text body `method not allowed`.
 |------|-------------|
 | `GET /metrics` | Prometheus text exposition format; scrapes monitor packet counters and related gauges/counters. Includes `cerberus_build_info{commit="…",date="…"} 1` for build provenance. |
 
+### Kernel-side counters
+
+The TC classifier keeps its own per-CPU counters (the `counters` map in
+`ebpf/cerberus_tc.c`). They count every packet the hook sees, including those
+that produce no event, so they can be compared with `cerberus_packets_total`.
+
+| Series | Meaning |
+|--------|---------|
+| `cerberus_kernel_packets_total{class}` | Packets seen, by class: `total`, `arp`, `ipv4`, `ipv6`, `other` |
+| `cerberus_kernel_bytes_total{class}` | Bytes seen, same classes |
+| `cerberus_ringbuf_dropped_events_total` | Events lost because the ring buffer was full. If this rises, the monitor is missing traffic: user space is too slow, or someone is flooding the link to blind it. |
+
+If the counters cannot be read, the scrape contains a
+`# kernel counters unavailable: …` comment instead of these series.
+
 ## Static assets (Control Room)
 
 Served from the embedded `internal/api/web` tree via the default file server on `/`:
@@ -33,6 +48,14 @@ Served from the embedded `internal/api/web` tree via the default file server on 
 | `/styles.css` | Layout and theme tokens |
 
 There is no separate API prefix for static files; unknown paths fall through to files under `web/`. API paths are reserved under `/api/` and `/metrics`.
+
+## Response headers
+
+Every response sets `Content-Security-Policy: frame-ancestors 'none'`,
+`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer`, a restrictive `Permissions-Policy` and
+`Cross-Origin-Opener-Policy: same-origin`. `/api/` responses also set
+`Cache-Control: no-store`.
 
 ## CORS and auth
 

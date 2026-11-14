@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/version"
@@ -282,4 +284,63 @@ func TestHandler_SetsSecurityHeaders(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMetrics_KernelCounters(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	mon, err := monitor.NewNetworkMonitor(10, dbPath)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	t.Cleanup(func() { _ = mon.Close() })
+
+	scrape := func(srv *Server) string {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		srv.handleMetrics(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		return rr.Body.String()
+	}
+
+	t.Run("omitted without a source", func(t *testing.T) {
+		body := scrape(NewServer(mon))
+		if strings.Contains(body, "cerberus_kernel_packets_total") {
+			t.Fatalf("kernel series should be absent:\n%s", body)
+		}
+	})
+
+	t.Run("exported from the source", func(t *testing.T) {
+		srv := NewServer(mon)
+		srv.SetKernelStats(func() (kstats.Snapshot, error) {
+			return kstats.Snapshot{
+				Total:       kstats.Counter{Packets: 42, Bytes: 4200},
+				IPv6:        kstats.Counter{Packets: 7, Bytes: 700},
+				RingbufFull: kstats.Counter{Packets: 3, Bytes: 192},
+			}, nil
+		})
+		body := scrape(srv)
+		for _, want := range []string{
+			`cerberus_kernel_packets_total{class="total"} 42`,
+			`cerberus_kernel_packets_total{class="ipv6"} 7`,
+			`cerberus_kernel_bytes_total{class="total"} 4200`,
+			`cerberus_ringbuf_dropped_events_total 3`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("missing %q in:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("error is reported as a comment", func(t *testing.T) {
+		srv := NewServer(mon)
+		srv.SetKernelStats(func() (kstats.Snapshot, error) {
+			return kstats.Snapshot{}, errors.New("map\nclosed")
+		})
+		body := scrape(srv)
+		if !strings.Contains(body, "# kernel counters unavailable: map closed") {
+			t.Fatalf("expected single-line error comment:\n%s", body)
+		}
+		if strings.Contains(body, "cerberus_ringbuf_dropped_events_total ") {
+			t.Fatalf("no samples expected on error:\n%s", body)
+		}
+	})
 }

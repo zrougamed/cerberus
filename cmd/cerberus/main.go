@@ -17,6 +17,7 @@ import (
 
 	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/api"
+	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/utils"
@@ -97,6 +98,12 @@ func main() {
 		panic(fmt.Errorf("failed to create BPF collection: %w", err))
 	}
 	defer coll.Close()
+
+	if countersMap := coll.Maps["counters"]; countersMap != nil {
+		apiServer.SetKernelStats(kstats.NewReader(countersMap).Read)
+	} else {
+		fmt.Println("BPF object has no 'counters' map; kernel counters disabled")
+	}
 
 	// Get the classifier program
 	prog := coll.Programs["xdp_arp_monitor"]
