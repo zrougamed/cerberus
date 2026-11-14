@@ -1,6 +1,6 @@
 # Cerberus
 
-![Go Version](https://img.shields.io/badge/go-1.26-blue)
+![Go Version](https://img.shields.io/badge/go-1.27.4-blue)
 ![Ubuntu 22.04](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Ubuntu%2022.04)
 ![Ubuntu 24.04](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Ubuntu%2024.04)
 ![Debian 12](https://img.shields.io/github/actions/workflow/status/zrougamed/cerberus/ci.yml?branch=master&label=Debian%2012)
@@ -19,14 +19,14 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Layer 7 Protocol Inspection**: Deep packet inspection for DNS queries, HTTP requests, and TLS handshakes
 - **Device Discovery**: Automatically detect new devices joining your network
 - **Traffic Classification**: Identify and classify network protocols with intelligent pattern recognition
-- **Vendor Identification**: Lookup device manufacturers using IEEE OUI database
+- **Vendor Identification**: Full IEEE registry (MA-L, MA-M, MA-S, IAB) built into the binary, so vendors resolve offline
 - **Pattern Tracking**: Track unique communication patterns with LRU caching
 - **Statistics Dashboard**: Real-time network statistics and device behavior analysis
 - **Smart Deduplication**: Only alert on new traffic patterns (first occurrence)
 - **Persistent Storage**: Local database for historical data with Redis migration path
-- **Control Room (Web UI)**: Hash-routed dashboard for summary, devices, rule alerts, anomalies, and raw JSON
+- **Control Room (Web UI)**: Hash-routed dashboard for summary, devices, rule alerts, anomalies, policy (filter rules, blocklist, live log) and raw JSON
 - **Behavioral anomaly & abuse-style signals**: ML-lite windows highlight SYN-heavy, high-volume, and unusual-port patterns (consistent with scans/floods); rule alerts flag DNS/TCP/target spread; see **[`docs/threat-and-anomaly-patterns.md`](docs/threat-and-anomaly-patterns.md)** for scope and limits (not a full IDS; no dedicated reverse-tunnel classifier)
-- **Active response**: Block or count traffic in the kernel by device MAC or IPv4/IPv6 range, with per-rule counters, a dry-run mode, TTLs, an audit trail and a Policy page in the console, modelled on bpfilter sets ([`docs/active-response.md`](docs/active-response.md))
+- **Active response**: bpfilter-style ordered filter rules (interface, protocol, addresses, ports, TCP flags, ICMP; Allow / Block / Count; per-rule counters and rate-limited packet log) plus a MAC/IP blocklist, with a dry-run mode, TTLs, an audit trail and a Policy page in the console ([`docs/active-response.md`](docs/active-response.md))
 - **CIDR watchlists**: Named IPv4/IPv6 prefix sets that raise rate-limited `watchlist:<id>` alerts and per-list hit counters ([`docs/how-to-alerts.md`](docs/how-to-alerts.md#4-watchlists-cidr-sets))
 - **Kernel-side counters**: Packets/bytes seen by the TC hook and events lost to a full ring buffer, on `/metrics`
 - **Outbound notifications**: Optional Slack, Microsoft Teams, generic webhook, and syslog for rule alerts, anomalies, and new devices ([`docs/notifications.md`](docs/notifications.md))
@@ -42,7 +42,7 @@ The dashboard is a single-page shell: the **top bar** shows the product title an
 │  Network Guardian                                                        │
 │  Cerberus Control Room                                    [ Dark mode ]  │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  Overview │ All devices │ Rule alerts │ Anomalies │ Raw JSON             │
+│  Overview │ All devices │ Rule alerts │ Anomalies │ Policy │ Raw JSON    │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │   ┌─ Route: #/ (Overview) ─────────────────────────────────────────┐     │
@@ -61,6 +61,7 @@ The dashboard is a single-page shell: the **top bar** shows the product title an
 │                                                                          │
 │   Other routes:  #/devices (table)  #/device/<mac> (full device JSON)    │
 │                  #/alerts (table)   #/anomalies (full anomaly UI)        │
+│                  #/policy (rules, blocklist, live log, changes)          │
 │                  #/raw/<endpoint>   (pretty-printed API JSON)            │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -147,8 +148,8 @@ flowchart TD
 
 ## Prerequisites
 
-- Linux kernel 5.10+ (with eBPF support)
-- Go 1.26+
+- Linux kernel 6.6+ (TCX attach; the policy filter chain also uses `bpf_loop`, 5.17+)
+- Go 1.27.4+
 - Clang/LLVM
 - Root/sudo privileges (for eBPF and TC hooks)
 
@@ -165,7 +166,7 @@ sudo apt-get install -y \
     gcc
 
 # Verify kernel support
-uname -r  # Should be 5.10+
+uname -r  # Should be 6.6+
 grep CONFIG_BPF_SYSCALL /boot/config-$(uname -r)  # Should output =y
 ```
 
@@ -415,15 +416,19 @@ cerberus/
 ├── ebpf/               # eBPF C programs
 │   └── cerberus_tc.c   # TC classifier for packet capture
 ├── internal/
+│   ├── alerts/         # Declarative alert config, watchlists
 │   ├── api/            # REST API, Prometheus /metrics, embedded Control Room
 │   ├── cache/          # LRU cache implementation
-│   ├── databases/      # IEEE OUI + IANA service-name databases
+│   ├── databases/      # IEEE OUI (embedded snapshot) + IANA service names
+│   ├── kstats/         # Kernel-side packet counters
 │   ├── models/         # Data structures (events, devices, alerts, anomalies)
 │   ├── monitor/        # Core monitoring, classification, persistence, rules
-│   ├── network/        # Network utilities
+│   ├── network/        # Topology, interface selection, routes
+│   ├── notify/         # Slack / Teams / webhook / syslog sinks
+│   ├── policy/         # Active response: filter chain, blocklist, audit
 │   └── utils/          # Helper functions (includes L7 inspection)
 ├── scripts/            # Utility scripts
-│   └── cleanup.sh      # TC hook cleanup
+├── tools/ouigen/       # Regenerates the embedded IEEE OUI snapshot
 ├── Makefile            # Build automation
 └── go.mod              # Go dependencies
 ```
@@ -446,7 +451,8 @@ make clean
 ### Testing
 
 ```bash
-sudo ./build/cerberus
+go test -race ./...                                        # unit tests
+make bpf && sudo -E go test -run BPF -v ./internal/policy   # kernel policy tests (root)
 ```
 
 ### Testing Layer 7 Inspection
@@ -469,8 +475,8 @@ ping 8.8.8.8
 ### Debugging
 
 ```bash
-# Check TC hooks
-sudo tc filter show dev enp3s0 ingress
+# Check TCX attachments
+sudo bpftool net show
 
 # List loaded BPF programs
 sudo bpftool prog show
@@ -497,17 +503,12 @@ sudo ./build/cerberus
 # List available interfaces
 ip link show
 
-# Update interface name in code if needed
+# Choose interfaces with CERBERUS_INTERFACES (names, globs, ! to exclude)
 ```
 
-### "TC hook already exists"
+### Leftover hooks
 
-```bash
-# Clean up existing hooks
-make cleanup
-# Or manually:
-sudo tc qdisc del dev eth0 ingress
-```
+Cerberus attaches with TCX; the kernel detaches its programs when the process exits, so there is nothing to clean up and other TC users (Cilium, shapers) are left alone. `sudo bpftool net show` lists what is attached.
 
 ### No traffic detected
 
@@ -533,7 +534,8 @@ curl https://zrouga.email
 - Requires root privileges for eBPF and TC operations
 - Captures network metadata and first 128 bytes of payload for L7 inspection
 - Does NOT capture or store complete packet payloads
-- Local database stored at `network.db`
+- Local database stored at `./data/network.db` (directory 0750); the policy at `./data/policy.json` (0600)
+- Policy changes (blocking) require `CERBERUS_API_TOKEN`; without it the API and console are read-only
 - No external network connections by default; optional IEEE/IANA database downloads if `CERBERUS_DB_ONLINE` is enabled (see `docs/system-overview.md`)
 - L7 inspection is limited to protocol identification and metadata extraction
 
@@ -562,7 +564,10 @@ curl https://zrouga.email
 - [x] Custom alerting rules
 - [x] GeoIP location tracking
 - [x] Outbound alert notifications (webhook / Slack / Teams / syslog)
-- [x] Accurate IEEE OUI lookup (MA-L/MA-M/MA-S, stale-cache prefer, virtualization OUIs)
+- [x] Accurate IEEE OUI lookup (full registry embedded, MA-L/MA-M/MA-S/IAB, virtualization prefixes)
+- [x] Active response: bpfilter-style filter rules and MAC/IP blocklist with dry run, counters and packet log
+- [x] Kernel-side counters, interface selection, CIDR watchlists
+
 ## Performance
 
 - **Zero-copy packet processing** using eBPF ring buffers
@@ -575,8 +580,8 @@ Example **Docker** resource use at high link throughput (low CPU/RSS, container 
 
 ## Compatibility
 
-- **Go Version**: 1.24+
-- **Kernel**: 5.10+ with eBPF support
+- **Go Version**: 1.27.4+
+- **Kernel**: 6.6+ (TCX)
 - **Dependencies**: No external runtime dependencies
 - **Database**: Backward compatible with existing network.db files
 
