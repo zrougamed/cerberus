@@ -5,7 +5,56 @@ model follows [bpfilter](https://github.com/facebook/bpfilter) sets: rules are
 entries in BPF maps that the TC classifier looks up for every packet, and each
 rule has its own packet and byte counter.
 
-## What a rule matches
+Two layers, both in the TC classifier and both checked for every packet:
+
+1. **Filter rules**: an ordered chain like a bpfilter chain (below).
+2. **Blocklist**: fast set lookups of device MACs and IP ranges, for long
+   lists. Checked after the filter rules unless a rule allowed the packet.
+
+## Filter rules
+
+Rules are checked top to bottom. Every matcher set on a rule must match.
+
+| Matcher | Field | bpfilter equivalent |
+|---------|-------|---------------------|
+| Interface | `interface` | `meta.iface` |
+| IP version | `family`: `ipv4`, `ipv6` | `meta.l3_proto` |
+| Protocol | `protocol`: `tcp`, `udp`, `icmp`, `icmpv6` or a number | `meta.l4_proto` |
+| Source / destination address or range | `src`, `dst` (+ `src_not`, `dst_not`) | `ip4/ip6.snet`, `dnet`, `not` |
+| Source device | `src_mac` | |
+| Source / destination port or range | `src_port`, `dst_port` such as `22` or `1024-65535` (+ `_not`) | `meta.sport`, `meta.dport`, `range` |
+| TCP flags | `tcp_flags_any`, `tcp_flags_all` | `tcp.flags any`, `all` |
+| ICMP type / code | `icmp_type`, `icmp_code` | `icmp.type`, `icmp.code` |
+
+Verdicts:
+
+| Verdict | Console | Effect |
+|---------|---------|--------|
+| `accept` | Allow | Stop, let the packet through, and skip the blocklist (an exception). |
+| `drop` | Block | Stop and drop when enforcing. In dry run it stops evaluation but the packet passes. |
+| `continue` | Count only | Count (and log) and go on to the next rule. |
+
+Every rule counts packets and bytes. With `log`, matching packets are sent
+to user space (interface, protocol, addresses, ports, TCP flags or ICMP
+type, MAC, size, outcome) and shown in **Live log** and
+`GET /api/v1/policy/log`; `log_every_seconds` (default 1) limits a rule to
+one entry per interval, like bpfilter's `log ... every 1s`.
+
+Up to 64 rules. Changes are atomic: the kernel keeps two copies of the
+chain and switches with one write. IPv6 extension headers are not walked,
+and only the first fragment of an IPv4 packet carries ports.
+
+Example: let the admin workstation reach SSH, block all other SSH, and log
+each attempt:
+
+```bash
+curl -s -X POST -H "$H" localhost:8080/api/v1/policy/filters -d \
+  '{"id":"admin-ssh","verdict":"accept","match":{"protocol":"tcp","src":"192.168.1.10","dst_port":"22"}}'
+curl -s -X POST -H "$H" localhost:8080/api/v1/policy/filters -d \
+  '{"id":"ssh-block","verdict":"drop","log":true,"force":true,"match":{"protocol":"tcp","dst_port":"22"}}'
+```
+
+## What a blocklist entry matches
 
 | Rule | Matches | Kernel map |
 |------|---------|------------|
@@ -49,10 +98,13 @@ switch to `enforce`.
 - Changes need `CERBERUS_API_TOKEN` (16+ characters). Without it the policy is
   read-only and nothing can be blocked from the network.
 - A rule may not cover this host's own addresses, the default gateway or the
-  gateway's MAC unless the request sets `force`. `0.0.0.0/0`, `::/0` and
+  gateway's MAC unless the request sets `force`. A filter **Block** with no
+  source, destination or device at all also needs `force`, since it matches
+  traffic from every host. `0.0.0.0/0`, `::/0` and
   broadcast/multicast MACs are always refused.
 - `ttl_seconds` makes a rule temporary; it is removed automatically.
-- At most 1024 rules. A rule's address cannot appear in two rules.
+- At most 64 filter rules and 1024 blocklist entries. An address cannot
+  appear in two blocklist entries; ids are unique across both.
 - Every change is recorded in the audit trail (who, from which address, what),
   shown on the Policy page and returned by `GET /api/v1/policy`.
 - If a kernel update or a disk write fails, the change is rolled back.
@@ -104,13 +156,21 @@ curl -s -X DELETE -H "$H" localhost:8080/api/v1/policy/rules/known-c2
 
 Full request and response shapes: [api-reference.md](api-reference.md#policy).
 
+## Kernel requirements
+
+TCX (kernel 6.6+), which Cerberus already needs to attach, plus `bpf_loop`
+(5.17+) for the filter chain.
+
 ## Alerts and metrics
 
 - When a rule's counter grows, Cerberus raises a `policy:<id>` rule alert (at
   most once per 10 minutes per rule): **high** when packets were dropped,
   **medium** for a `drop` rule in monitor mode ("would have dropped"), **low**
   for `log` rules. These go through the notification sinks like other alerts.
-- `/metrics`: `cerberus_policy_dropped_packets_total` counts enforced drops.
+- Filter rules raise `filter:<id>` alerts the same way.
+- `/metrics`: `cerberus_policy_dropped_packets_total` counts enforced drops;
+  `cerberus_filter_log_lost_total` counts log entries lost when the log
+  buffer was full.
 
 ## Testing the kernel path
 
@@ -119,5 +179,5 @@ frames through the classifier with `BPF_PROG_TEST_RUN` (nothing is attached to
 an interface). It needs root:
 
 ```bash
-make bpf && sudo -E go test -run BPF -v ./internal/policy
+make bpf && sudo -E go test -run BPF -v ./internal/policy   # blocklist and filter chain
 ```

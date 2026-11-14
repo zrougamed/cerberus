@@ -26,10 +26,15 @@ variable they return **403**. Ten failed attempts per client per minute return
 
 | Method and path | Body | Success |
 |-----------------|------|---------|
-| `GET /api/v1/policy` | | **200** `{mode, kernel_attached, max_rules, writes_enabled, rules: [{id, action, mac \| cidr, direction, comment, created_at, created_by, expires_at, counters: {packets, bytes}}], audit: [{at, actor, action, rule_id, detail}]}` |
+| `GET /api/v1/policy` | | **200** `{mode, kernel_attached, max_rules, max_filters, writes_enabled, filters: [{id, position, summary, enabled, match, verdict, log, counters, ...}], rules: [{id, action, mac \| cidr, direction, comment, created_at, created_by, expires_at, counters: {packets, bytes}}], audit: [{at, actor, action, rule_id, detail}]}` |
 | `PUT /api/v1/policy/mode` | `{"mode": "monitor" \| "enforce"}` | **200** `{"mode": ...}` |
 | `POST /api/v1/policy/rules` | `{id?, action: "drop" \| "log", mac? \| cidr?, direction?: "src" \| "dst" \| "any", comment?, ttl_seconds?, force?}` | **201** the rule |
 | `DELETE /api/v1/policy/rules/{id}` | | **204** |
+| `POST /api/v1/policy/filters` | `{id?, verdict: "accept" \| "drop" \| "continue", match: {interface?, family?, protocol?, src?, src_not?, dst?, dst_not?, src_mac?, src_port?, src_port_not?, dst_port?, dst_port_not?, tcp_flags_any?, tcp_flags_all?, icmp_type?, icmp_code?}, log?, log_every_seconds?, comment?, ttl_seconds?, position?, disabled?, force?}` | **201** the rule |
+| `DELETE /api/v1/policy/filters/{id}` | | **204** |
+| `PUT /api/v1/policy/filters/{id}/position` | `{"position": n}` (0-based) | **204** |
+| `PUT /api/v1/policy/filters/{id}/enabled` | `{"enabled": true \| false}` | **204** |
+| `GET /api/v1/policy/log?limit=N` | | **200** newest log entries (1-500, default 100) |
 
 Errors: **400** invalid input, **401** bad token, **404** unknown rule,
 **409** duplicate id/address or policy full, **422** covers a protected
@@ -54,6 +59,7 @@ that produce no event, so they can be compared with `cerberus_packets_total`.
 | `cerberus_kernel_packets_total{class}` | Packets seen, by class: `total`, `arp`, `ipv4`, `ipv6`, `other` |
 | `cerberus_kernel_bytes_total{class}` | Bytes seen, same classes |
 | `cerberus_policy_dropped_packets_total` | Packets dropped by enforced policy rules |
+| `cerberus_filter_log_lost_total` | Filter log entries lost to a full log buffer |
 | `cerberus_ringbuf_dropped_events_total` | Events lost because the ring buffer was full. If this rises, the monitor is missing traffic: user space is too slow, or someone is flooding the link to blind it. |
 
 If the counters cannot be read, the scrape contains a
