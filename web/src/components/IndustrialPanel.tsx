@@ -6,6 +6,10 @@ const protocolNames: Record<string, string> = {
   s7comm_plus: 'S7comm-plus',
   dnp3: 'DNP3',
   enip: 'EtherNet/IP',
+  bacnet: 'BACnet/IP',
+  iec104: 'IEC 60870-5-104',
+  opcua: 'OPC UA',
+  mqtt: 'MQTT',
 }
 
 // Operations that change what the controller does; shown in the danger colour.

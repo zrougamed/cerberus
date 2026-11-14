@@ -361,8 +361,8 @@ func TestNewIndustrialRules_SkipsDisabled(t *testing.T) {
 	if r := rules["s7comm|control"]; r == nil || r.id != alerts.RuleS7Control {
 		t.Fatalf("control rule = %+v", r)
 	}
-	if len(rules) != len(industrialRuleClasses)-1 {
-		t.Fatalf("rules = %d, want %d", len(rules), len(industrialRuleClasses)-1)
+	if len(rules) != len(industrialRuleTargets)-1 {
+		t.Fatalf("rules = %d, want %d", len(rules), len(industrialRuleTargets)-1)
 	}
 }
 
@@ -475,5 +475,76 @@ func TestTrackEvent_ENIPWriteResetAndIdentity(t *testing.T) {
 	plc.Asset.Model = "changed"
 	if nm.GetStats()["02:00:00:00:00:08"].Asset.Model != "1769-L33ER" {
 		t.Fatal("asset snapshot shares state with the monitor")
+	}
+}
+
+func TestIndustrialRuleTargets_CoverEveryConfiguredRule(t *testing.T) {
+	cfg := alerts.DefaultConfig().Industrial
+	for _, r := range cfg.Rules() {
+		if _, ok := industrialRuleTargets[r.ID]; !ok {
+			t.Errorf("rule %q has no target, it would never fire", r.ID)
+		}
+	}
+}
+
+func rawEvent(srcMAC byte, src, dst string, proto uint8, sport, dport uint16, payload []byte) *models.NetworkEvent {
+	evt := modbusEvent(srcMAC, src, dst, sport, dport, 0)
+	evt.Protocol = proto
+	if proto == 17 {
+		evt.EventType = models.EVENT_TYPE_UDP
+	}
+	evt.L7Payload = [models.L7PayloadSize]byte{}
+	copy(evt.L7Payload[:], payload)
+	return evt
+}
+
+func TestTrackEvent_FlagRules(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	uri := "http://opcfoundation.org/UA/SecurityPolicy#None"
+	opn := append([]byte("OPNF"), 0, 0, 0, 0)
+	body := append([]byte{0, 0, 0, 0, byte(len(uri)), 0, 0, 0}, uri...)
+	binary.LittleEndian.PutUint32(opn[4:8], uint32(8+len(body)))
+	nm.TrackEvent(rawEvent(1, "10.0.0.9", "10.0.0.90", 6, 50000, 4840, append(opn, body...)))
+
+	connect := []byte{0x10, 0x14, 0x00, 0x04, 'M', 'Q', 'T', 'T', 4, 0x02, 0, 60, 0x00, 0x08, 's', 'e', 'n', 's', 'o', 'r', '-', '1'}
+	nm.TrackEvent(rawEvent(2, "10.0.0.31", "10.0.0.95", 6, 50001, 1883, connect))
+
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	if want := "OPC UA open_secure_channel from 10.0.0.9 to 10.0.0.90 (security policy None), no message security"; got[alerts.RuleOPCUAInsecure].Message != want {
+		t.Fatalf("opcua alert = %q, want %q", got[alerts.RuleOPCUAInsecure].Message, want)
+	}
+	if want := "MQTT connect from 10.0.0.31 to 10.0.0.95 (client sensor-1), no username"; got[alerts.RuleMQTTAnonymous].Message != want {
+		t.Fatalf("mqtt alert = %q, want %q", got[alerts.RuleMQTTAnonymous].Message, want)
+	}
+	if len(got) != 2 {
+		t.Fatalf("alerts = %+v", got)
+	}
+}
+
+func TestTrackEvent_BACnetIAmAndIEC104Command(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	iam := []byte{0x81, 0x0B, 0x00, 0x14, 0x01, 0x00, 0x10, 0x00, 0xC4, 0x02, 0x00, 0x00, 0x2A, 0x22, 0x05, 0xC4, 0x91, 0x00, 0x21, 0x07}
+	nm.TrackEvent(rawEvent(3, "10.0.0.40", "10.0.0.255", 17, 47808, 47808, iam))
+	dcc := []byte{0x81, 0x0A, 0x00, 0x0A, 0x01, 0x04, 0x00, 0x05, 0x01, 0x11}
+	nm.TrackEvent(rawEvent(1, "10.0.0.9", "10.0.0.40", 17, 47808, 47808, dcc))
+	cmd := []byte{0x68, 0x0E, 0x02, 0x00, 0x04, 0x00, 45, 0x01, 0x06, 0x00, 0x07, 0x00, 0x01, 0x00, 0x00, 0x81}
+	nm.TrackEvent(rawEvent(1, "10.0.0.9", "10.0.0.60", 6, 50000, 2404, cmd))
+
+	ahu := nm.GetStats()["02:00:00:00:00:03"]
+	if ahu.Asset == nil || ahu.Asset.Model != "device 42" || ahu.Asset.Vendor != "BACnet vendor 7" || ahu.Asset.Source != "bacnet" {
+		t.Fatalf("bacnet asset = %+v", ahu.Asset)
+	}
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	if got[alerts.RuleBACnetControl].Message != "BACnet device_communication_control from 10.0.0.9 to 10.0.0.40" {
+		t.Fatalf("bacnet alert = %+v", got[alerts.RuleBACnetControl])
+	}
+	if got[alerts.RuleIEC104Control].Message != "IEC 104 single_command from 10.0.0.9 to 10.0.0.60 (common address 7)" {
+		t.Fatalf("iec104 alert = %+v", got[alerts.RuleIEC104Control])
 	}
 }

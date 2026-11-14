@@ -33,6 +33,20 @@ const (
 	ProtocolS7Plus = "s7comm_plus"
 	ProtocolDNP3   = "dnp3"
 	ProtocolENIP   = "enip"
+	ProtocolBACnet = "bacnet"
+	ProtocolIEC104 = "iec104"
+	ProtocolOPCUA  = "opcua"
+	ProtocolMQTT   = "mqtt"
+)
+
+// Flags mark a property of a message worth alerting on that is not an
+// operation class.
+const (
+	// FlagInsecurePolicy: an OPC UA secure channel opened with
+	// SecurityPolicy#None, so nothing is signed or encrypted.
+	FlagInsecurePolicy = "insecure_policy"
+	// FlagNoUsername: an MQTT client connected without a username.
+	FlagNoUsername = "no_username"
 )
 
 const (
@@ -70,6 +84,8 @@ type Message struct {
 	// Identity is set when the message announces what the sending device
 	// is (CIP ListIdentity, Modbus Read Device Identification, BACnet I-Am).
 	Identity *Identity
+	// Flag is one of the Flag* constants, or empty.
+	Flag string
 }
 
 // Identity describes a device as it reports itself. Strings are cleaned
@@ -101,6 +117,18 @@ func Decode(ipProto uint8, srcPort, dstPort uint16, payload []byte) (Message, bo
 	}
 	if (ipProto == ipProtoTCP || ipProto == ipProtoUDP) && (dstPort == ENIPPort || srcPort == ENIPPort) {
 		return DecodeENIP(payload, srcPort == ENIPPort && dstPort != ENIPPort)
+	}
+	if ipProto == ipProtoUDP && (dstPort == BACnetPort || srcPort == BACnetPort) {
+		return DecodeBACnet(payload)
+	}
+	if ipProto == ipProtoTCP && (dstPort == IEC104Port || srcPort == IEC104Port) {
+		return DecodeIEC104(payload)
+	}
+	if ipProto == ipProtoTCP && (dstPort == OPCUAPort || srcPort == OPCUAPort) {
+		return DecodeOPCUA(payload, srcPort == OPCUAPort && dstPort != OPCUAPort)
+	}
+	if ipProto == ipProtoTCP && (dstPort == MQTTPort || srcPort == MQTTPort) {
+		return DecodeMQTT(payload, srcPort == MQTTPort && dstPort != MQTTPort)
 	}
 	return Message{}, false
 }

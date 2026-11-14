@@ -16,6 +16,13 @@ const (
 	RuleDNP3Diagnostic   = "dnp3_diagnostic"
 	RuleENIPWrite        = "enip_write"
 	RuleENIPControl      = "enip_control"
+	RuleBACnetWrite      = "bacnet_write"
+	RuleBACnetControl    = "bacnet_control"
+	RuleIEC104Control    = "iec104_control"
+	RuleIEC104Diagnostic = "iec104_diagnostic"
+	RuleOPCUAWrite       = "opcua_write"
+	RuleOPCUAInsecure    = "opcua_insecure"
+	RuleMQTTAnonymous    = "mqtt_anonymous"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -47,6 +54,13 @@ type IndustrialConfig struct {
 	DNP3Diagnostic   IndustrialRule `yaml:"dnp3_diagnostic" json:"dnp3_diagnostic"`
 	ENIPWrite        IndustrialRule `yaml:"enip_write" json:"enip_write"`
 	ENIPControl      IndustrialRule `yaml:"enip_control" json:"enip_control"`
+	BACnetWrite      IndustrialRule `yaml:"bacnet_write" json:"bacnet_write"`
+	BACnetControl    IndustrialRule `yaml:"bacnet_control" json:"bacnet_control"`
+	IEC104Control    IndustrialRule `yaml:"iec104_control" json:"iec104_control"`
+	IEC104Diagnostic IndustrialRule `yaml:"iec104_diagnostic" json:"iec104_diagnostic"`
+	OPCUAWrite       IndustrialRule `yaml:"opcua_write" json:"opcua_write"`
+	OPCUAInsecure    IndustrialRule `yaml:"opcua_insecure" json:"opcua_insecure"`
+	MQTTAnonymous    IndustrialRule `yaml:"mqtt_anonymous" json:"mqtt_anonymous"`
 }
 
 // NamedIndustrialRule pairs a rule with its id.
@@ -67,6 +81,13 @@ func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
 		{RuleDNP3Diagnostic, &c.DNP3Diagnostic},
 		{RuleENIPWrite, &c.ENIPWrite},
 		{RuleENIPControl, &c.ENIPControl},
+		{RuleBACnetWrite, &c.BACnetWrite},
+		{RuleBACnetControl, &c.BACnetControl},
+		{RuleIEC104Control, &c.IEC104Control},
+		{RuleIEC104Diagnostic, &c.IEC104Diagnostic},
+		{RuleOPCUAWrite, &c.OPCUAWrite},
+		{RuleOPCUAInsecure, &c.OPCUAInsecure},
+		{RuleMQTTAnonymous, &c.MQTTAnonymous},
 	}
 }
 
@@ -100,6 +121,16 @@ func defaultIndustrialConfig() IndustrialConfig {
 		// Tag writes from HMIs are routine, like S7 write_var.
 		ENIPWrite:   rule("medium"),
 		ENIPControl: rule("high"),
+		// Building systems write setpoints constantly; disabling a device's
+		// communication or reinitialising it is rare and disruptive.
+		BACnetWrite:   rule("medium"),
+		BACnetControl: rule("high"),
+		// IEC 104 commands come from the control centre only.
+		IEC104Control:    rule("high"),
+		IEC104Diagnostic: rule("high"),
+		OPCUAWrite:       rule("medium"),
+		OPCUAInsecure:    rule("medium"),
+		MQTTAnonymous:    rule("medium"),
 	}
 }
 

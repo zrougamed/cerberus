@@ -13,7 +13,7 @@ High-level reference for how the project fits together. The code remains the sou
 | [threat-and-anomaly-patterns.md](threat-and-anomaly-patterns.md) | SYN/SYN-flood-style signals, DDoS-like spikes, probing; what is observed vs blocked; distributed vs per-device alerts |
 | [how-to-alerts.md](how-to-alerts.md) | How to trigger rule alerts vs anomaly alerts, default thresholds, deduplication, testing tips |
 | [active-response.md](active-response.md) | Blocking/counting by MAC or IP range in the kernel: modes, safety rails, policy file, console, API, alerts |
-| [industrial-protocols.md](industrial-protocols.md) | Modbus/TCP, S7comm, DNP3 and EtherNet/IP decoding, per-device industrial counters and reported identity, `modbus_*` / `s7_*` / `dnp3_*` / `enip_*` alerts and their allow-list |
+| [industrial-protocols.md](industrial-protocols.md) | Decoding of Modbus/TCP, S7comm, DNP3, EtherNet/IP, BACnet/IP, IEC 104, OPC UA and MQTT, per-device industrial counters and reported identity, and the industrial alert rules and their allow-list |
 | [notifications.md](notifications.md) | Outbound sinks: generic webhook, Slack Incoming Webhooks, Microsoft Teams Adaptive Card / MessageCard, syslog |
 
 The root [README.md](../README.md) covers install, prerequisites, troubleshooting, and a compact Control Room wireframe.

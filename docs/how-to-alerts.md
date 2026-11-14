@@ -146,7 +146,7 @@ start. Example: [`configs/alerts.watchlists.yaml`](../configs/alerts.watchlists.
 
 ## 4b. Industrial protocol alerts
 
-The `modbus_*`, `s7_*`, `dnp3_*` and `enip_*` rules fire when a device sends that kind of request and its IP is not
+The industrial rules (`modbus_*`, `s7_*`, `dnp3_*`, `enip_*`, `bacnet_*`, `iec104_*`, `opcua_*`, `mqtt_*`) fire when a device sends that kind of request and its IP is not
 in the rule's `allowed_sources`. They re-alert per source, target and unit after
 `realert_seconds` (default one hour). To test, point any Modbus client at a
 simulator on port 502 and write a register. Configuration and limits:
