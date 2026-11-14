@@ -234,16 +234,26 @@ func sanitizeLabel(s string) string {
 	return b.String()
 }
 
-// requireToken guards state-changing endpoints with a bearer token. A
-// header token (not a cookie) also rules out CSRF from other sites.
+// requireToken guards policy endpoints: the policy engine must be loaded
+// and the caller must present the API token.
 func (s *Server) requireToken(next http.Handler) http.Handler {
+	auth := s.requireAuth(next, "policy changes are disabled: set CERBERUS_API_TOKEN")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.policy == nil {
 			writeError(w, http.StatusNotFound, "policy engine not enabled")
 			return
 		}
+		auth.ServeHTTP(w, r)
+	})
+}
+
+// requireAuth guards state-changing endpoints with a bearer token. A
+// header token (not a cookie) also rules out CSRF from other sites.
+// disabled is the error returned when no token is configured.
+func (s *Server) requireAuth(next http.Handler, disabled string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.tokenHash == nil {
-			writeError(w, http.StatusForbidden, "policy changes are disabled: set CERBERUS_API_TOKEN")
+			writeError(w, http.StatusForbidden, disabled)
 			return
 		}
 		client := clientIP(r)

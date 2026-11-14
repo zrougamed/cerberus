@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  Boxes,
   BookOpen,
   HardDrive,
   LayoutDashboard,
@@ -27,6 +28,7 @@ const titles: Record<string, string> = {
   '/': 'Dashboard',
   '/analytics': 'Analytics',
   '/devices': 'Devices',
+  '/assets': 'Assets',
   '/alerts': 'Rule alerts',
   '/anomalies': 'Anomalies',
   '/policy': 'Policy',
@@ -48,6 +50,7 @@ const nav: Array<{ group: string; items: NavItem[] }> = [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
       { to: '/analytics', label: 'Analytics', icon: LineChart },
       { to: '/devices', label: 'Devices', icon: HardDrive },
+      { to: '/assets', label: 'Assets', icon: Boxes },
       { to: '/alerts', label: 'Rule alerts', icon: AlertTriangle },
       { to: '/anomalies', label: 'Anomalies', icon: Radar },
     ],

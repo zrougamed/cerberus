@@ -18,6 +18,18 @@ export type DeviceSummary = {
   [key: string]: unknown
 }
 
+/** One row of GET /api/v1/assets. */
+export type AssetEntry = {
+  mac: string
+  ip: string
+  oui_vendor?: string
+  role: string
+  role_source: '' | 'inferred' | 'override'
+  protocols: string[]
+  asset?: AssetInfo
+  last_seen: string
+}
+
 /** Identity a device reported about itself in an industrial protocol. */
 export type AssetInfo = {
   vendor?: string

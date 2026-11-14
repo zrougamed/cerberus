@@ -126,6 +126,9 @@ industrial:
   mqtt_anonymous:            # CONNECT without a username
     enabled: true
     severity: medium
+  asset_changed:             # a device reports a different model, firmware or serial
+    enabled: true
+    severity: high
 
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:

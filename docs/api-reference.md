@@ -12,6 +12,8 @@ Base URL is whatever host/port `CERBERUS_HTTP_ADDR` binds to (default `http://12
 | `GET /api/v1/devices` | Array of full per-MAC `DeviceInfo`-compatible objects (JSON-tagged fields only). Includes `is_gateway` (true once the MAC is observed sourcing IPv4 packets with a non-local source IP) and `forwarded_source_count` (number of such forwarded packets). |
 | `GET /api/v1/alerts` | Array of recent rule-based `AlertEvent` objects (threshold monitor). |
 | `GET /api/v1/anomalies` | Single **anomaly snapshot** object: model status, scores, last features, recent alerts with `summary` (plain) and `detail` (technical), `last_summary` / `last_summary_detail` / `last_contributions`, etc. |
+| `GET /api/v1/assets` | Industrial asset inventory. Each entry: `mac`, `ip`, `oui_vendor`, `role`, `role_source` (`inferred`, `override` or empty), `protocols`, `asset` (reported identity), `last_seen`. Filters: `?role=`, `?protocol=`; `?format=csv` returns a CSV download with formula-like cells prefixed by `'`. |
+| `PUT /api/v1/assets/{mac}/role` | Bearer token. Body `{"role": "scada_server"}`; one of `controller`, `hmi`, `scada_server`, `engineering_workstation`, `gateway`, `historian`, `other`, or `""` to go back to the inferred role. Stored with the device immediately. Works without the policy engine. |
 | `GET /api/v1/version` | `{ "commit": "<short-sha>", "date": "<RFC3339>" }` build metadata stamped at compile time via `-ldflags -X`. Both fields are `"unknown"` for builds without git or ldflags. |
 
 Errors: non-GET returns **405** with plain text body `method not allowed`.

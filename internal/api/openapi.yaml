@@ -67,6 +67,52 @@ paths:
       responses:
         "200":
           description: Mode, rules, filters, audit, writes_enabled
+  /api/v1/assets:
+    get:
+      summary: Industrial asset inventory
+      description: >-
+        Devices seen speaking an industrial protocol or reporting an
+        identity, with their inferred or operator-set role.
+      operationId: getAssets
+      tags: [Assets]
+      parameters:
+        - {name: role, in: query, schema: {type: string, enum: [controller, hmi, scada_server, engineering_workstation, gateway, historian, other]}}
+        - {name: protocol, in: query, schema: {type: string, example: modbus}}
+        - {name: format, in: query, description: "csv returns a CSV download", schema: {type: string, enum: [json, csv]}}
+      responses:
+        "200":
+          description: Array of assets (mac, ip, role, role_source, protocols, asset, last_seen), or CSV
+  /api/v1/assets/{mac}/role:
+    put:
+      summary: Set or clear an asset's role
+      operationId: setAssetRole
+      tags: [Assets]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: mac, in: path, required: true, schema: {type: string, example: "00:1d:9c:00:00:32"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  description: Empty string clears the override
+                  enum: ["", controller, hmi, scada_server, engineering_workstation, gateway, historian, other]
+      responses:
+        "200":
+          description: Updated asset
+        "400":
+          description: Invalid MAC or role
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: No API token configured
+        "404":
+          description: Unknown device
   /api/v1/policy/mode:
     put:
       summary: Set enforcement mode

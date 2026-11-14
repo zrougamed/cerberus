@@ -1,16 +1,6 @@
+import { protocolNames } from '../lib/protocols'
 import type { AssetInfo, IndustrialStats } from '../lib/types'
 
-const protocolNames: Record<string, string> = {
-  modbus: 'Modbus/TCP',
-  s7comm: 'S7comm',
-  s7comm_plus: 'S7comm-plus',
-  dnp3: 'DNP3',
-  enip: 'EtherNet/IP',
-  bacnet: 'BACnet/IP',
-  iec104: 'IEC 60870-5-104',
-  opcua: 'OPC UA',
-  mqtt: 'MQTT',
-}
 
 // Operations that change what the controller does; shown in the danger colour.
 const riskyClasses = new Set(['write', 'diagnostic', 'control', 'program'])

@@ -113,7 +113,7 @@ func (nm *NetworkMonitor) trackIndustrial(device *models.DeviceInfo, evt *models
 	}
 	recordIndustrial(device, msg, dstIP, now)
 	if msg.Identity != nil && msg.Response {
-		recordAsset(device, msg.Protocol, msg.Identity, now)
+		nm.recordAsset(device, msg.Protocol, msg.Identity, now)
 	}
 	nm.industrialCounts[IndustrialCountKey{Protocol: msg.Protocol, Class: string(msg.Class), Response: msg.Response}]++
 	if !msg.Response {
@@ -165,19 +165,6 @@ func recordIndustrial(device *models.DeviceInfo, msg industrial.Message, peer st
 	s.Peers = append(s.Peers, peer)
 	if len(s.Peers) > maxIndustrialPeers {
 		s.Peers = s.Peers[len(s.Peers)-maxIndustrialPeers:]
-	}
-}
-
-// recordAsset stores the identity a device announced about itself.
-func recordAsset(device *models.DeviceInfo, protocol string, id *industrial.Identity, now time.Time) {
-	device.Asset = &models.AssetInfo{
-		Vendor:     id.Vendor,
-		Model:      id.Model,
-		Firmware:   id.Firmware,
-		Serial:     id.Serial,
-		DeviceType: id.DeviceType,
-		Source:     protocol,
-		UpdatedAt:  now,
 	}
 }
 

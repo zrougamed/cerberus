@@ -6,6 +6,7 @@ import type {
   Summary,
   VersionInfo,
   AlertEvent,
+  AssetEntry,
 } from './types'
 import { getToken, setToken } from './token'
 
@@ -33,6 +34,10 @@ export function fetchAnomalies() {
 
 export function fetchVersion() {
   return getJSON<VersionInfo>('/api/v1/version')
+}
+
+export function fetchAssets() {
+  return getJSON<AssetEntry[]>('/api/v1/assets')
 }
 
 export function fetchPolicy() {

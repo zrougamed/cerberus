@@ -6,6 +6,7 @@ import { AnalyticsPage } from './pages/Analytics'
 import { AnomaliesPage } from './pages/Anomalies'
 import { DashboardPage } from './pages/Dashboard'
 import { DeviceDetailPage } from './pages/DeviceDetail'
+import { AssetsPage } from './pages/Assets'
 import { DevicesPage } from './pages/Devices'
 import { PolicyPage } from './pages/Policy'
 import { RawPage } from './pages/Raw'
@@ -19,6 +20,7 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="devices" element={<DevicesPage />} />
+            <Route path="assets" element={<AssetsPage />} />
             <Route path="device/:mac" element={<DeviceDetailPage />} />
             <Route path="alerts" element={<AlertsPage />} />
             <Route path="anomalies" element={<AnomaliesPage />} />

@@ -474,20 +474,9 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	isNew := !found
 
 	if !found {
-		var dbDevice *models.DeviceInfo
-		_ = nm.db.View(func(tx *buntdb.Tx) error {
-			val, err := tx.Get(srcMAC)
-			if err != nil {
-				return nil // not stored yet
-			}
-			if err := json.Unmarshal([]byte(val), &dbDevice); err != nil {
-				log.Printf("monitor: ignoring corrupt record for %s: %v", srcMAC, err)
-				return nil
-			}
-			device = dbDevice
+		if device = nm.loadDevice(srcMAC); device != nil {
 			isNew = false
-			return nil
-		})
+		}
 	}
 
 	if device == nil {
@@ -689,6 +678,37 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 		default:
 		}
 	}
+}
+
+// loadDevice reads a stored device record, or returns nil when there is
+// none or it cannot be decoded.
+func (nm *NetworkMonitor) loadDevice(mac string) *models.DeviceInfo {
+	var device *models.DeviceInfo
+	_ = nm.db.View(func(tx *buntdb.Tx) error {
+		val, err := tx.Get(mac)
+		if err != nil {
+			return nil // not stored yet
+		}
+		if err := json.Unmarshal([]byte(val), &device); err != nil {
+			log.Printf("monitor: ignoring corrupt record for %s: %v", mac, err)
+			device = nil
+		}
+		return nil
+	})
+	return device
+}
+
+// storeDevice writes one device record now instead of waiting for the
+// periodic flush, for operator changes that must not be lost.
+func (nm *NetworkMonitor) storeDevice(device *models.DeviceInfo) error {
+	data, err := json.Marshal(device)
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", device.MAC, err)
+	}
+	return nm.db.Update(func(tx *buntdb.Tx) error {
+		_, _, err := tx.Set(device.MAC, string(data), nil)
+		return err
+	})
 }
 
 func (nm *NetworkMonitor) GetAnomalySnapshot() models.AnomalySnapshot {

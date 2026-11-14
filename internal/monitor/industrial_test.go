@@ -481,6 +481,9 @@ func TestTrackEvent_ENIPWriteResetAndIdentity(t *testing.T) {
 func TestIndustrialRuleTargets_CoverEveryConfiguredRule(t *testing.T) {
 	cfg := alerts.DefaultConfig().Industrial
 	for _, r := range cfg.Rules() {
+		if r.ID == alerts.RuleAssetChanged {
+			continue // raised from identity changes, not from a request
+		}
 		if _, ok := industrialRuleTargets[r.ID]; !ok {
 			t.Errorf("rule %q has no target, it would never fire", r.ID)
 		}

@@ -59,6 +59,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/v1/version", s.handleVersion)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	s.registerDocsRoutes(mux)
+	s.registerAssetRoutes(mux)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)
 	}

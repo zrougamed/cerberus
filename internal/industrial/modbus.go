@@ -103,8 +103,52 @@ func DecodeModbus(p []byte, response bool) (Message, bool) {
 	m.FunctionName, m.Class = modbusFunctionInfo(fc, pdu)
 	if !m.Response {
 		m.Address, m.Quantity, m.HasRange = modbusRequestRange(fc, pdu)
+	} else if m.Exception == 0 && m.FunctionName == "read_device_identification" {
+		m.Identity = parseModbusDeviceID(pdu)
 	}
 	return m, true
+}
+
+// Read Device Identification object ids (Modbus spec 6.21).
+const (
+	mbObjVendorName  = 0x00
+	mbObjProductCode = 0x01
+	mbObjRevision    = 0x02
+	mbObjProductName = 0x04
+	mbObjModelName   = 0x05
+	// MEI type, read device id code, conformity level, more follows,
+	// next object id, number of objects.
+	mbDeviceIDHeaderLen = 6
+)
+
+// parseModbusDeviceID reads the objects of a Read Device Identification
+// reply. The model is the model name, else the product name, else the
+// product code.
+func parseModbusDeviceID(pdu []byte) *Identity {
+	if len(pdu) < mbDeviceIDHeaderLen {
+		return nil
+	}
+	count := int(pdu[5])
+	objs := pdu[mbDeviceIDHeaderLen:]
+	values := map[byte]string{}
+	for range count {
+		if len(objs) < 2 || len(objs) < 2+int(objs[1]) {
+			break
+		}
+		values[objs[0]] = cleanString(objs[2 : 2+int(objs[1])])
+		objs = objs[2+int(objs[1]):]
+	}
+	id := &Identity{Vendor: values[mbObjVendorName], Firmware: values[mbObjRevision]}
+	for _, obj := range []byte{mbObjModelName, mbObjProductName, mbObjProductCode} {
+		if v := values[obj]; v != "" {
+			id.Model = v
+			break
+		}
+	}
+	if id.Vendor == "" && id.Model == "" && id.Firmware == "" {
+		return nil
+	}
+	return id
 }
 
 func modbusFunctionInfo(fc uint8, pdu []byte) (string, Class) {

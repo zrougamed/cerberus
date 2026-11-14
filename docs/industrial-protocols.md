@@ -47,6 +47,42 @@ Prometheus gets one counter across all devices:
 cerberus_industrial_messages_total{protocol="modbus",class="write",direction="request"} 1
 ```
 
+## Asset inventory
+
+Each device that speaks one of these protocols, or reports an identity, is
+listed under **Assets** in the Control Room and by `GET /api/v1/assets`
+(JSON or `?format=csv`).
+
+**Reported identity** comes from the devices themselves:
+
+| Protocol | Source | Fields |
+|----------|--------|--------|
+| Modbus/TCP | Read Device Identification reply (fc 43 / MEI 14) | vendor, model (model name, else product name, else product code), firmware |
+| EtherNet/IP | ListIdentity reply | vendor, model, firmware, serial, device type |
+| BACnet/IP | I-Am | device instance, vendor id |
+
+A new identity over the same protocol replaces the old one. If the model,
+firmware or serial changed, `asset_changed` fires (on, high):
+`Device 10.20.0.50 reported a new identity over EtherNet/IP: firmware 32.011 -> 33.011`.
+An identity over a different protocol only fills fields that are still
+empty and never alerts. `asset_changed` only uses `enabled` and `severity`.
+
+**Role** is inferred from Modbus, S7, DNP3, EtherNet/IP, BACnet and IEC 104
+traffic (MQTT and OPC UA are left out, since a broker or OPC UA server
+answers requests without being a controller):
+
+| Role | When |
+|------|------|
+| engineering_workstation | sent any control, program or diagnostic request |
+| scada_server | sent requests to 3 or more devices |
+| hmi | sent requests to fewer devices |
+| controller | only answered requests, or announced itself with BACnet I-Am |
+
+An operator can override it from the Assets page or with
+`PUT /api/v1/assets/{mac}/role` (bearer token), choosing from those four
+or `gateway`, `historian`, `other`. The override is saved with the device
+straight away; an empty role goes back to inference.
+
 ## Modbus/TCP
 
 A frame is accepted only when the MBAP header is consistent: protocol id 0,
