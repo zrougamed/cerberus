@@ -2,7 +2,9 @@ package monitor
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net"
 	"net/netip"
@@ -88,8 +90,12 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		return nil, err
 	}
 
-	db.CreateIndex("mac", "*", buntdb.IndexJSON("mac"))
-	db.CreateIndex("last_seen", "*", buntdb.IndexJSON("last_seen"))
+	// Indexes speed up lookups only; the monitor works without them.
+	for _, idx := range []string{"mac", "last_seen"} {
+		if err := db.CreateIndex(idx, "*", buntdb.IndexJSON(idx)); err != nil && !errors.Is(err, buntdb.ErrIndexExists) {
+			log.Printf("monitor: create %s index: %v", idx, err)
+		}
+	}
 
 	topology, err := network.DetectNetworkTopology()
 	if err != nil {
@@ -462,13 +468,17 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 
 	if !found {
 		var dbDevice *models.DeviceInfo
-		nm.db.View(func(tx *buntdb.Tx) error {
+		_ = nm.db.View(func(tx *buntdb.Tx) error {
 			val, err := tx.Get(srcMAC)
-			if err == nil {
-				json.Unmarshal([]byte(val), &dbDevice)
-				device = dbDevice
-				isNew = false
+			if err != nil {
+				return nil // not stored yet
 			}
+			if err := json.Unmarshal([]byte(val), &dbDevice); err != nil {
+				log.Printf("monitor: ignoring corrupt record for %s: %v", srcMAC, err)
+				return nil
+			}
+			device = dbDevice
+			isNew = false
 			return nil
 		})
 	}
@@ -908,15 +918,23 @@ func (nm *NetworkMonitor) persistWorker() {
 		keys := nm.Cache.Keys()
 		nm.mu.RUnlock()
 
-		nm.db.Update(func(tx *buntdb.Tx) error {
+		err := nm.db.Update(func(tx *buntdb.Tx) error {
 			for _, mac := range keys {
 				if device, ok := nm.Cache.Get(mac); ok {
-					data, _ := json.Marshal(device)
-					tx.Set(mac, string(data), nil)
+					data, err := json.Marshal(device)
+					if err != nil {
+						return fmt.Errorf("encode %s: %w", mac, err)
+					}
+					if _, _, err := tx.Set(mac, string(data), nil); err != nil {
+						return fmt.Errorf("store %s: %w", mac, err)
+					}
 				}
 			}
 			return nil
 		})
+		if err != nil {
+			log.Printf("monitor: persisting devices failed: %v", err)
+		}
 	}
 }
 

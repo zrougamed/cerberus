@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"maps"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -168,12 +169,16 @@ func expandIANAPortField(portField string) ([]uint16, bool) {
 		if err1 != nil || err2 != nil || lo > hi {
 			return nil, false
 		}
+		loP, hiP := portFrom(lo), portFrom(hi)
 		if hi-lo > maxIANAPortRangeSpan {
-			return []uint16{uint16(lo)}, true
+			return []uint16{loP}, true
 		}
 		out := make([]uint16, 0, hi-lo+1)
-		for p := lo; p <= hi; p++ {
-			out = append(out, uint16(p))
+		for p := loP; ; p++ {
+			out = append(out, p)
+			if p == hiP {
+				break
+			}
 		}
 		return out, true
 	}
@@ -181,7 +186,16 @@ func expandIANAPortField(portField string) ([]uint16, bool) {
 	if err != nil {
 		return nil, false
 	}
-	return []uint16{uint16(v)}, true
+	return []uint16{portFrom(v)}, true
+}
+
+// portFrom narrows a value parsed with strconv.ParseUint(..., 16); the
+// check makes the bound explicit.
+func portFrom(v uint64) uint16 {
+	if v > math.MaxUint16 {
+		return math.MaxUint16
+	}
+	return uint16(v)
 }
 
 func ianaDisplayName(serviceName string, port uint16, protocol string) string {

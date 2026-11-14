@@ -241,20 +241,11 @@ func detectGatewayWindows() net.IP {
 func getInterfaceMetric(ifaceName string) int {
 	switch runtime.GOOS {
 	case "linux":
-		output, err := exec.Command("ip", "route", "show", "dev", ifaceName).Output()
+		routes, err := readRoutes()
 		if err != nil {
 			return 100
 		}
-
-		// Parse: metric value
-		re := regexp.MustCompile(`metric (\d+)`)
-		matches := re.FindStringSubmatch(string(output))
-		if len(matches) > 1 {
-			metric := 0
-			fmt.Sscanf(matches[1], "%d", &metric)
-			return metric
-		}
-		return 0 // Linux default is 0 if not specified
+		return routeMetric(routes, ifaceName)
 
 	case "darwin":
 		// macOS doesn't easily expose metrics, use heuristics
@@ -281,22 +272,11 @@ func findGatewayForInterface(ifaceName string, subnet *net.IPNet, defaultGW net.
 
 	switch runtime.GOOS {
 	case "linux":
-		output, err := exec.Command("ip", "route", "show", "dev", ifaceName).Output()
+		routes, err := readRoutes()
 		if err != nil {
 			return nil
 		}
-
-		// Look for default or gateway
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "default") || strings.Contains(line, "via") {
-				re := regexp.MustCompile(`via ([0-9.]+)`)
-				matches := re.FindStringSubmatch(line)
-				if len(matches) > 1 {
-					return net.ParseIP(matches[1])
-				}
-			}
-		}
+		return routeGateway(routes, ifaceName)
 
 	case "darwin":
 		// Similar for macOS

@@ -131,6 +131,7 @@ func loadDiskCache() (*OUIDatabase, error) {
 }
 
 func (db *OUIDatabase) tryLoadCSV(path string) error {
+	path = filepath.Clean(path)
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -157,6 +158,7 @@ func (db *OUIDatabase) tryLoadCSV(path string) error {
 }
 
 func (db *OUIDatabase) tryLoadTXT(path string) error {
+	path = filepath.Clean(path)
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
