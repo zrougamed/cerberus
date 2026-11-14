@@ -47,6 +47,10 @@ type NetworkMonitor struct {
 	industrialRules  map[string]*industrialRule
 	industrialLast   map[string]time.Time // device|rule|target|unit -> last alert
 	industrialCounts map[IndustrialCountKey]uint64
+	flowBaseline     *flowBaseline        // nil when disabled
+	zones            *alerts.ZoneMatcher  // nil without zones
+	zoneLast         map[string]time.Time // from|to|src|dst -> last alert
+	zoneViolations   map[string]uint64    // "from>to" -> packets
 	Stats            struct {
 		TotalPackets uint64
 		ArpPackets   uint64
@@ -122,6 +126,12 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		}
 	}
 
+	zones, err := alerts.NewZoneMatcher(cfg.Segmentation)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("segmentation: %w", err)
+	}
+
 	dispatcher, err := notify.New(cfg.Notifications)
 	if err != nil {
 		_ = db.Close()
@@ -147,8 +157,12 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		industrialRules:  newIndustrialRules(cfg.Industrial),
 		industrialLast:   make(map[string]time.Time),
 		industrialCounts: make(map[IndustrialCountKey]uint64),
+		zones:            zones,
+		zoneLast:         make(map[string]time.Time),
+		zoneViolations:   make(map[string]uint64),
 	}
 	nm.baselines = newSecurityBaselines(cfg.Baselines)
+	nm.flowBaseline = newFlowBaseline(cfg.FlowBaseline, db, time.Now())
 	if nm.anomaly != nil {
 		nm.anomaly.onAlert = nm.notifyAnomaly
 	}
@@ -169,6 +183,7 @@ func (nm *NetworkMonitor) Close() error {
 	if nm.geoipDB != nil {
 		_ = nm.geoipDB.Close()
 	}
+	nm.flushBaseline()
 	return nm.db.Close()
 }
 
@@ -474,20 +489,9 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	isNew := !found
 
 	if !found {
-		var dbDevice *models.DeviceInfo
-		_ = nm.db.View(func(tx *buntdb.Tx) error {
-			val, err := tx.Get(srcMAC)
-			if err != nil {
-				return nil // not stored yet
-			}
-			if err := json.Unmarshal([]byte(val), &dbDevice); err != nil {
-				log.Printf("monitor: ignoring corrupt record for %s: %v", srcMAC, err)
-				return nil
-			}
-			device = dbDevice
+		if device = nm.loadDevice(srcMAC); device != nil {
 			isNew = false
-			return nil
-		})
+		}
 	}
 
 	if device == nil {
@@ -675,6 +679,7 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	nm.evaluateAlerts(device)
 	if evt.EventType != models.EVENT_TYPE_ARP {
 		nm.checkWatchlists(device, srcIP, dstIP, time.Now())
+		nm.checkZones(device, evt, srcIP, dstIP, protocol, time.Now())
 	}
 	nm.checkSecurityBaselines(device, evt, srcIP, trafficType)
 	nm.trackIndustrial(device, evt, srcIP, dstIP, time.Now())
@@ -689,6 +694,37 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 		default:
 		}
 	}
+}
+
+// loadDevice reads a stored device record, or returns nil when there is
+// none or it cannot be decoded.
+func (nm *NetworkMonitor) loadDevice(mac string) *models.DeviceInfo {
+	var device *models.DeviceInfo
+	_ = nm.db.View(func(tx *buntdb.Tx) error {
+		val, err := tx.Get(mac)
+		if err != nil {
+			return nil // not stored yet
+		}
+		if err := json.Unmarshal([]byte(val), &device); err != nil {
+			log.Printf("monitor: ignoring corrupt record for %s: %v", mac, err)
+			device = nil
+		}
+		return nil
+	})
+	return device
+}
+
+// storeDevice writes one device record now instead of waiting for the
+// periodic flush, for operator changes that must not be lost.
+func (nm *NetworkMonitor) storeDevice(device *models.DeviceInfo) error {
+	data, err := json.Marshal(device)
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", device.MAC, err)
+	}
+	return nm.db.Update(func(tx *buntdb.Tx) error {
+		_, _, err := tx.Set(device.MAC, string(data), nil)
+		return err
+	})
 }
 
 func (nm *NetworkMonitor) GetAnomalySnapshot() models.AnomalySnapshot {
@@ -944,6 +980,7 @@ func (nm *NetworkMonitor) persistWorker() {
 		if err != nil {
 			log.Printf("monitor: persisting devices failed: %v", err)
 		}
+		nm.flushBaseline()
 	}
 }
 
@@ -1079,6 +1116,10 @@ func cloneDeviceInfo(d *models.DeviceInfo) *models.DeviceInfo {
 	c.TLSVersions = cloneStringIntMap(d.TLSVersions)
 	c.TrafficTypeCounts = cloneTrafficTypeIntMap(d.TrafficTypeCounts)
 	c.Industrial = cloneIndustrial(d.Industrial)
+	if d.Asset != nil {
+		a := *d.Asset
+		c.Asset = &a
+	}
 	c.RecentDNSQueries = nil
 	c.SeenPatterns = nil
 	c.FlowStats = nil

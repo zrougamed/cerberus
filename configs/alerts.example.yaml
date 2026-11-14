@@ -94,6 +94,61 @@ industrial:
     severity: high
     allowed_sources: []
     realert_seconds: 3600
+  enip_write:                # CIP set attribute / Logix tag writes
+    enabled: true
+    severity: medium
+    allowed_sources: []
+    realert_seconds: 3600
+  enip_control:              # CIP reset / start / stop
+    enabled: true
+    severity: high
+    allowed_sources: []
+    realert_seconds: 3600
+  bacnet_write:              # WriteProperty and friends
+    enabled: true
+    severity: medium
+  bacnet_control:            # DeviceCommunicationControl, ReinitializeDevice
+    enabled: true
+    severity: high
+  iec104_control:            # single/double/setpoint commands
+    enabled: true
+    severity: high
+    allowed_sources: []      # the control centre
+  iec104_diagnostic:         # reset process
+    enabled: true
+    severity: high
+  opcua_write:
+    enabled: true
+    severity: medium
+  opcua_insecure:            # client opened a channel with SecurityPolicy#None
+    enabled: true
+    severity: medium
+  mqtt_anonymous:            # CONNECT without a username
+    enabled: true
+    severity: medium
+  asset_changed:             # a device reports a different model, firmware or serial
+    enabled: true
+    severity: high
+
+# Zones and conduits (IEC 62443). Empty by default: nothing is judged until
+# zones are defined. Industrial zones are watch-only for policy drop rules
+# unless enforce: true.
+segmentation:
+  zones: []
+  #  - {id: enterprise, name: Office LAN, level: 4, cidrs: [10.0.0.0/16]}
+  #  - {id: control, name: Line 1 control, level: 1, cidrs: [10.20.0.0/24], industrial: true}
+  conduits: []
+  #  - {from: enterprise, to: control, ports: [502]}
+  no_conduit: {enabled: true, severity: medium, realert_seconds: 3600}
+  level_skip: {enabled: true, severity: high, realert_seconds: 3600}
+
+# Industrial flow baseline: learn (client, server, protocol, operation) tuples,
+# then alert on new ones. Survives restarts; relearn from the console.
+flow_baseline:
+  enabled: true
+  learning_hours: 168        # one week
+  severity: medium
+  max_flows: 10000
 
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:

@@ -14,6 +14,18 @@ const (
 	RuleS7Program        = "s7_program"
 	RuleDNP3Control      = "dnp3_control"
 	RuleDNP3Diagnostic   = "dnp3_diagnostic"
+	RuleENIPWrite        = "enip_write"
+	RuleENIPControl      = "enip_control"
+	RuleBACnetWrite      = "bacnet_write"
+	RuleBACnetControl    = "bacnet_control"
+	RuleIEC104Control    = "iec104_control"
+	RuleIEC104Diagnostic = "iec104_diagnostic"
+	RuleOPCUAWrite       = "opcua_write"
+	RuleOPCUAInsecure    = "opcua_insecure"
+	RuleMQTTAnonymous    = "mqtt_anonymous"
+	// RuleAssetChanged fires when a device reports a different model,
+	// firmware or serial than before. Only enabled and severity apply.
+	RuleAssetChanged = "asset_changed"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -43,6 +55,16 @@ type IndustrialConfig struct {
 	S7Program        IndustrialRule `yaml:"s7_program" json:"s7_program"`
 	DNP3Control      IndustrialRule `yaml:"dnp3_control" json:"dnp3_control"`
 	DNP3Diagnostic   IndustrialRule `yaml:"dnp3_diagnostic" json:"dnp3_diagnostic"`
+	ENIPWrite        IndustrialRule `yaml:"enip_write" json:"enip_write"`
+	ENIPControl      IndustrialRule `yaml:"enip_control" json:"enip_control"`
+	BACnetWrite      IndustrialRule `yaml:"bacnet_write" json:"bacnet_write"`
+	BACnetControl    IndustrialRule `yaml:"bacnet_control" json:"bacnet_control"`
+	IEC104Control    IndustrialRule `yaml:"iec104_control" json:"iec104_control"`
+	IEC104Diagnostic IndustrialRule `yaml:"iec104_diagnostic" json:"iec104_diagnostic"`
+	OPCUAWrite       IndustrialRule `yaml:"opcua_write" json:"opcua_write"`
+	OPCUAInsecure    IndustrialRule `yaml:"opcua_insecure" json:"opcua_insecure"`
+	MQTTAnonymous    IndustrialRule `yaml:"mqtt_anonymous" json:"mqtt_anonymous"`
+	AssetChanged     IndustrialRule `yaml:"asset_changed" json:"asset_changed"`
 }
 
 // NamedIndustrialRule pairs a rule with its id.
@@ -61,6 +83,16 @@ func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
 		{RuleS7Program, &c.S7Program},
 		{RuleDNP3Control, &c.DNP3Control},
 		{RuleDNP3Diagnostic, &c.DNP3Diagnostic},
+		{RuleENIPWrite, &c.ENIPWrite},
+		{RuleENIPControl, &c.ENIPControl},
+		{RuleBACnetWrite, &c.BACnetWrite},
+		{RuleBACnetControl, &c.BACnetControl},
+		{RuleIEC104Control, &c.IEC104Control},
+		{RuleIEC104Diagnostic, &c.IEC104Diagnostic},
+		{RuleOPCUAWrite, &c.OPCUAWrite},
+		{RuleOPCUAInsecure, &c.OPCUAInsecure},
+		{RuleMQTTAnonymous, &c.MQTTAnonymous},
+		{RuleAssetChanged, &c.AssetChanged},
 	}
 }
 
@@ -91,6 +123,22 @@ func defaultIndustrialConfig() IndustrialConfig {
 		// rarely; anything else sending them is worth a page.
 		DNP3Control:    rule("high"),
 		DNP3Diagnostic: rule("high"),
+		// Tag writes from HMIs are routine, like S7 write_var.
+		ENIPWrite:   rule("medium"),
+		ENIPControl: rule("high"),
+		// Building systems write setpoints constantly; disabling a device's
+		// communication or reinitialising it is rare and disruptive.
+		BACnetWrite:   rule("medium"),
+		BACnetControl: rule("high"),
+		// IEC 104 commands come from the control centre only.
+		IEC104Control:    rule("high"),
+		IEC104Diagnostic: rule("high"),
+		OPCUAWrite:       rule("medium"),
+		OPCUAInsecure:    rule("medium"),
+		MQTTAnonymous:    rule("medium"),
+		// A firmware or model change on a controller is either planned
+		// maintenance or someone swapping hardware; both deserve a look.
+		AssetChanged: rule("high"),
 	}
 }
 
