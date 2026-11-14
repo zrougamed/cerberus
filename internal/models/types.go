@@ -234,6 +234,11 @@ type DeviceInfo struct {
 	// Asset is what the device says about itself in an industrial protocol
 	// (vendor, model, firmware, serial). Nil until one is seen.
 	Asset *AssetInfo `json:"asset,omitempty"`
+	// RoleOverride is an operator-set asset role that replaces the
+	// inferred one. Empty means "infer".
+	RoleOverride string `json:"role_override,omitempty"`
+	// Zone is the id of the segmentation zone the device's address is in.
+	Zone string `json:"zone,omitempty"`
 }
 
 // AssetInfo is a device's self-reported identity.
