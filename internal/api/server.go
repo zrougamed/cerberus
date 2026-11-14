@@ -62,13 +62,27 @@ func (s *Server) Handler() (http.Handler, error) {
 	return securityHeaders(mux), nil
 }
 
+// contentSecurityPolicy allows only the embedded dashboard's own script and
+// stylesheet, Google Fonts, and same-origin API calls. There is no inline
+// script or style in internal/api/web; keep it that way (use classes in
+// styles.css) or the browser will block it.
+const contentSecurityPolicy = "default-src 'none'; " +
+	"script-src 'self'; " +
+	"style-src 'self' https://fonts.googleapis.com; " +
+	"font-src https://fonts.gstatic.com; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"base-uri 'none'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
 // securityHeaders sets browser hardening headers on every response. The
 // dashboard is never meant to be framed, and the API carries the device
 // inventory, so responses are not cached either.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")

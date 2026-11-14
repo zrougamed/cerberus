@@ -299,7 +299,7 @@ function renderMapTable(title, obj) {
   const rows = entries
     .map(
       ([k, v]) =>
-        `<tr><td>${escapeHtml(k)}</td><td style="text-align:right">${escapeHtml(String(v))}</td></tr>`,
+        `<tr><td>${escapeHtml(k)}</td><td class="num">${escapeHtml(String(v))}</td></tr>`,
     )
     .join("");
   return `<h3>${escapeHtml(title)}</h3><table class="map-table"><thead><tr><th>Name</th><th>Count</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -458,8 +458,8 @@ function renderDevicePage(mac) {
     renderMapTable("TLS SNIs / labels", d.tls_snis) +
     renderMapTable("TLS versions", d.tls_versions) +
     renderMapTable("Traffic type counts", d.traffic_type_counts);
-  root.innerHTML = `<div class="kv-grid">${kv}</div>${targets}<div style="margin-top:18px">${maps}</div>
-    <p class="muted" style="margin-top:16px"><a href="#/raw/devices">View raw device JSON</a></p>`;
+  root.innerHTML = `<div class="kv-grid">${kv}</div>${targets}<div class="section-gap">${maps}</div>
+    <p class="muted section-gap"><a href="#/raw/devices">View raw device JSON</a></p>`;
 }
 
 function renderAlertsPage() {

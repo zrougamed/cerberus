@@ -51,7 +51,9 @@ There is no separate API prefix for static files; unknown paths fall through to 
 
 ## Response headers
 
-Every response sets `Content-Security-Policy: frame-ancestors 'none'`,
+Every response sets a strict `Content-Security-Policy` (`default-src 'none'`,
+scripts and styles only from the server itself plus Google Fonts, same-origin
+API calls, `frame-ancestors 'none'`; no inline script or style is allowed),
 `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: no-referrer`, a restrictive `Permissions-Policy` and
 `Cross-Origin-Opener-Policy: same-origin`. `/api/` responses also set

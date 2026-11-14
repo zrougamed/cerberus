@@ -525,3 +525,12 @@ h3 {
     animation: none !important;
   }
 }
+
+/* Utility classes replacing inline style attributes (blocked by the CSP). */
+.num {
+  text-align: right;
+}
+
+.section-gap {
+  margin-top: 18px;
+}

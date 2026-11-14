@@ -253,7 +253,7 @@ func TestHandler_SetsSecurityHeaders(t *testing.T) {
 	}
 
 	common := map[string]string{
-		"Content-Security-Policy": "frame-ancestors 'none'",
+		"Content-Security-Policy": contentSecurityPolicy,
 		"X-Frame-Options":         "DENY",
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "no-referrer",
@@ -369,5 +369,42 @@ func TestMetrics_WatchlistHits(t *testing.T) {
 	}
 	if alpha > zeta {
 		t.Fatal("watchlist series should be sorted by list id")
+	}
+}
+
+func TestContentSecurityPolicy_Directives(t *testing.T) {
+	for _, want := range []string{
+		"default-src 'none'",
+		"script-src 'self'",
+		"frame-ancestors 'none'",
+		"base-uri 'none'",
+	} {
+		if !strings.Contains(contentSecurityPolicy, want) {
+			t.Errorf("CSP missing %q: %s", want, contentSecurityPolicy)
+		}
+	}
+	if strings.Contains(contentSecurityPolicy, "unsafe-") {
+		t.Errorf("CSP must not allow unsafe-* sources: %s", contentSecurityPolicy)
+	}
+}
+
+// The CSP forbids inline script and style; fail fast if the embedded UI
+// reintroduces them.
+func TestEmbeddedWeb_NoInlineScriptOrStyle(t *testing.T) {
+	for _, name := range []string{"web/index.html", "web/app.js"} {
+		data, err := webFS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		src := string(data)
+		for _, bad := range []string{"style=", "<style", " onclick=", " onload=", "javascript:"} {
+			if strings.Contains(src, bad) {
+				t.Errorf("%s contains %q, which the CSP blocks", name, bad)
+			}
+		}
+	}
+	html, _ := webFS.ReadFile("web/index.html")
+	if n := strings.Count(string(html), "<script"); n != strings.Count(string(html), `<script src="/`) {
+		t.Errorf("index.html has an inline <script>")
 	}
 }
