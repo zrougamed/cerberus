@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -265,6 +267,16 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w)
 
 	s.writeKernelMetrics(w)
+
+	if hits := s.monitor.GetWatchlistHits(); len(hits) > 0 {
+		ids := slices.Sorted(maps.Keys(hits))
+		fmt.Fprintln(w, "# HELP cerberus_watchlist_hits_total Packets to or from an address on a watchlist.")
+		fmt.Fprintln(w, "# TYPE cerberus_watchlist_hits_total counter")
+		for _, id := range ids {
+			fmt.Fprintf(w, "cerberus_watchlist_hits_total{list=\"%s\"} %d\n", escapeLabelValue(id), hits[id])
+		}
+		fmt.Fprintln(w)
+	}
 
 	fmt.Fprintln(w, "# HELP cerberus_devices_total Number of tracked devices.")
 	fmt.Fprintln(w, "# TYPE cerberus_devices_total gauge")

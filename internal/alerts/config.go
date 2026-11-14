@@ -44,6 +44,7 @@ type Config struct {
 	Baselines         BaselineConfig  `yaml:"baselines" json:"baselines"`
 	Anomaly           AnomalyConfig   `yaml:"anomaly" json:"anomaly"`
 	Notifications     notify.Config   `yaml:"notifications" json:"notifications"`
+	Watchlists        []Watchlist     `yaml:"watchlists" json:"watchlists"`
 }
 
 // ThresholdRule is a declarative comparison against a device metric.
@@ -87,6 +88,7 @@ type fileOverlay struct {
 	Baselines         *baselineOverlay      `yaml:"baselines" json:"baselines"`
 	Anomaly           *anomalyOverlay       `yaml:"anomaly" json:"anomaly"`
 	Notifications     *notificationsOverlay `yaml:"notifications" json:"notifications"`
+	Watchlists        *[]watchlistOverlay   `yaml:"watchlists" json:"watchlists"`
 }
 
 type notificationsOverlay struct {
@@ -291,6 +293,13 @@ func mergeOverlay(cfg *Config, o fileOverlay) error {
 	if o.Notifications != nil {
 		mergeNotifications(&cfg.Notifications, o.Notifications)
 	}
+	if o.Watchlists != nil {
+		// No built-in watchlists, so the file's list is taken as is.
+		cfg.Watchlists = make([]Watchlist, 0, len(*o.Watchlists))
+		for _, w := range *o.Watchlists {
+			cfg.Watchlists = append(cfg.Watchlists, w.toWatchlist())
+		}
+	}
 	return nil
 }
 
@@ -432,6 +441,9 @@ func (c Config) Validate() error {
 		}
 	}
 	if err := notify.Validate(c.Notifications); err != nil {
+		return err
+	}
+	if err := validateWatchlists(c.Watchlists); err != nil {
 		return err
 	}
 	if c.Notifications.Enabled &&

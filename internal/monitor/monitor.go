@@ -38,6 +38,9 @@ type NetworkMonitor struct {
 	notifier       *notify.Dispatcher
 	geoipDB        *geoip2.Reader
 	topology       *network.NetworkTopology
+	watchlists     *alerts.WatchlistMatcher
+	watchlistHits  map[string]uint64
+	watchlistLast  map[string]time.Time // device|list|remote -> last alert
 	Stats          struct {
 		TotalPackets uint64
 		ArpPackets   uint64
@@ -97,6 +100,18 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 	oui, _ := databases.NewOUIDatabase(online)
 	svc, _ := databases.NewServiceDatabase(online)
 
+	watchlists, err := alerts.NewWatchlistMatcher(cfg.Watchlists)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("watchlists: %w", err)
+	}
+	watchlistHits := make(map[string]uint64)
+	for _, w := range cfg.Watchlists {
+		if w.Enabled {
+			watchlistHits[w.ID] = 0
+		}
+	}
+
 	dispatcher, err := notify.New(cfg.Notifications)
 	if err != nil {
 		_ = db.Close()
@@ -116,6 +131,9 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		anomaly:        newAnomalyDetector(cfg.Anomaly),
 		notifier:       dispatcher,
 		topology:       topology,
+		watchlists:     watchlists,
+		watchlistHits:  watchlistHits,
+		watchlistLast:  make(map[string]time.Time),
 	}
 	nm.baselines = newSecurityBaselines(cfg.Baselines)
 	if nm.anomaly != nil {
@@ -638,6 +656,9 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	// Update cache
 	nm.Cache.Add(srcMAC, device)
 	nm.evaluateAlerts(device)
+	if evt.EventType != models.EVENT_TYPE_ARP {
+		nm.checkWatchlists(device, srcIP, dstIP, time.Now())
+	}
 	nm.checkSecurityBaselines(device, evt, srcIP, trafficType)
 	if nm.anomaly != nil {
 		nm.anomaly.observe(time.Now(), evt, srcMAC)
@@ -707,6 +728,81 @@ func (nm *NetworkMonitor) fireAlertIfNeeded(device *models.DeviceInfo, rule stri
 		return
 	}
 	delete(nm.alertRuleState, key)
+}
+
+// maxWatchlistAlertKeys bounds the re-alert state; past it, expired keys are
+// pruned and, if that is not enough, the state is reset (worst case: one
+// early re-alert per key).
+const maxWatchlistAlertKeys = 4096
+
+// checkWatchlists counts every packet whose address is on a watchlist and
+// raises a "watchlist:<id>" alert, at most once per realert_seconds for the
+// same device and remote address. Caller holds nm.mu.
+func (nm *NetworkMonitor) checkWatchlists(device *models.DeviceInfo, srcIP, dstIP string, now time.Time) {
+	if nm.watchlists.Empty() || device == nil {
+		return
+	}
+	src, _ := netip.ParseAddr(srcIP)
+	dst, _ := netip.ParseAddr(dstIP)
+	for _, hit := range nm.watchlists.Match(src, dst) {
+		nm.watchlistHits[hit.List.ID]++
+
+		remote := hit.Remote.String()
+		key := device.MAC + "|" + hit.List.ID + "|" + remote
+		gap := time.Duration(hit.List.RealertSeconds) * time.Second
+		if last, ok := nm.watchlistLast[key]; ok && now.Sub(last) < gap {
+			continue
+		}
+		nm.pruneWatchlistState(now)
+		nm.watchlistLast[key] = now
+
+		msg := hit.List.Message
+		if msg == "" {
+			msg = "traffic with a watchlisted address"
+		}
+		rule := "watchlist:" + hit.List.ID
+		alert := models.AlertEvent{
+			ID:         fmt.Sprintf("%d-%s-%s", now.UnixNano(), device.MAC, rule),
+			DeviceMAC:  device.MAC,
+			DeviceIP:   device.IP,
+			Vendor:     device.Vendor,
+			Rule:       rule,
+			Severity:   hit.List.Severity,
+			Message:    fmt.Sprintf("%s (%s, list %s)", msg, remote, hit.List.ID),
+			ObservedAt: now,
+		}
+		nm.alerts = append(nm.alerts, alert)
+		if len(nm.alerts) > 500 {
+			nm.alerts = nm.alerts[len(nm.alerts)-500:]
+		}
+		nm.notifyRule(alert)
+	}
+}
+
+func (nm *NetworkMonitor) pruneWatchlistState(now time.Time) {
+	if len(nm.watchlistLast) < maxWatchlistAlertKeys {
+		return
+	}
+	// Generous cut-off: anything older than the longest realert window.
+	var longest time.Duration
+	for _, w := range nm.alertConfig.Watchlists {
+		longest = max(longest, time.Duration(w.RealertSeconds)*time.Second)
+	}
+	for k, t := range nm.watchlistLast {
+		if now.Sub(t) >= longest {
+			delete(nm.watchlistLast, k)
+		}
+	}
+	if len(nm.watchlistLast) >= maxWatchlistAlertKeys {
+		clear(nm.watchlistLast)
+	}
+}
+
+// GetWatchlistHits returns packets matched per enabled watchlist since start.
+func (nm *NetworkMonitor) GetWatchlistHits() map[string]uint64 {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+	return maps.Clone(nm.watchlistHits)
 }
 
 func (nm *NetworkMonitor) notifyRule(alert models.AlertEvent) {

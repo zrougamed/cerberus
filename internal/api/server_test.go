@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
@@ -343,4 +344,30 @@ func TestMetrics_KernelCounters(t *testing.T) {
 			t.Fatalf("no samples expected on error:\n%s", body)
 		}
 	})
+}
+
+func TestMetrics_WatchlistHits(t *testing.T) {
+	cfg := alerts.DefaultConfig()
+	cfg.Watchlists = []alerts.Watchlist{
+		{ID: "zeta", Enabled: true, CIDRs: []string{"192.0.2.0/24"}, Direction: alerts.DirectionAny, Severity: "low"},
+		{ID: "alpha", Enabled: true, CIDRs: []string{"198.51.100.0/24"}, Direction: alerts.DirectionAny, Severity: "low"},
+	}
+	mon, err := monitor.NewNetworkMonitorWithAlerts(10, filepath.Join(t.TempDir(), "test.db"), cfg)
+	if err != nil {
+		t.Fatalf("failed to create monitor: %v", err)
+	}
+	t.Cleanup(func() { _ = mon.Close() })
+
+	rr := httptest.NewRecorder()
+	NewServer(mon).handleMetrics(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rr.Body.String()
+
+	alpha := strings.Index(body, `cerberus_watchlist_hits_total{list="alpha"} 0`)
+	zeta := strings.Index(body, `cerberus_watchlist_hits_total{list="zeta"} 0`)
+	if alpha < 0 || zeta < 0 {
+		t.Fatalf("watchlist series missing:\n%s", body)
+	}
+	if alpha > zeta {
+		t.Fatal("watchlist series should be sorted by list id")
+	}
 }
