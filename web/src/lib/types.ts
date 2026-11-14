@@ -24,6 +24,7 @@ export type IndustrialStats = {
   exceptions: number
   operations?: Record<string, number>
   functions?: Record<string, number>
+  details?: Record<string, number>
   peers?: string[]
   last_seen?: string
 }

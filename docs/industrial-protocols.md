@@ -5,7 +5,8 @@ Cerberus decodes industrial control protocols in user space, from the first
 UDP event. No BPF change and no extra kernel work is involved, so enabling it
 costs nothing on networks that don't carry this traffic.
 
-Supported today: **Modbus/TCP** (TCP 502). Planned: S7comm, DNP3,
+Supported today: **Modbus/TCP** (TCP 502) and **S7comm** (ISO-on-TCP, TCP
+102), with S7comm-plus detected and counted. Planned: DNP3,
 EtherNet/IP + CIP, BACnet/IP, IEC 104, OPC UA, MQTT and PROFINET DCP (see
 the `industrial` label on the issue tracker).
 
@@ -93,11 +94,52 @@ industrial:
 Invalid severities, negative `realert_seconds` or unparsable addresses refuse
 to start, like the rest of the alerts file.
 
+## S7comm
+
+Port 102 carries TPKT + COTP (RFC 1006). IEC 61850 MMS uses the same
+framing, so S7 is only claimed when it is unambiguous:
+
+- COTP connection request/confirm whose destination TSAP is two bytes with a
+  connection type of 1 (PG), 2 (OP) or 3 (S7 basic). The rack and slot are
+  taken from the second byte and counted in `details`, e.g.
+  `"details": {"rack 0 slot 2": 4}`.
+- COTP data carrying an S7 header (protocol id `0x32`, reserved bytes zero,
+  ROSCTR job, ack, ack-data or userdata).
+- S7comm-plus (protocol id `0x72`, version 1 to 3) is counted under
+  `s7comm_plus` and never alerted on; its payload is integrity protected and
+  not decoded.
+
+Direction comes from the S7 header (job vs ack), not the port. An ack-data
+with a non-zero error class counts as an error reply.
+
+| Class | Functions |
+|-------|-----------|
+| read | read_var, start_upload, upload, end_upload |
+| write | write_var |
+| control | plc_stop, plc_start (PI service `P_PROGRAM`), other PI services |
+| program | request_download, download_block, download_ended, delete_block (`_DELE`), insert_block (`_INSE`), compress_memory (`_GARB`), copy_ram_to_rom (`_MODU`) |
+| other | setup_communication, cpu_services, userdata, cotp_connect |
+
+### Alerts
+
+| Rule | Fires on | Default |
+|------|----------|---------|
+| `s7_write` | write_var | on, medium |
+| `s7_control` | PLC stop, start and other PI services | on, high |
+| `s7_program` | Download, delete, insert, compress, copy to ROM | on, high |
+
+They take the same `allowed_sources` and `realert_seconds` options as the
+Modbus rules. S7 has no unit id, so re-alerting is per source and target.
+
+Example: `S7comm plc_stop from 10.20.0.10 to 10.20.0.50`
+
 ## Limits
 
 - Only the first 128 bytes of each segment are seen. One Modbus frame per
   segment is decoded; a second frame packed in the same segment is not.
 - Modbus over a non-standard port is not detected.
+- S7 userdata (SZL reads, block info, clock, passwords) is counted but not
+  decoded yet; that comes with the asset inventory work.
 - Modbus has no authentication, so `allowed_sources` is matched on IP
   address. Anyone who can spoof the SCADA server's address can write without
   an alert. Pair it with the `gateway_mac_changed` baseline and switch port

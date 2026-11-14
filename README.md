@@ -29,7 +29,7 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Active response**: bpfilter-style ordered filter rules (interface, protocol, addresses, ports, TCP flags, ICMP; Allow / Block / Count; per-rule counters and rate-limited packet log) plus a MAC/IP blocklist, with a dry-run mode, TTLs, an audit trail and a Policy page in the console ([`docs/active-response.md`](docs/active-response.md))
 - **CIDR watchlists**: Named IPv4/IPv6 prefix sets that raise rate-limited `watchlist:<id>` alerts and per-list hit counters ([`docs/how-to-alerts.md`](docs/how-to-alerts.md#4-watchlists-cidr-sets))
 - **Kernel-side counters**: Packets/bytes seen by the TC hook and events lost to a full ring buffer, on `/metrics`
-- **Industrial protocols**: Modbus/TCP decoding with per-device read/write/diagnostic counters, and `modbus_write` / `modbus_diagnostic` alerts with an allow-list for known masters ([`docs/industrial-protocols.md`](docs/industrial-protocols.md))
+- **Industrial protocols**: Modbus/TCP and S7comm decoding with per-device read/write/control/program counters, and alerts on Modbus writes, PLC stop/start, program download and block delete, with an allow-list for known masters ([`docs/industrial-protocols.md`](docs/industrial-protocols.md))
 - **Outbound notifications**: Optional Slack, Microsoft Teams, generic webhook, and syslog for rule alerts, anomalies, and new devices ([`docs/notifications.md`](docs/notifications.md))
 
 Full system behavior, data flow, and UI breakdown live in **[`docs/`](docs/README.md)**. Step-by-step **how to trigger alerts** (rule vs anomaly) is in **[`docs/how-to-alerts.md`](docs/how-to-alerts.md)**.

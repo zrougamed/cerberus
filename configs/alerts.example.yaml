@@ -69,6 +69,21 @@ industrial:
     severity: high
     allowed_sources: []
     realert_seconds: 3600
+  s7_write:                  # write_var from HMIs is routine; medium by default
+    enabled: true
+    severity: medium
+    allowed_sources: []
+    realert_seconds: 3600
+  s7_control:                # PLC stop / start
+    enabled: true
+    severity: high
+    allowed_sources: []
+    realert_seconds: 3600
+  s7_program:                # download, delete block, copy to ROM
+    enabled: true
+    severity: high
+    allowed_sources: []
+    realert_seconds: 3600
 
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:

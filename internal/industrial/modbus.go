@@ -39,12 +39,7 @@ const (
 	fcEncapsulatedTransport  = 43
 )
 
-type modbusFunction struct {
-	name  string
-	class Class
-}
-
-var modbusFunctions = map[uint8]modbusFunction{
+var modbusFunctions = map[uint8]functionInfo{
 	fcReadCoils:              {"read_coils", ClassRead},
 	fcReadDiscreteInputs:     {"read_discrete_inputs", ClassRead},
 	fcReadHoldingRegisters:   {"read_holding_registers", ClassRead},
@@ -91,7 +86,7 @@ func DecodeModbus(p []byte, response bool) (Message, bool) {
 		pdu = pdu[:declared]
 	}
 
-	m := Message{Protocol: ProtocolModbus, Unit: p[6], Response: response}
+	m := Message{Protocol: ProtocolModbus, Unit: p[6], HasUnit: true, Response: response}
 	if fc&modbusExceptionBit != 0 {
 		fc &^= modbusExceptionBit
 		m.Response = true

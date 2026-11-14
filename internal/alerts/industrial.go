@@ -9,6 +9,9 @@ import (
 const (
 	RuleModbusWrite      = "modbus_write"
 	RuleModbusDiagnostic = "modbus_diagnostic"
+	RuleS7Write          = "s7_write"
+	RuleS7Control        = "s7_control"
+	RuleS7Program        = "s7_program"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -33,6 +36,26 @@ type IndustrialRule struct {
 type IndustrialConfig struct {
 	ModbusWrite      IndustrialRule `yaml:"modbus_write" json:"modbus_write"`
 	ModbusDiagnostic IndustrialRule `yaml:"modbus_diagnostic" json:"modbus_diagnostic"`
+	S7Write          IndustrialRule `yaml:"s7_write" json:"s7_write"`
+	S7Control        IndustrialRule `yaml:"s7_control" json:"s7_control"`
+	S7Program        IndustrialRule `yaml:"s7_program" json:"s7_program"`
+}
+
+// NamedIndustrialRule pairs a rule with its id.
+type NamedIndustrialRule struct {
+	ID   string
+	Rule *IndustrialRule
+}
+
+// Rules lists every industrial rule with its id, pointing into c.
+func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
+	return []NamedIndustrialRule{
+		{RuleModbusWrite, &c.ModbusWrite},
+		{RuleModbusDiagnostic, &c.ModbusDiagnostic},
+		{RuleS7Write, &c.S7Write},
+		{RuleS7Control, &c.S7Control},
+		{RuleS7Program, &c.S7Program},
+	}
 }
 
 type industrialRuleOverlay struct {
@@ -45,12 +68,23 @@ type industrialRuleOverlay struct {
 type industrialOverlay struct {
 	ModbusWrite      *industrialRuleOverlay `yaml:"modbus_write" json:"modbus_write"`
 	ModbusDiagnostic *industrialRuleOverlay `yaml:"modbus_diagnostic" json:"modbus_diagnostic"`
+	S7Write          *industrialRuleOverlay `yaml:"s7_write" json:"s7_write"`
+	S7Control        *industrialRuleOverlay `yaml:"s7_control" json:"s7_control"`
+	S7Program        *industrialRuleOverlay `yaml:"s7_program" json:"s7_program"`
 }
 
 func defaultIndustrialConfig() IndustrialConfig {
+	rule := func(severity string) IndustrialRule {
+		return IndustrialRule{Enabled: true, Severity: severity, RealertSeconds: defaultIndustrialRealertSeconds}
+	}
 	return IndustrialConfig{
-		ModbusWrite:      IndustrialRule{Enabled: true, Severity: "high", RealertSeconds: defaultIndustrialRealertSeconds},
-		ModbusDiagnostic: IndustrialRule{Enabled: true, Severity: "high", RealertSeconds: defaultIndustrialRealertSeconds},
+		ModbusWrite:      rule("high"),
+		ModbusDiagnostic: rule("high"),
+		// HMIs write tags all day; a write is worth a look, a stop or a
+		// download is worth a page.
+		S7Write:   rule("medium"),
+		S7Control: rule("high"),
+		S7Program: rule("high"),
 	}
 }
 
@@ -58,8 +92,10 @@ func mergeIndustrial(dst *IndustrialConfig, src *industrialOverlay) {
 	if src == nil {
 		return
 	}
-	mergeIndustrialRule(&dst.ModbusWrite, src.ModbusWrite)
-	mergeIndustrialRule(&dst.ModbusDiagnostic, src.ModbusDiagnostic)
+	overlays := []*industrialRuleOverlay{src.ModbusWrite, src.ModbusDiagnostic, src.S7Write, src.S7Control, src.S7Program}
+	for i, r := range dst.Rules() {
+		mergeIndustrialRule(r.Rule, overlays[i])
+	}
 }
 
 func mergeIndustrialRule(dst *IndustrialRule, src *industrialRuleOverlay) {
@@ -81,26 +117,19 @@ func mergeIndustrialRule(dst *IndustrialRule, src *industrialRuleOverlay) {
 }
 
 func validateIndustrial(c IndustrialConfig) error {
-	rules := []struct {
-		id   string
-		rule IndustrialRule
-	}{
-		{RuleModbusWrite, c.ModbusWrite},
-		{RuleModbusDiagnostic, c.ModbusDiagnostic},
-	}
-	for _, r := range rules {
-		if !r.rule.Enabled {
+	for _, r := range c.Rules() {
+		if !r.Rule.Enabled {
 			continue
 		}
-		if !validSeverity(r.rule.Severity) {
-			return fmt.Errorf("industrial.%s: unknown severity %q (want low|medium|high)", r.id, r.rule.Severity)
+		if !validSeverity(r.Rule.Severity) {
+			return fmt.Errorf("industrial.%s: unknown severity %q (want low|medium|high)", r.ID, r.Rule.Severity)
 		}
-		if r.rule.RealertSeconds < 0 {
-			return fmt.Errorf("industrial.%s: realert_seconds must be >= 0", r.id)
+		if r.Rule.RealertSeconds < 0 {
+			return fmt.Errorf("industrial.%s: realert_seconds must be >= 0", r.ID)
 		}
-		for _, s := range r.rule.AllowedSources {
+		for _, s := range r.Rule.AllowedSources {
 			if _, err := parsePrefix(s); err != nil {
-				return fmt.Errorf("industrial.%s: allowed_sources: %w", r.id, err)
+				return fmt.Errorf("industrial.%s: allowed_sources: %w", r.ID, err)
 			}
 		}
 	}

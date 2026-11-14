@@ -102,3 +102,32 @@ func TestIndustrialRule_SourcePrefixes(t *testing.T) {
 		}
 	}
 }
+
+func TestIndustrialRules_CoverEveryField(t *testing.T) {
+	t.Parallel()
+	c := DefaultConfig().Industrial
+	ids := map[string]bool{}
+	for _, r := range c.Rules() {
+		if r.Rule == nil || ids[r.ID] {
+			t.Fatalf("bad or duplicate rule %q", r.ID)
+		}
+		ids[r.ID] = true
+	}
+	if len(ids) != 5 {
+		t.Fatalf("rules = %v", ids)
+	}
+	if c.S7Write.Severity != "medium" || c.S7Control.Severity != "high" || c.S7Program.Severity != "high" {
+		t.Fatalf("S7 defaults = %+v %+v %+v", c.S7Write, c.S7Control, c.S7Program)
+	}
+}
+
+func TestParse_S7Overlay(t *testing.T) {
+	t.Parallel()
+	cfg, err := Parse([]byte("industrial:\n  s7_write:\n    enabled: false\n  s7_program:\n    allowed_sources: [\"10.0.5.0/28\"]\n"), ".yaml")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.Industrial.S7Write.Enabled || len(cfg.Industrial.S7Program.AllowedSources) != 1 || !cfg.Industrial.S7Control.Enabled {
+		t.Fatalf("industrial = %+v", cfg.Industrial)
+	}
+}

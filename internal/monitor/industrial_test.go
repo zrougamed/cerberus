@@ -266,3 +266,102 @@ func TestIndustrialRule_Allows(t *testing.T) {
 		}
 	}
 }
+
+// s7Event builds a TCP event carrying TPKT + COTP + S7 bytes (cotp is
+// everything after the TPKT header).
+func s7Event(srcMAC byte, src, dst string, sport, dport uint16, cotp ...byte) *models.NetworkEvent {
+	evt := modbusEvent(srcMAC, src, dst, sport, dport, 0)
+	evt.L7Payload = [models.L7PayloadSize]byte{}
+	n := 4 + len(cotp)
+	copy(evt.L7Payload[:], append([]byte{3, 0, byte(n >> 8), byte(n)}, cotp...))
+	return evt
+}
+
+func s7JobBytes(params ...byte) []byte {
+	n := len(params)
+	return append([]byte{0x02, 0xF0, 0x80, 0x32, 1, 0, 0, 0, 1, byte(n >> 8), byte(n), 0, 0}, params...)
+}
+
+func TestTrackEvent_S7StopAndDownloadAlert(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	nm.TrackEvent(s7Event(1, "10.0.0.9", "10.0.0.50", 49152, 102, s7JobBytes(0x04, 1)...))
+	nm.TrackEvent(s7Event(1, "10.0.0.9", "10.0.0.50", 49152, 102, s7JobBytes(0x29, 0, 0, 0, 0, 0)...))
+	nm.TrackEvent(s7Event(1, "10.0.0.9", "10.0.0.50", 49152, 102, s7JobBytes(0x1A, 0, 0, 0, 0, 0, 0, 0, 0)...))
+	nm.TrackEvent(s7Event(1, "10.0.0.9", "10.0.0.50", 49152, 102, s7JobBytes(0x05, 1)...))
+
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	if len(got) != 3 {
+		t.Fatalf("alerts = %+v, want s7_control, s7_program, s7_write", got)
+	}
+	if a := got[alerts.RuleS7Control]; a.Severity != "high" || a.Message != "S7comm plc_stop from 10.0.0.9 to 10.0.0.50" {
+		t.Fatalf("control alert = %+v", a)
+	}
+	if a := got[alerts.RuleS7Program]; a.Severity != "high" || a.Message != "S7comm request_download from 10.0.0.9 to 10.0.0.50" {
+		t.Fatalf("program alert = %+v", a)
+	}
+	if a := got[alerts.RuleS7Write]; a.Severity != "medium" {
+		t.Fatalf("write alert = %+v", a)
+	}
+	s := nm.GetStats()["02:00:00:00:00:01"].Industrial[industrial.ProtocolS7]
+	if s.Requests != 4 || s.Operations["control"] != 1 || s.Operations["program"] != 1 || s.Operations["read"] != 1 {
+		t.Fatalf("stats = %+v", s)
+	}
+}
+
+func TestTrackEvent_S7ConnectRecordsRackSlot(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	cr := []byte{0x11, 0xE0, 0, 0, 0, 1, 0, 0xC0, 1, 0x0A, 0xC1, 2, 1, 0, 0xC2, 2, 1, 2}
+	nm.TrackEvent(s7Event(1, "10.0.0.9", "10.0.0.50", 49152, 102, cr...))
+	nm.TrackEvent(s7Event(1, "10.0.0.9", "10.0.0.50", 49153, 102, cr...))
+	s := nm.GetStats()["02:00:00:00:00:01"].Industrial[industrial.ProtocolS7]
+	if s.Details["rack 0 slot 2"] != 2 || s.Functions["cotp_connect"] != 2 {
+		t.Fatalf("stats = %+v", s)
+	}
+	if len(nm.GetAlerts()) != 0 {
+		t.Fatalf("a connect must not alert: %+v", nm.GetAlerts())
+	}
+}
+
+func TestTrackEvent_S7PlusCountedWithoutAlert(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	nm.TrackEvent(s7Event(1, "10.0.0.9", "10.0.0.50", 49152, 102, 0x02, 0xF0, 0x80, 0x72, 0x03, 0x00, 0x1F))
+	if s := nm.GetStats()["02:00:00:00:00:01"].Industrial[industrial.ProtocolS7Plus]; s == nil || s.Requests != 1 {
+		t.Fatalf("stats = %+v", s)
+	}
+	if len(nm.GetAlerts()) != 0 {
+		t.Fatalf("s7comm-plus must not alert: %+v", nm.GetAlerts())
+	}
+}
+
+func TestRecordIndustrial_DetailsBounded(t *testing.T) {
+	device := &models.DeviceInfo{}
+	msg := industrial.Message{Protocol: "s7comm", Class: industrial.ClassOther, FunctionName: "cotp_connect"}
+	for i := range maxIndustrialDetails + 4 {
+		msg.Detail = fmt.Sprintf("rack 0 slot %d", i)
+		recordIndustrial(device, msg, "", time.Now())
+	}
+	msg.Detail = "rack 0 slot 0" // already known, still counted
+	recordIndustrial(device, msg, "", time.Now())
+	d := device.Industrial["s7comm"].Details
+	if len(d) != maxIndustrialDetails || d["rack 0 slot 0"] != 2 {
+		t.Fatalf("details = %v", d)
+	}
+}
+
+func TestNewIndustrialRules_SkipsDisabled(t *testing.T) {
+	cfg := alerts.DefaultConfig().Industrial
+	cfg.S7Write.Enabled = false
+	rules := newIndustrialRules(cfg)
+	if _, ok := rules["s7comm|write"]; ok {
+		t.Fatal("disabled rule compiled")
+	}
+	if r := rules["s7comm|control"]; r == nil || r.id != alerts.RuleS7Control {
+		t.Fatalf("control rule = %+v", r)
+	}
+	if len(rules) != len(industrialRuleClasses)-1 {
+		t.Fatalf("rules = %d, want %d", len(rules), len(industrialRuleClasses)-1)
+	}
+}
