@@ -8,7 +8,7 @@ export function AlertsPage() {
   if (!alerts.length) return <section className="panel"><p className="muted m-0">No rule alerts yet.</p></section>
 
   return (
-    <section className="panel overflow-x-auto">
+    <section className="panel overflow-x-auto" tabIndex={0} aria-label="Rule alerts">
       <p className="muted mb-3 text-sm">Rule alerts from the monitor: volume thresholds, infrastructure baselines, watchlists and industrial protocol operations.</p>
       <table className="w-full border-collapse text-sm">
         <thead>

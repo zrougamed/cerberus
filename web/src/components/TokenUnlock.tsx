@@ -2,7 +2,11 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { getToken, setToken } from '../lib/token'
 
-/** Unlock/lock form for the API token used by write requests. */
+/**
+ * Unlock/lock form for the API token used by write requests. The help text
+ * sits under the input and button row, so it never pushes the input out of
+ * line with the button.
+ */
 export function TokenUnlock({ id, onChange }: { id: string; onChange: () => void }) {
   const [input, setInput] = useState('')
   const unlocked = Boolean(getToken())
@@ -32,25 +36,29 @@ export function TokenUnlock({ id, onChange }: { id: string; onChange: () => void
     )
   }
   return (
-    <form className="grid gap-3 sm:grid-cols-[1fr_auto]" onSubmit={unlock}>
-      <div className="field">
-        <label htmlFor={id}>API token</label>
+    <form className="grid gap-1.5" onSubmit={unlock}>
+      <label htmlFor={id} className="text-[0.9rem] font-bold">
+        API token
+      </label>
+      <div className="flex flex-col gap-2 sm:flex-row">
         <input
           id={id}
+          className="input sm:flex-1"
           type="password"
           autoComplete="current-password"
+          aria-describedby={`${id}-help`}
           minLength={16}
           required
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
-        <p className="m-0 text-xs text-[var(--text-soft)]">CERBERUS_API_TOKEN. Kept in this tab only.</p>
-      </div>
-      <div className="flex items-end">
-        <button className="btn" type="submit">
+        <button className="btn shrink-0" type="submit">
           Unlock changes
         </button>
       </div>
+      <p id={`${id}-help`} className="m-0 text-xs text-[var(--text-soft)]">
+        The value of CERBERUS_API_TOKEN on the server. It is kept in this browser tab only.
+      </p>
     </form>
   )
 }

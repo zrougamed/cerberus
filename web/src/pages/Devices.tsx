@@ -36,7 +36,7 @@ export function DevicesPage() {
   if (!devices.length) return <p className="muted">No devices yet.</p>
 
   return (
-    <section className="panel overflow-x-auto">
+    <section className="panel overflow-x-auto" tabIndex={0} aria-label="Devices">
       <p className="muted mb-3 text-sm">Select a device for full telemetry captured for that MAC.</p>
       <table className="w-full border-collapse text-sm">
         <thead>
