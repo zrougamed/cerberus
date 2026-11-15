@@ -28,6 +28,9 @@ type Capture struct {
 	To        time.Time `json:"to"`
 	Packets   int       `json:"packets"`
 	Bytes     int64     `json:"bytes"` // file size
+	// Drops is how many frames the kernel dropped during the window; a
+	// non-zero value means the capture is incomplete.
+	Drops uint64 `json:"drops"`
 }
 
 var captureIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)

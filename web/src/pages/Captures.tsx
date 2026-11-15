@@ -101,6 +101,9 @@ export function CapturesPage() {
           The buffer holds {data.buffer_packets.toLocaleString()} packets ({size(data.buffer_bytes)})
           {data.buffer_oldest ? ` going back to ${new Date(data.buffer_oldest).toLocaleTimeString()}` : ''}.
           {data.pending > 0 ? ` ${data.pending} alert capture${data.pending === 1 ? ' is' : 's are'} waiting for follow-up traffic.` : ''}
+          {data.kernel_drops > 0
+            ? ` The reader has fallen behind ${data.kernel_drops.toLocaleString()} time${data.kernel_drops === 1 ? '' : 's'} since start; captures covering those moments are marked incomplete.`
+            : ''}
         </p>
         <TokenUnlock id="captures-token" onChange={() => setTick((n) => n + 1)} />
       </section>
@@ -171,7 +174,14 @@ export function CapturesPage() {
                   <td className="px-2 py-2 whitespace-nowrap">
                     {new Date(c.from).toLocaleTimeString()} to {new Date(c.to).toLocaleTimeString()}
                   </td>
-                  <td className="px-2 py-2 text-right font-mono">{c.packets}</td>
+                  <td className="px-2 py-2 text-right font-mono">
+                    {c.packets}
+                    {c.drops > 0 ? (
+                      <span className="block text-xs font-sans font-semibold text-[var(--danger)]" title="Frames the kernel dropped during this window">
+                        Incomplete: {c.drops} dropped
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="px-2 py-2 text-right font-mono">{size(c.bytes)}</td>
                   <td className="px-2 py-2">
                     <div className="flex justify-end gap-2">

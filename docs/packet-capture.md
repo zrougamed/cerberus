@@ -16,7 +16,7 @@ capture:
   interfaces: []            # empty: the interfaces Cerberus is attached to
   snaplen: 1518             # bytes kept per frame
   buffer_seconds: 120       # ring length in time ...
-  buffer_mb: 64             # ... and in memory, whichever is reached first
+  buffer_mb: 32             # ... and in memory, whichever is reached first
   on_alert:
     enabled: true
     min_severity: high      # alerts at or above this get a capture
@@ -64,25 +64,49 @@ Captures hold full packet payloads, so:
 
 | Request | Description |
 |---------|-------------|
-| `GET /api/v1/captures` | Status (`enabled`, `interfaces`, `buffer_packets`, `buffer_bytes`, `buffer_oldest`, `pending`, `skipped`) and `captures` (id, created_at, reason, rule, alert_id, address, from, to, packets, bytes) |
+| `GET /api/v1/captures` | Status (`enabled`, `interfaces`, `buffer_packets`, `buffer_bytes`, `buffer_oldest`, `pending`, `skipped`, `kernel_drops`) and `captures` (id, created_at, reason, rule, alert_id, address, from, to, packets, bytes, drops) |
 | `GET /api/v1/captures/{id}` | Bearer token. The pcapng file |
 | `DELETE /api/v1/captures/{id}` | Bearer token |
 | `POST /api/v1/captures` | Bearer token. `{"address": "...", "seconds": N}`, N up to `buffer_seconds` |
 
 Metrics: `cerberus_capture_buffer_packets`, `cerberus_capture_buffer_bytes`,
-`cerberus_capture_skipped_total`.
+`cerberus_capture_kernel_drops_total`, `cerberus_capture_skipped_total`.
 
-## How it works, and limits
+## How it works
 
-Frames are read in user space from an `AF_PACKET` socket per interface
-(`CAP_NET_RAW`, which Cerberus already needs for BPF). The TC program is not
-involved: a second BPF ring buffer for full frames would add verifier risk
-on every supported kernel, and capture is meant to be switched on for an
-incident rather than run everywhere all the time. Each frame is copied once
-into the ring; memory is bounded by `buffer_mb`.
+Each capture interface gets a `TPACKET_V3` packet ring (`CAP_NET_RAW`,
+which Cerberus already needs for BPF): 4 blocks of 1 MiB that the kernel
+fills and hands over whole. The reader wakes once per block, or every 100 ms
+on a quiet link, not once per frame. A one-instruction classic BPF filter
+on the socket truncates frames to `snaplen` in the kernel, so nothing that
+would be thrown away is copied.
 
-- Frames are read with one system call each. On a busy link (hundreds of
-  thousands of packets per second) the reader can fall behind and the
-  kernel drops frames from the socket queue; captures are then incomplete.
+Frames are then copied once into the history ring: a single preallocated
+`buffer_mb` arena with each frame stored inline behind a 16-byte header.
+Storing a frame allocates nothing, so memory stays at `buffer_mb` (plus
+4 MiB of kernel ring per interface) and the garbage collector has no
+per-frame work. Timestamps come from the kernel.
+
+Measured on a loopback flood with the reader limited to two CPUs:
+
+| | Before (one read per frame) | Now |
+|---|---|---|
+| CPU per 64-byte frame | 1,504 ns | 50 ns |
+| CPU per 1,400-byte frame | 2,264 ns | 212 ns |
+| Frames captured per frame sent | about half missed, silently | all but 0.01% |
+| Storing a 64-byte frame in the history | 98 ns, 1 heap allocation | 43 ns, none |
+| Storing a 1,514-byte frame in the history | 449 ns, 1 heap allocation | 198 ns, none |
+
+The TC program is not involved: a second BPF ring buffer for full frames
+would add verifier risk on every supported kernel for no gain over the
+mapped ring.
+
+## Limits
+
+- Any capture can fall behind under enough load. When the kernel drops
+  frames because the ring is full, Cerberus counts them
+  (`cerberus_capture_kernel_drops_total`) and records the count in each
+  capture whose window they fall in (`drops` in the API, "Incomplete" on
+  the Captures page), so a capture never looks complete when it is not.
 - Only Ethernet interfaces are supported.
 - Captures waiting for their follow-up window are dropped on shutdown.

@@ -71,7 +71,8 @@ func TestCaptures_NowListDownloadDelete(t *testing.T) {
 
 	scrape := httptest.NewRecorder()
 	h.ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	if !strings.Contains(scrape.Body.String(), "cerberus_capture_buffer_packets 0") {
+	if !strings.Contains(scrape.Body.String(), "cerberus_capture_buffer_packets 0") ||
+		!strings.Contains(scrape.Body.String(), "cerberus_capture_kernel_drops_total 0") {
 		t.Fatal("capture metrics missing")
 	}
 
