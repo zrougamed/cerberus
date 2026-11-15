@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/zrougamed/cerberus/internal/auth"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -22,9 +23,9 @@ type baselineResponse struct {
 func (s *Server) registerBaselineRoutes(mux *http.ServeMux) {
 	const disabled = "baseline changes are disabled: set CERBERUS_API_TOKEN"
 	mux.HandleFunc("GET /api/v1/baseline", s.handleBaseline)
-	mux.Handle("POST /api/v1/baseline/approve", s.requireAuth(http.HandlerFunc(s.handleBaselineApprove), disabled))
-	mux.Handle("POST /api/v1/baseline/forget", s.requireAuth(http.HandlerFunc(s.handleBaselineForget), disabled))
-	mux.Handle("POST /api/v1/baseline/relearn", s.requireAuth(http.HandlerFunc(s.handleBaselineRelearn), disabled))
+	mux.Handle("POST /api/v1/baseline/approve", s.requireRole(auth.RoleAnalyst, http.HandlerFunc(s.handleBaselineApprove), disabled))
+	mux.Handle("POST /api/v1/baseline/forget", s.requireRole(auth.RoleAnalyst, http.HandlerFunc(s.handleBaselineForget), disabled))
+	mux.Handle("POST /api/v1/baseline/relearn", s.requireRole(auth.RoleAdmin, http.HandlerFunc(s.handleBaselineRelearn), disabled))
 }
 
 func (s *Server) handleBaseline(w http.ResponseWriter, r *http.Request) {

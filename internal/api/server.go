@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -15,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/auth"
 	"github.com/zrougamed/cerberus/internal/capture"
 	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
@@ -36,14 +38,15 @@ type Server struct {
 	// Set after the capture interfaces are known, which is after the HTTP
 	// server starts, hence atomic. Nil when capture is disabled.
 	capture   atomic.Pointer[capture.Capturer]
-	tokenHash []byte // sha256 of CERBERUS_API_TOKEN; nil disables writes
+	auth      *auth.Authenticator
 	authLimit authLimiter
+	adv       advisoryState
 }
 
 type kernelStatsFunc func() (kstats.Snapshot, error)
 
 func NewServer(mon *monitor.NetworkMonitor) *Server {
-	return &Server{monitor: mon}
+	return &Server{monitor: mon, auth: auth.New(auth.Config{}, "")}
 }
 
 // SetKernelStats registers the source of the BPF-side counters exported in
@@ -67,6 +70,10 @@ func (s *Server) Handler() (http.Handler, error) {
 	s.registerBaselineRoutes(mux)
 	s.registerCaptureRoutes(mux)
 	s.registerSegmentationRoutes(mux)
+	s.registerAdvisoryRoutes(mux)
+	s.registerAuthRoutes(mux)
+	mux.Handle("POST /api/v1/alerts/{id}/ack", s.requireRole(auth.RoleAnalyst, http.HandlerFunc(s.handleAlertAck),
+		"alert changes are disabled: set CERBERUS_API_TOKEN or configure sign-in"))
 	mux.HandleFunc("GET /api/v1/zones", s.handleZones)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)
@@ -78,7 +85,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	return securityHeaders(mux), nil
+	return securityHeaders(s.readGuard(mux)), nil
 }
 
 // contentSecurityPolicy allows only the embedded dashboard's own script and
@@ -256,6 +263,29 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 // and violation counters.
 func (s *Server) handleZones(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.monitor.GetZoneSummary())
+}
+
+// handleAlertAck records an acknowledgement and optional note.
+func (s *Server) handleAlertAck(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Note string `json:"note"`
+	}
+	if r.ContentLength != 0 && !decodeBody(w, r, &body) {
+		return
+	}
+	who := "api"
+	if p, ok := auth.FromContext(r.Context()); ok {
+		who = p.Name
+	}
+	a, err := s.monitor.AckAlert(r.PathValue("id"), who, body.Note, time.Now())
+	switch {
+	case errors.Is(err, monitor.ErrUnknownAlert):
+		writeError(w, http.StatusNotFound, "unknown alert; it may have aged out of the history")
+	case err != nil:
+		writeError(w, http.StatusBadRequest, err.Error())
+	default:
+		writeJSON(w, http.StatusOK, a)
+	}
 }
 
 func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {

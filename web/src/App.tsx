@@ -1,6 +1,9 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { SessionProvider } from './components/SessionProvider'
 import { Shell } from './components/Shell'
+import { SignIn } from './components/SignIn'
 import { LiveProvider } from './lib/live'
+import { useSession } from './lib/session'
 import { AlertsPage } from './pages/Alerts'
 import { AnalyticsPage } from './pages/Analytics'
 import { AnomaliesPage } from './pages/Anomalies'
@@ -15,6 +18,18 @@ import { RawPage } from './pages/Raw'
 import { ZonesPage } from './pages/Zones'
 
 export default function App() {
+  return (
+    <SessionProvider>
+      <Gate />
+    </SessionProvider>
+  )
+}
+
+/** Shows the sign-in screen instead of the console when reads need it. */
+function Gate() {
+  const { session } = useSession()
+  if (!session) return null
+  if (session.protect_reads && !session.authenticated) return <SignIn />
   return (
     <LiveProvider>
       <HashRouter>

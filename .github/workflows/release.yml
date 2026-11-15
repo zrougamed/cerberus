@@ -81,9 +81,41 @@ jobs:
           name: cerberus-${{ matrix.asset_suffix }}
           path: dist/*.tar.gz
 
+  # Offline advisory bundle from CISA's public CSAF OT feed, attached to the
+  # release so air-gapped sites can download it with the binaries.
+  advisory-bundle:
+    name: Advisory bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Fetch CISA CSAF OT advisories
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/cisagov/CSAF.git csaf
+          git -C csaf sparse-checkout set csaf_files/OT/white
+
+      - name: Build bundle
+        run: |
+          mkdir -p dist
+          go run ./tools/advisorygen -in csaf/csaf_files/OT/white -out dist/advisories.json
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cerberus-advisories
+          path: dist/advisories.json
+
   github-release:
     name: GitHub Release
-    needs: [build-assets]
+    needs: [build-assets, advisory-bundle]
     runs-on: ${{ (github.event.pull_request.head.repo.fork && 'ubuntu-latest') || fromJSON(vars.GH_RUNS_ON || '"ubuntu-latest"') }}
     permissions:
       contents: write
@@ -100,7 +132,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum *.tar.gz advisories.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Create release and upload assets
@@ -111,6 +143,7 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.tar.gz
+            dist/advisories.json
             dist/SHA256SUMS
 
   docker:

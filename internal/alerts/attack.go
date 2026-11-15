@@ -57,6 +57,10 @@ var ruleTechniques = map[string][]Technique{
 	// An anonymous broker login is a weakness, not an attack step.
 	RuleMQTTAnonymous: nil,
 	RuleAssetChanged:  {techModuleFirmware},
+	// DCP Set renames or re-addresses a station, cutting it off from its
+	// controller; a factory reset wipes it.
+	RuleProfinetWrite:   {techUnauthorizedCommand, techModifyParameter},
+	RuleProfinetControl: {techUnauthorizedCommand, techDeviceRestart},
 
 	// Flows and segmentation: a new path to a controller is how lateral
 	// movement shows up on the wire.

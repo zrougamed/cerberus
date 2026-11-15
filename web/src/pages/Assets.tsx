@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download } from 'lucide-react'
-import { fetchAssets, policyWrite } from '../lib/api'
+import { fetchAdvisoryStatus, fetchAssets, policyWrite } from '../lib/api'
 import { useLive } from '../lib/live'
-import { getToken } from '../lib/token'
+import { useCan } from '../lib/session'
 import { cn } from '../lib/cn'
-import type { AssetEntry } from '../lib/types'
+import type { AdvisoryStatus, AssetEntry } from '../lib/types'
+import { SEVERITY_CLASS } from '../lib/severity'
+import { AccessNote } from '../components/AccessNote'
 import { TokenUnlock } from '../components/TokenUnlock'
 import { protocolNames } from '../lib/protocols'
 
@@ -24,20 +26,21 @@ const REFRESH_MS = 10_000
 export function AssetsPage() {
   const { paused } = useLive()
   const [assets, setAssets] = useState<AssetEntry[] | null>(null)
+  const [advisories, setAdvisories] = useState<AdvisoryStatus | null>(null)
   const [error, setError] = useState('')
   const [role, setRole] = useState('')
   const [protocol, setProtocol] = useState('')
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-  const [, setTick] = useState(0)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
-        const next = await fetchAssets()
+        const [next, adv] = await Promise.all([fetchAssets(), fetchAdvisoryStatus()])
         if (!cancelled) {
           setAssets(next)
+          setAdvisories(adv)
           setError('')
         }
       } catch {
@@ -57,7 +60,7 @@ export function AssetsPage() {
     [assets],
   )
   const rows = (assets || []).filter((a) => (!role || a.role === role) && (!protocol || a.protocols.includes(protocol)))
-  const unlocked = Boolean(getToken())
+  const unlocked = useCan('analyst')
 
   async function setOverride(a: AssetEntry, next: string) {
     const res = await policyWrite('PUT', `/api/v1/assets/${encodeURIComponent(a.mac)}/role`, { role: next })
@@ -101,7 +104,19 @@ export function AssetsPage() {
             <Download size={16} aria-hidden="true" /> Download CSV
           </a>
         </div>
-        <TokenUnlock id="assets-token" onChange={() => setTick((n) => n + 1)} />
+        {advisories ? (
+          <p className={cn('m-0 text-sm', advisories.stale || advisories.error ? 'font-semibold text-[var(--danger)]' : 'muted')}>
+            {advisories.loaded
+              ? `Advisories: ${advisories.advisories.toLocaleString()} from ${advisories.source}, generated ${new Date(advisories.generated_at!).toLocaleDateString()}${
+                  advisories.stale ? ` (${advisories.age_days} days old: regenerate the bundle with tools/advisorygen)` : ''
+                }.`
+              : advisories.error
+                ? `The advisory bundle could not be loaded: ${advisories.error}`
+                : 'No advisory bundle loaded. Build one with tools/advisorygen and point CERBERUS_ADVISORIES_FILE at it to see known vulnerabilities per device.'}
+          </p>
+        ) : null}
+        <TokenUnlock id="assets-token" />
+        <AccessNote need="analyst" action="set device roles" />
       </section>
 
       {msg ? (
@@ -136,6 +151,7 @@ export function AssetsPage() {
                 <th className="px-2 py-2">Protocols</th>
                 <th className="px-2 py-2">Vendor and model</th>
                 <th className="px-2 py-2">Firmware</th>
+                <th className="px-2 py-2">Advisories</th>
                 <th className="px-2 py-2">Last seen</th>
               </tr>
             </thead>
@@ -176,6 +192,18 @@ export function AssetsPage() {
                     {a.asset?.model ? <div className="font-mono text-xs">{a.asset.model}</div> : null}
                   </td>
                   <td className="px-2 py-2 font-mono">{a.asset?.firmware || '—'}</td>
+                  <td className="px-2 py-2">
+                    {a.advisories > 0 ? (
+                      <Link
+                        to={`/device/${encodeURIComponent(a.mac)}`}
+                        className={cn('inline-block rounded border px-2 py-0.5 text-xs font-bold no-underline', SEVERITY_CLASS[a.advisory_severity || 'medium'])}
+                      >
+                        {a.advisories}, {a.advisory_severity}
+                      </Link>
+                    ) : (
+                      <span className="muted">{advisories?.loaded ? 'None known' : '—'}</span>
+                    )}
+                  </td>
                   <td className="px-2 py-2 text-[var(--text-soft)]">{new Date(a.last_seen).toLocaleString()}</td>
                 </tr>
               ))}

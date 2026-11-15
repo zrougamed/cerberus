@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"github.com/zrougamed/cerberus/internal/auth"
 	"io"
 	"net/http"
 	"net/netip"
@@ -26,9 +27,9 @@ func (s *Server) registerCaptureRoutes(mux *http.ServeMux) {
 	const disabled = "capture changes and downloads are disabled: set CERBERUS_API_TOKEN"
 	mux.HandleFunc("GET /api/v1/captures", s.handleCaptures)
 	// Captures hold full packet payloads, so even reading one needs the token.
-	mux.Handle("GET /api/v1/captures/{id}", s.requireAuth(http.HandlerFunc(s.handleCaptureDownload), disabled))
-	mux.Handle("DELETE /api/v1/captures/{id}", s.requireAuth(http.HandlerFunc(s.handleCaptureDelete), disabled))
-	mux.Handle("POST /api/v1/captures", s.requireAuth(http.HandlerFunc(s.handleCaptureNow), disabled))
+	mux.Handle("GET /api/v1/captures/{id}", s.requireRole(auth.RoleAdmin, http.HandlerFunc(s.handleCaptureDownload), disabled))
+	mux.Handle("DELETE /api/v1/captures/{id}", s.requireRole(auth.RoleAdmin, http.HandlerFunc(s.handleCaptureDelete), disabled))
+	mux.Handle("POST /api/v1/captures", s.requireRole(auth.RoleAdmin, http.HandlerFunc(s.handleCaptureNow), disabled))
 }
 
 // capturer returns the capturer, or writes 409 and returns nil.

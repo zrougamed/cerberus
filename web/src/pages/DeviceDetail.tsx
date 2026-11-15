@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
+import { AdvisoryPanel } from '../components/AdvisoryPanel'
 import { IndustrialPanel } from '../components/IndustrialPanel'
 import { useLive } from '../lib/live'
 
@@ -50,6 +51,7 @@ export function DeviceDetailPage() {
         </p>
       </section>
       <IndustrialPanel industrial={device.industrial} asset={device.asset} />
+      {device.asset ? <AdvisoryPanel mac={device.mac} /> : null}
     </div>
   )
 }

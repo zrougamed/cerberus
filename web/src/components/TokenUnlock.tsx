@@ -1,42 +1,53 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { getToken, setToken } from '../lib/token'
+import { useSession } from '../lib/session'
+import { setToken } from '../lib/token'
 
 /**
- * Unlock/lock form for the API token used by write requests. The help text
+ * Who the console is acting as, with the way to change it: sign out of a
+ * browser session, forget a pasted API token, or paste one. The help text
  * sits under the input and button row, so it never pushes the input out of
  * line with the button.
  */
-export function TokenUnlock({ id, onChange }: { id: string; onChange: () => void }) {
+export function TokenUnlock({ id, onChange }: { id: string; onChange?: () => void }) {
+  const { session, tokenRejected, refresh, signOut } = useSession()
   const [input, setInput] = useState('')
-  const unlocked = Boolean(getToken())
 
-  function unlock(e: FormEvent) {
+  async function unlock(e: FormEvent) {
     e.preventDefault()
     setToken(input.trim())
     setInput('')
-    onChange()
+    await refresh()
+    onChange?.()
   }
 
-  if (unlocked) {
+  if (session?.authenticated) {
+    const viaToken = session.method === 'token'
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <span className="badge">Changes unlocked</span>
+        <span className="badge">
+          {viaToken ? 'Token' : 'Signed in as'} {session.name} ({session.role})
+        </span>
         <button
           type="button"
           className="btn"
-          onClick={() => {
-            setToken('')
-            onChange()
+          onClick={async () => {
+            if (viaToken) {
+              setToken('')
+              await refresh()
+            } else {
+              await signOut()
+            }
+            onChange?.()
           }}
         >
-          Lock changes
+          {viaToken ? 'Forget token' : 'Sign out'}
         </button>
       </div>
     )
   }
   return (
-    <form className="grid gap-1.5" onSubmit={unlock}>
+    <form className="grid gap-1.5" onSubmit={(e) => void unlock(e)}>
       <label htmlFor={id} className="text-[0.9rem] font-bold">
         API token
       </label>
@@ -47,17 +58,20 @@ export function TokenUnlock({ id, onChange }: { id: string; onChange: () => void
           type="password"
           autoComplete="current-password"
           aria-describedby={`${id}-help`}
+          aria-invalid={tokenRejected || undefined}
           minLength={16}
           required
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
         <button className="btn shrink-0" type="submit">
-          Unlock changes
+          Use token
         </button>
       </div>
       <p id={`${id}-help`} className="m-0 text-xs text-[var(--text-soft)]">
-        The value of CERBERUS_API_TOKEN on the server. It is kept in this browser tab only.
+        {tokenRejected
+          ? 'That token was not accepted. Check it and try again.'
+          : 'CERBERUS_API_TOKEN or a named token from the auth config. It is kept in this browser tab only.'}
       </p>
     </form>
   )

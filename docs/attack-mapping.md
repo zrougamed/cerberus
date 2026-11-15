@@ -42,3 +42,5 @@ step). Rules defined by the operator (custom thresholds, `watchlist:*`,
 | `opcua_insecure` | [T0830](https://attack.mitre.org/techniques/T0830/) Adversary-in-the-Middle |
 | `mqtt_anonymous` | none |
 | `asset_changed` | [T0839](https://attack.mitre.org/techniques/T0839/) Module Firmware |
+| `profinet_write` | [T0855](https://attack.mitre.org/techniques/T0855/) Unauthorized Command Message<br>[T0836](https://attack.mitre.org/techniques/T0836/) Modify Parameter |
+| `profinet_control` | [T0855](https://attack.mitre.org/techniques/T0855/) Unauthorized Command Message<br>[T0816](https://attack.mitre.org/techniques/T0816/) Device Restart/Shutdown |

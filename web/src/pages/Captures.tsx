@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { downloadCapture, fetchCaptures, policyWrite } from '../lib/api'
 import { useLive } from '../lib/live'
-import { getToken } from '../lib/token'
+import { useCan } from '../lib/session'
 import { cn } from '../lib/cn'
 import type { CaptureState } from '../lib/types'
+import { AccessNote } from '../components/AccessNote'
 import { TokenUnlock } from '../components/TokenUnlock'
 
 const REFRESH_MS = 10_000
@@ -24,7 +25,6 @@ export function CapturesPage() {
   const [seconds, setSeconds] = useState('60')
   const [busy, setBusy] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
-  const [, setTick] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -47,7 +47,7 @@ export function CapturesPage() {
     }
   }, [paused, reloadKey])
 
-  const unlocked = Boolean(getToken())
+  const unlocked = useCan('admin')
 
   async function captureNow(e: FormEvent) {
     e.preventDefault()
@@ -105,7 +105,7 @@ export function CapturesPage() {
             ? ` The reader has fallen behind ${data.kernel_drops.toLocaleString()} time${data.kernel_drops === 1 ? '' : 's'} since start; captures covering those moments are marked incomplete.`
             : ''}
         </p>
-        <TokenUnlock id="captures-token" onChange={() => setTick((n) => n + 1)} />
+        <TokenUnlock id="captures-token" />
       </section>
 
       <section className="panel grid gap-3">
@@ -199,7 +199,10 @@ export function CapturesPage() {
           </table>
         )}
         {!unlocked && data.captures.length > 0 ? (
-          <p className="muted m-0 mt-2 text-sm">Captures hold full packet contents. Unlock changes with the API token to download them.</p>
+          <div className="mt-2 grid gap-1">
+            <p className="muted m-0 text-sm">Captures hold full packet contents, so only administrators can download them.</p>
+            <AccessNote need="admin" action="download or delete captures" />
+          </div>
         ) : null}
       </section>
     </div>

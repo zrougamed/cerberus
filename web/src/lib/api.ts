@@ -11,12 +11,31 @@ import type {
   ZoneSummary,
   CaptureState,
   Segmentation,
+  AdvisoryStatus,
+  AdvisoryMatch,
 } from './types'
 import { getToken, setToken } from './token'
+import { getCSRF, type Session } from './session'
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { Accept: 'application/json' }
+  const token = getToken()
+  if (token) h.Authorization = `Bearer ${token}`
+  return h
+}
+
+/** A non-2xx API response. */
+export class HTTPError extends Error {
+  readonly status: number
+  constructor(path: string, status: number) {
+    super(`${path} → ${status}`)
+    this.status = status
+  }
+}
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: { Accept: 'application/json' } })
-  if (!res.ok) throw new Error(`${path} → ${res.status}`)
+  const res = await fetch(path, { headers: authHeaders() })
+  if (!res.ok) throw new HTTPError(path, res.status)
   return res.json() as Promise<T>
 }
 
@@ -60,7 +79,7 @@ export function fetchCaptures() {
 export async function downloadCapture(id: string): Promise<string | null> {
   let res: Response
   try {
-    res = await fetch(`/api/v1/captures/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+    res = await fetch(`/api/v1/captures/${encodeURIComponent(id)}`, { headers: authHeaders() })
   } catch {
     return 'The server could not be reached. Check that Cerberus is running.'
   }
@@ -84,6 +103,14 @@ export function fetchSegmentation() {
   return getJSON<Segmentation>('/api/v1/segmentation')
 }
 
+export function fetchAdvisoryStatus() {
+  return getJSON<AdvisoryStatus>('/api/v1/advisories')
+}
+
+export function fetchAssetAdvisories(mac: string) {
+  return getJSON<AdvisoryMatch[]>(`/api/v1/assets/${encodeURIComponent(mac)}/advisories`)
+}
+
 export function fetchPolicy() {
   return getJSON<PolicyState>('/api/v1/policy')
 }
@@ -97,10 +124,9 @@ export async function policyWrite(
   path: string,
   body?: unknown,
 ): Promise<{ ok: true; status: number; data: any } | { ok: false; status: number; error: string }> {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    Authorization: `Bearer ${getToken()}`,
-  }
+  const headers = authHeaders()
+  // Browser sessions prove the request comes from this page.
+  if (getCSRF()) headers['X-Cerberus-CSRF'] = getCSRF()
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   let res: Response
   try {
@@ -119,8 +145,11 @@ export async function policyWrite(
     data = null
   }
   if (res.status === 401) {
-    setToken('')
-    return { ok: false, status: 401, error: 'The API token was not accepted. Enter it again to make changes.' }
+    if (getToken()) {
+      setToken('')
+      return { ok: false, status: 401, error: 'The API token was not accepted. Enter it again to make changes.' }
+    }
+    return { ok: false, status: 401, error: 'Your sign-in has expired. Reload the page and sign in again.' }
   }
   if (!res.ok) {
     return { ok: false, status: res.status, error: (data && data.error) || `The server answered ${res.status}.` }
@@ -128,10 +157,18 @@ export async function policyWrite(
   return { ok: true, status: res.status, data }
 }
 
+export function fetchSession() {
+  return getJSON<Session>('/api/v1/session')
+}
+
+export async function logout() {
+  await fetch('/auth/logout', { method: 'POST', headers: { 'X-Cerberus-CSRF': getCSRF() } })
+}
+
 export async function fetchRaw(endpoint: string) {
   const path =
     endpoint === 'policylog' ? '/api/v1/policy/log' : endpoint === 'policy' ? '/api/v1/policy' : `/api/v1/${endpoint}`
-  const res = await fetch(path, { headers: { Accept: 'application/json' } })
+  const res = await fetch(path, { headers: authHeaders() })
   const text = await res.text()
   try {
     return JSON.stringify(JSON.parse(text), null, 2)

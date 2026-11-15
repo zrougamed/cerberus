@@ -17,6 +17,10 @@ const (
 	EVENT_TYPE_DNS  = 5
 	EVENT_TYPE_HTTP = 6
 	EVENT_TYPE_TLS  = 7
+	// EVENT_TYPE_PROFINET is a PROFINET DCP frame (ethertype 0x8892). It has
+	// no IP header: addresses and ports are zero, L7Payload starts at the
+	// frame id.
+	EVENT_TYPE_PROFINET = 8
 )
 
 const (
@@ -52,6 +56,9 @@ const (
 	TrafficICMPTimeExceeded TrafficType = "ICMP_TIME_EXCEEDED"
 	TrafficICMPRedirect     TrafficType = "ICMP_REDIRECT"
 	TrafficICMPCustom       TrafficType = "ICMP_CUSTOM"
+
+	// PROFINET DCP (discovery and configuration, Ethernet only)
+	TrafficProfinetDCP TrafficType = "PROFINET_DCP"
 
 	// DNS Traffic
 	TrafficDNSQuery    TrafficType = "DNS_QUERY"
@@ -141,6 +148,10 @@ type AlertEvent struct {
 	Techniques []Technique `json:"techniques,omitempty"`
 	// CaptureID names the packet capture taken for this alert, if any.
 	CaptureID string `json:"capture_id,omitempty"`
+	// AckedBy, AckedAt and Note record an analyst acknowledging the alert.
+	AckedBy string     `json:"acked_by,omitempty"`
+	AckedAt *time.Time `json:"acked_at,omitempty"`
+	Note    string     `json:"note,omitempty"`
 }
 
 type AnomalyFeatures struct {

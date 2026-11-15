@@ -37,6 +37,8 @@ const (
 	ProtocolIEC104 = "iec104"
 	ProtocolOPCUA  = "opcua"
 	ProtocolMQTT   = "mqtt"
+	// ProtocolProfinet is PROFINET DCP, which runs on Ethernet without IP.
+	ProtocolProfinet = "profinet"
 )
 
 // Flags mark a property of a message worth alerting on that is not an

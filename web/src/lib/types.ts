@@ -95,6 +95,34 @@ export type AssetEntry = {
   protocols: string[]
   asset?: AssetInfo
   last_seen: string
+  advisories: number
+  advisory_severity?: string
+}
+
+/** GET /api/v1/advisories */
+export type AdvisoryStatus = {
+  loaded: boolean
+  path?: string
+  generated_at?: string
+  source?: string
+  advisories: number
+  age_days: number
+  stale: boolean
+  error?: string
+}
+
+/** GET /api/v1/assets/{mac}/advisories */
+export type AdvisoryMatch = {
+  id: string
+  title: string
+  url?: string
+  published: string
+  severity: string
+  score: number
+  cves: string[] | null
+  product: string
+  affected: string
+  confidence: string
 }
 
 /** Identity a device reported about itself in an industrial protocol. */
@@ -147,6 +175,10 @@ export type AlertEvent = {
   message?: string
   techniques?: { id: string; name: string }[]
   capture_id?: string
+  id?: string
+  acked_by?: string
+  acked_at?: string
+  note?: string
   [key: string]: unknown
 }
 

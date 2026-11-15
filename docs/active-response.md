@@ -96,8 +96,10 @@ switch to `enforce`.
 
 ## Safety rails
 
-- Changes need `CERBERUS_API_TOKEN` (16+ characters). Without it the policy is
-  read-only and nothing can be blocked from the network.
+- Changes need the admin role: `CERBERUS_API_TOKEN` (16+ characters), an admin
+  named token or an admin sign-in (see [access-control.md](access-control.md)).
+  Without any of them the policy is read-only and nothing can be blocked from
+  the network.
 - A rule may not cover this host's own addresses, the default gateway or the
   gateway's MAC unless the request sets `force`. A filter **Block** with no
   source, destination or device at all also needs `force`, since it matches

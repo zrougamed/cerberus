@@ -31,10 +31,11 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Kernel-side counters**: Packets/bytes seen by the TC hook and events lost to a full ring buffer, on `/metrics`
 - **Packet capture**: optional in-memory frame ring that saves pcapng files around high-severity alerts or on demand, downloadable from the console ([`docs/packet-capture.md`](docs/packet-capture.md))
 - **ATT&CK for ICS tags**: every rule alert names its MITRE ATT&CK for ICS techniques, in the console and in Slack, Teams, webhook and syslog notifications ([`docs/attack-mapping.md`](docs/attack-mapping.md))
+- **Advisory matching**: assets checked against an offline bundle of published ICS advisories (built from CISA's CSAF feed, attached to each release), with the affected version range and match confidence per device ([`docs/advisories.md`](docs/advisories.md))
 - **Asset inventory**: vendor, model, firmware and serial reported by the devices themselves, inferred roles (controller, HMI, SCADA server, engineering workstation) with operator overrides, CSV export, and an alert when a device's firmware or model changes
 - **Zones and conduits**: Purdue-level zones and the conduits between them; alerts on traffic with no conduit or that skips a level, a zone map in the console, and drop rules refused on industrial zones unless explicitly allowed
 - **Flow baseline**: learns which hosts talk to which controllers with which operations (one week by default), then alerts on anything new; approve, forget or relearn from the console
-- **Industrial protocols**: Modbus/TCP, S7comm, DNP3, EtherNet/IP, BACnet/IP, IEC 104, OPC UA and MQTT decoding with per-device read/write/control/program counters, and alerts on Modbus writes, PLC stop/start, program download, block delete, DNP3 operate and restart, CIP writes and resets, IEC 104 commands, unencrypted OPC UA channels and anonymous MQTT logins, with an allow-list for known masters ([`docs/industrial-protocols.md`](docs/industrial-protocols.md))
+- **Industrial protocols**: Modbus/TCP, S7comm, DNP3, EtherNet/IP, BACnet/IP, IEC 104, OPC UA, MQTT and PROFINET DCP decoding with per-device read/write/control/program counters, and alerts on Modbus writes, PLC stop/start, program download, block delete, DNP3 operate and restart, CIP writes and resets, IEC 104 commands, unencrypted OPC UA channels and anonymous MQTT logins, with an allow-list for known masters ([`docs/industrial-protocols.md`](docs/industrial-protocols.md))
 - **Outbound notifications**: Optional Slack, Microsoft Teams, generic webhook, and syslog (text, CEF or LEEF, over UDP, TCP or TLS) for rule alerts, anomalies, and new devices ([`docs/notifications.md`](docs/notifications.md))
 
 Full system behavior, data flow, and UI breakdown live in **[`docs/`](docs/README.md)**. Step-by-step **how to trigger alerts** (rule vs anomaly) is in **[`docs/how-to-alerts.md`](docs/how-to-alerts.md)**.
@@ -541,7 +542,7 @@ curl https://zrouga.email
 - Captures network metadata and first 128 bytes of payload for L7 inspection
 - Does NOT capture or store complete packet payloads
 - Local database stored at `./data/network.db` (directory 0750); the policy at `./data/policy.json` (0600)
-- Policy changes (blocking) require `CERBERUS_API_TOKEN`; without it the API and console are read-only
+- Changes need a role: the shared `CERBERUS_API_TOKEN` (admin), named tokens, or OIDC sign-in with viewer, analyst and admin roles (see `docs/access-control.md`); without any of them the API and console are read-only
 - No external network connections by default; optional IEEE/IANA database downloads if `CERBERUS_DB_ONLINE` is enabled (see `docs/system-overview.md`)
 - L7 inspection is limited to protocol identification and metadata extraction
 

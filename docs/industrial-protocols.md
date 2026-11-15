@@ -9,7 +9,7 @@ Supported today: **Modbus/TCP** (TCP 502), **S7comm** (ISO-on-TCP, TCP
 102, with S7comm-plus detected and counted) and **DNP3** (TCP and UDP
 20000), **EtherNet/IP + CIP** (TCP and UDP 44818), **BACnet/IP** (UDP
 47808), **IEC 60870-5-104** (TCP 2404), **OPC UA** binary (TCP 4840) and
-**MQTT** (TCP 1883). Planned:
+**MQTT** (TCP 1883) and **PROFINET DCP** (Ethernet, ethertype 0x8892). Planned:
 EtherNet/IP + CIP, BACnet/IP, IEC 104, OPC UA, MQTT and PROFINET DCP (see
 the `industrial` label on the issue tracker).
 
@@ -79,7 +79,7 @@ answers requests without being a controller):
 | controller | only answered requests, or announced itself with BACnet I-Am |
 
 An operator can override it from the Assets page or with
-`PUT /api/v1/assets/{mac}/role` (bearer token), choosing from those four
+`PUT /api/v1/assets/{mac}/role` (analyst role), choosing from those four
 or `gateway`, `historian`, `other`. The override is saved with the device
 straight away; an empty role goes back to inference.
 
@@ -114,7 +114,8 @@ flow_baseline:
 
 API: `GET /api/v1/baseline` (`?status=new|learned|approved`, `?limit=`),
 `POST /api/v1/baseline/approve` and `/forget` with `{"ids": [...]}`, and
-`POST /api/v1/baseline/relearn`; the POSTs need the API token. Metrics:
+`POST /api/v1/baseline/relearn`; approve and forget need the analyst role,
+relearn the admin role. Metrics:
 `cerberus_baseline_flows{status}`, `cerberus_baseline_dropped_total`,
 `cerberus_baseline_learning`.
 
@@ -124,7 +125,7 @@ Zones and conduits describe how the site is meant to be segmented (IEC
 62443). Each zone is a set of networks at one Purdue level; a conduit
 allows traffic from one zone to another.
 
-Set them up on the **Zones** page (unlock with the API token): add a zone
+Set them up on the **Zones** page (admin role): add a zone
 per network segment, then a conduit per expected connection, and adjust the
 two zone alerts. Changes apply straight away, without a restart, and are
 saved in Cerberus's database. They take precedence over the `segmentation`
@@ -388,6 +389,39 @@ PUBLISH from a client counts as a write, SUBSCRIBE as a read.
 | `mqtt_anonymous` | CONNECT without a username | on, medium |
 
 MQTT over TLS (8883) is encrypted and not decoded.
+
+## PROFINET DCP
+
+PROFINET runs directly on Ethernet, so the TC program handles it: frames
+with ethertype 0x8892, untagged or behind one 802.1Q tag (PROFINET usually
+travels with VLAN priority 6), become events when the frame id is a DCP id
+(0xFEFC to 0xFEFF). Cyclic real-time frames, which carry process data every
+few milliseconds, are left in the kernel and cost nothing. PROFINET frames
+still count as "other" in the kernel counters.
+
+Stations are named by MAC address, since DCP has no IP header; addresses in
+alerts and the flow baseline are MACs. Identify responses and Hello
+messages fill the device `asset` (type of station as the model, vendor from
+the vendor id, the device id as the device type) and the station name goes
+into `details`.
+
+| Class | DCP |
+|-------|-----|
+| write | Set NameOfStation, Set IP parameters |
+| control | Set control: reset to factory settings |
+| other | Identify, Get, Hello, Set signal (flash the LED), transaction control |
+
+| Rule | Fires on | Default |
+|------|----------|---------|
+| `profinet_write` | renaming a station or changing its address, which takes it off its controller | on, high |
+| `profinet_control` | factory reset | on, high |
+
+Example: `PROFINET DCP set_name from 02:00:00:00:00:01 to 02:00:00:00:00:09 (new name rogue)`
+
+Because DCP has no IP, `allowed_sources` for these two rules takes MAC
+addresses, for example the engineering laptop used for commissioning:
+`allowed_sources: ["00:1b:1b:aa:bb:cc"]`. MAC addresses are accepted in
+every industrial rule's allow-list; they only match Ethernet-only traffic.
 
 ## Limits
 
