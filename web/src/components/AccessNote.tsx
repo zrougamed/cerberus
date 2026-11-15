@@ -8,7 +8,7 @@ export function AccessNote({ need, action }: { need: Role; action: string }) {
   if (ranks.indexOf(session.role) >= ranks.indexOf(need)) return null
   let text: string
   if (!session.writes_enabled) {
-    text = `Changes are turned off on this server. An administrator can enable them with CERBERUS_API_TOKEN or sign-in.`
+    text = 'Changes are turned off on this server.'
   } else if (!session.authenticated) {
     text = session.oidc ? `Sign in to ${action}.` : `Enter the API token to ${action}.`
   } else {
