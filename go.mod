@@ -7,6 +7,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/tidwall/buntdb v1.4.0
+	golang.org/x/sys v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -19,5 +20,4 @@ require (
 	github.com/tidwall/pretty v1.3.0 // indirect
 	github.com/tidwall/rtred v0.1.2 // indirect
 	github.com/tidwall/tinyqueue v0.1.1 // indirect
-	golang.org/x/sys v0.50.0 // indirect
 )

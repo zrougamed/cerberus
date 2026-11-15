@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/capture"
 	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
 	"github.com/zrougamed/cerberus/internal/monitor"
@@ -31,7 +32,10 @@ type Server struct {
 	// server has started, hence atomic.
 	kernelStats atomic.Pointer[kernelStatsFunc]
 
-	policy    *policy.Engine
+	policy *policy.Engine
+	// Set after the capture interfaces are known, which is after the HTTP
+	// server starts, hence atomic. Nil when capture is disabled.
+	capture   atomic.Pointer[capture.Capturer]
 	tokenHash []byte // sha256 of CERBERUS_API_TOKEN; nil disables writes
 	authLimit authLimiter
 }
@@ -61,6 +65,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	s.registerDocsRoutes(mux)
 	s.registerAssetRoutes(mux)
 	s.registerBaselineRoutes(mux)
+	s.registerCaptureRoutes(mux)
 	mux.HandleFunc("GET /api/v1/zones", s.handleZones)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)
@@ -364,6 +369,19 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "cerberus_zone_violations_total{from=\"%s\",to=\"%s\"} %d\n", escapeLabelValue(from), escapeLabelValue(to), zs.Violations[k])
 		}
 		fmt.Fprintln(w)
+	}
+
+	if c := s.capture.Load(); c != nil {
+		cs := c.Status()
+		fmt.Fprintln(w, "# HELP cerberus_capture_buffer_packets Frames held in the capture ring.")
+		fmt.Fprintln(w, "# TYPE cerberus_capture_buffer_packets gauge")
+		fmt.Fprintf(w, "cerberus_capture_buffer_packets %d\n", cs.BufferPackets)
+		fmt.Fprintln(w, "# HELP cerberus_capture_buffer_bytes Bytes held in the capture ring.")
+		fmt.Fprintln(w, "# TYPE cerberus_capture_buffer_bytes gauge")
+		fmt.Fprintf(w, "cerberus_capture_buffer_bytes %d\n", cs.BufferBytes)
+		fmt.Fprintln(w, "# HELP cerberus_capture_skipped_total Alert captures skipped by the rate limit or a full queue.")
+		fmt.Fprintln(w, "# TYPE cerberus_capture_skipped_total counter")
+		fmt.Fprintf(w, "cerberus_capture_skipped_total %d\n\n", cs.Skipped)
 	}
 
 	fmt.Fprintln(w, "# HELP cerberus_devices_total Number of tracked devices.")

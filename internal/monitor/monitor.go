@@ -52,7 +52,10 @@ type NetworkMonitor struct {
 	zones            *alerts.ZoneMatcher  // nil without zones
 	zoneLast         map[string]time.Time // from|to|src|dst -> last alert
 	zoneViolations   map[string]uint64    // "from>to" -> packets
-	Stats            struct {
+	// alertHook runs for every rule alert before it is stored, with nm.mu
+	// held; it must not block. It returns a capture id or "".
+	alertHook func(models.AlertEvent) string
+	Stats     struct {
 		TotalPackets uint64
 		ArpPackets   uint64
 		TcpPackets   uint64
@@ -859,6 +862,15 @@ func (nm *NetworkMonitor) RecordAlert(alert models.AlertEvent) {
 	nm.appendAlert(alert)
 }
 
+// SetAlertHook registers fn to run for every rule alert before it is
+// stored (packet capture uses it). fn runs with the monitor lock held and
+// must return quickly without calling back into the monitor.
+func (nm *NetworkMonitor) SetAlertHook(fn func(models.AlertEvent) string) {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	nm.alertHook = fn
+}
+
 // maxAlerts bounds the in-memory rule alert history.
 const maxAlerts = 500
 
@@ -867,6 +879,9 @@ const maxAlerts = 500
 func (nm *NetworkMonitor) appendAlert(alert models.AlertEvent) {
 	if alert.Techniques == nil {
 		alert.Techniques = slices.Clone(alerts.TechniquesFor(alert.Rule))
+	}
+	if nm.alertHook != nil && alert.CaptureID == "" {
+		alert.CaptureID = nm.alertHook(alert)
 	}
 	nm.alerts = append(nm.alerts, alert)
 	if len(nm.alerts) > maxAlerts {

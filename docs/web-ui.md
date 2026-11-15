@@ -38,6 +38,7 @@ Dev: run the Go harness on `:18080`, then `npm run dev` in `web/` (Vite proxies 
 | `#/alerts` | Rule alerts |
 | `#/anomalies` | Anomaly snapshot |
 | `#/policy` | Active response |
+| `#/captures` | Packet capture status, save the buffer now, download or delete pcapng files (needs the API token) |
 | `#/baseline` | Industrial flow baseline: learning state, new flows to approve or forget, known flows, relearn |
 | `#/raw/:endpoint` | Raw JSON |
 

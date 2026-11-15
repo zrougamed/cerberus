@@ -4,6 +4,7 @@ import {
   Boxes,
   GitCompareArrows,
   Network,
+  FileDown,
   BookOpen,
   HardDrive,
   LayoutDashboard,
@@ -36,6 +37,7 @@ const titles: Record<string, string> = {
   '/policy': 'Policy',
   '/baseline': 'Flow baseline',
   '/zones': 'Zones',
+  '/captures': 'Packet captures',
   '/raw': 'Raw JSON',
 }
 
@@ -65,6 +67,7 @@ const nav: Array<{ group: string; items: NavItem[] }> = [
     items: [
       { to: '/policy', label: 'Policy', icon: Shield },
       { to: '/baseline', label: 'Flow baseline', icon: GitCompareArrows },
+      { to: '/captures', label: 'Captures', icon: FileDown },
     ],
   },
   {

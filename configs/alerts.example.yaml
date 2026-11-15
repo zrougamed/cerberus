@@ -150,6 +150,23 @@ flow_baseline:
   severity: medium
   max_flows: 10000
 
+# Packet capture around alerts (off by default; reads every frame on the
+# capture interfaces). See docs/packet-capture.md.
+capture:
+  enabled: false
+  interfaces: []
+  snaplen: 1518
+  buffer_seconds: 120
+  buffer_mb: 64
+  on_alert:
+    enabled: true
+    min_severity: high
+    before_seconds: 30
+    after_seconds: 10
+    min_interval_seconds: 300
+  max_files: 50
+  max_total_mb: 512
+
 # Optional outbound sinks (disabled by default). Enable and set at least one sink.
 notifications:
   enabled: false

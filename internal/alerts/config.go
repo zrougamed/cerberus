@@ -48,6 +48,7 @@ type Config struct {
 	Industrial        IndustrialConfig   `yaml:"industrial" json:"industrial"`
 	FlowBaseline      FlowBaselineConfig `yaml:"flow_baseline" json:"flow_baseline"`
 	Segmentation      SegmentationConfig `yaml:"segmentation" json:"segmentation"`
+	Capture           CaptureConfig      `yaml:"capture" json:"capture"`
 }
 
 // ThresholdRule is a declarative comparison against a device metric.
@@ -95,6 +96,7 @@ type fileOverlay struct {
 	Industrial        industrialOverlay     `yaml:"industrial" json:"industrial"`
 	FlowBaseline      *flowBaselineOverlay  `yaml:"flow_baseline" json:"flow_baseline"`
 	Segmentation      *segmentationOverlay  `yaml:"segmentation" json:"segmentation"`
+	Capture           *captureOverlay       `yaml:"capture" json:"capture"`
 }
 
 type notificationsOverlay struct {
@@ -212,6 +214,7 @@ func DefaultConfig() Config {
 		Industrial:   defaultIndustrialConfig(),
 		FlowBaseline: defaultFlowBaseline(),
 		Segmentation: defaultSegmentation(),
+		Capture:      defaultCapture(),
 	}
 }
 
@@ -311,6 +314,7 @@ func mergeOverlay(cfg *Config, o fileOverlay) error {
 	}
 	mergeFlowBaseline(&cfg.FlowBaseline, o.FlowBaseline)
 	mergeSegmentation(&cfg.Segmentation, o.Segmentation)
+	mergeCapture(&cfg.Capture, o.Capture)
 	return mergeIndustrial(&cfg.Industrial, o.Industrial)
 }
 
@@ -464,6 +468,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := validateSegmentation(c.Segmentation); err != nil {
+		return err
+	}
+	if err := validateCapture(c.Capture); err != nil {
 		return err
 	}
 	if c.Notifications.Enabled &&

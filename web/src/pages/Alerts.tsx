@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useLive } from '../lib/live'
 
 export function AlertsPage() {
@@ -29,7 +30,14 @@ export function AlertsPage() {
               <td className="px-2 py-2"><span className="badge">{String(a.severity || 'info')}</span></td>
               <td className="px-2 py-2 font-mono">{String(a.rule || a.rule_id || '—')}</td>
               <td className="px-2 py-2 font-mono">{String(a.device_ip || a.device_mac || '—')}</td>
-              <td className="px-2 py-2 [overflow-wrap:anywhere]">{String(a.message || '')}</td>
+              <td className="px-2 py-2 [overflow-wrap:anywhere]">
+                {String(a.message || '')}
+                {a.capture_id ? (
+                  <Link className="ml-2 whitespace-nowrap text-sm font-bold text-[var(--accent)]" to="/captures">
+                    Packet capture
+                  </Link>
+                ) : null}
+              </td>
               <td className="px-2 py-2">
                 {a.techniques && a.techniques.length ? (
                   <ul className="m-0 flex list-none flex-col gap-1 p-0">

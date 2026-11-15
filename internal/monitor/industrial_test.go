@@ -577,3 +577,24 @@ func TestAlerts_CarryATTACKTechniques(t *testing.T) {
 		t.Fatalf("labels = %v", techniqueLabels(w))
 	}
 }
+
+func TestAlertHook_SetsCaptureID(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	var seen []string
+	nm.SetAlertHook(func(a models.AlertEvent) string {
+		seen = append(seen, a.Rule)
+		if a.Severity != "high" {
+			return ""
+		}
+		return "0123456789abcdef"
+	})
+	nm.TrackEvent(modbusEvent(1, "10.0.0.9", "10.0.0.5", 50000, 502, 1, 0x06, 0, 1, 0, 3))
+	nm.RecordAlert(models.AlertEvent{DeviceMAC: "02:00:00:00:00:02", Rule: "policy:r-1", Severity: "low"})
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	if got[alerts.RuleModbusWrite].CaptureID != "0123456789abcdef" || got["policy:r-1"].CaptureID != "" || len(seen) != 2 {
+		t.Fatalf("alerts = %+v seen = %v", got, seen)
+	}
+}

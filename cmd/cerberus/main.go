@@ -19,6 +19,7 @@ import (
 
 	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/api"
+	"github.com/zrougamed/cerberus/internal/capture"
 	"github.com/zrougamed/cerberus/internal/databases"
 	"github.com/zrougamed/cerberus/internal/kstats"
 	"github.com/zrougamed/cerberus/internal/models"
@@ -169,6 +170,7 @@ func main() {
 	}
 
 	var links []link.Link
+	var attachedNames []string
 	attachedCount := 0
 
 	for _, iface := range ifaceFilter.Select(ifaces) {
@@ -187,6 +189,7 @@ func main() {
 		}
 
 		links = append(links, l)
+		attachedNames = append(attachedNames, iface.Name)
 		attachedCount++
 		fmt.Printf("Successfully attached to %s\n", iface.Name)
 	}
@@ -196,6 +199,16 @@ func main() {
 	}
 
 	fmt.Printf("\nMonitoring %d interface(s)\n\n", attachedCount)
+
+	if alertCfg.Capture.Enabled {
+		capturer, err := startCapture(alertCfg.Capture, attachedNames)
+		if err != nil {
+			log.Fatalf("capture: %v", err)
+		}
+		defer capturer.Stop()
+		mon.SetAlertHook(capturer.TriggerForAlert)
+		apiServer.SetCapture(capturer)
+	}
 
 	// Cleanup hooks on exit
 	defer func() {
@@ -320,6 +333,37 @@ func main() {
 	fmt.Println("\n\nFinal Statistics:")
 	mon.PrintStats()
 	fmt.Println("Shutting down...")
+}
+
+// startCapture opens one packet source per capture interface (the attached
+// interfaces unless the config lists others) and starts the ring.
+func startCapture(cfg alerts.CaptureConfig, attached []string) (*capture.Capturer, error) {
+	names := cfg.Interfaces
+	if len(names) == 0 {
+		names = attached
+	}
+	srcs := make([]capture.Source, 0, len(names))
+	for _, n := range names {
+		src, err := capture.NewInterfaceSource(n, cfg.Snaplen)
+		if err != nil {
+			return nil, err
+		}
+		srcs = append(srcs, src)
+	}
+	c, err := capture.New(cfg, databases.DataDir(), srcs)
+	if err != nil {
+		return nil, err
+	}
+	c.Start()
+	fmt.Printf("Packet capture on %v: %ds / %dMB ring, files in %s\n", names, cfg.BufferSeconds, cfg.BufferMB, captureDir(cfg))
+	return c, nil
+}
+
+func captureDir(cfg alerts.CaptureConfig) string {
+	if cfg.Dir != "" {
+		return cfg.Dir
+	}
+	return filepath.Join(databases.DataDir(), "captures")
 }
 
 // openPolicy loads the persisted policy from CERBERUS_POLICY_FILE (default

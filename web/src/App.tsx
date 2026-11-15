@@ -5,6 +5,7 @@ import { AlertsPage } from './pages/Alerts'
 import { AnalyticsPage } from './pages/Analytics'
 import { AnomaliesPage } from './pages/Anomalies'
 import { BaselinePage } from './pages/Baseline'
+import { CapturesPage } from './pages/Captures'
 import { DashboardPage } from './pages/Dashboard'
 import { DeviceDetailPage } from './pages/DeviceDetail'
 import { AssetsPage } from './pages/Assets'
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="anomalies" element={<AnomaliesPage />} />
             <Route path="policy" element={<PolicyPage />} />
             <Route path="baseline" element={<BaselinePage />} />
+            <Route path="captures" element={<CapturesPage />} />
             <Route path="raw/:endpoint?" element={<RawPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
