@@ -21,6 +21,21 @@ export function TokenUnlock({ id, onChange }: { id: string; onChange?: () => voi
     onChange?.()
   }
 
+  if (session && !session.writes_enabled) {
+    // No token or sign-in exists on the server, so nothing typed here could
+    // work. Say how to turn changes on instead.
+    return (
+      <div className="grid gap-1.5">
+        <p className="m-0 font-bold">Changes are turned off on this server</p>
+        <p className="m-0 text-sm">
+          To make changes from the console, set <code>CERBERUS_API_TOKEN</code> to a secret of at least 16 characters and restart Cerberus, then
+          enter the same value here. With Docker Compose, uncomment the <code>CERBERUS_API_TOKEN</code> line in <code>docker-compose.yml</code>.
+          For named tokens, roles or sign-in, use <code>CERBERUS_AUTH_CONFIG</code> (see docs/access-control.md).
+        </p>
+      </div>
+    )
+  }
+
   if (session?.authenticated) {
     const viaToken = session.method === 'token'
     return (
