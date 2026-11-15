@@ -146,6 +146,9 @@
 
 @layer components {
   .panel {
+    /* Contains visually hidden labels inside scrolling tables, so they
+       cannot widen the page. */
+    position: relative;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 6px;
@@ -158,7 +161,8 @@
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    min-height: 2.5rem;
+    /* Same height as inputs, so a button beside a field lines up. */
+    min-height: 2.75rem;
     padding: 0.5rem 0.875rem;
     border: 1px solid var(--line);
     border-radius: 4px;
@@ -215,6 +219,7 @@
     font-size: 0.9rem;
   }
 
+  .input,
   .field input,
   .field select,
   .field textarea {

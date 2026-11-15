@@ -117,7 +117,7 @@ export function AssetsPage() {
       ) : null}
       {error ? <p className="m-0 rounded bg-[var(--danger-soft)] px-3 py-2 font-semibold text-[var(--danger)]">{error}</p> : null}
 
-      <section className="panel overflow-x-auto">
+      <section className="panel overflow-x-auto" tabIndex={0} aria-label="Assets">
         {rows.length === 0 ? (
           <p className="muted m-0">
             {assets && assets.length

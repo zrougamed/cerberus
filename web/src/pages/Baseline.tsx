@@ -183,7 +183,7 @@ export function BaselinePage() {
 
       {status && status.state !== 'disabled' ? (
         <>
-          <section className="panel grid gap-3 overflow-x-auto">
+          <section className="panel grid gap-3 overflow-x-auto" tabIndex={0} aria-label="New flows">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="m-0 mr-auto font-[family-name:var(--font-display)] text-lg font-bold">New flows</h2>
               <button
@@ -215,7 +215,7 @@ export function BaselinePage() {
             {!unlocked && fresh.length > 0 ? <p className="muted m-0 text-sm">Unlock changes with the API token to approve or forget flows.</p> : null}
           </section>
 
-          <section className="panel overflow-x-auto">
+          <section className="panel overflow-x-auto" tabIndex={0} aria-label="Known flows">
             <details>
               <summary className="cursor-pointer font-bold">Known flows ({known.length})</summary>
               <div className="mt-3">

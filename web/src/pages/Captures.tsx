@@ -109,8 +109,14 @@ export function CapturesPage() {
         <h2 className="m-0 font-[family-name:var(--font-display)] text-lg font-bold">Save the buffer now</h2>
         <form className="grid items-end gap-3 sm:grid-cols-[1fr_10rem_auto]" onSubmit={(e) => void captureNow(e)}>
           <div className="field">
-            <label htmlFor="cap-address">Device address (optional)</label>
-            <input id="cap-address" placeholder="10.20.0.50" value={address} onChange={(e) => setAddress(e.target.value)} />
+            <label htmlFor="cap-address">Device address</label>
+            <input
+              id="cap-address"
+              placeholder="10.20.0.50"
+              aria-describedby="cap-address-help"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
           </div>
           <div className="field">
             <label htmlFor="cap-seconds">Last seconds</label>
@@ -120,7 +126,9 @@ export function CapturesPage() {
             Save capture
           </button>
         </form>
-        <p className="muted m-0 text-sm">Leave the address empty to save all traffic in the buffer.</p>
+        <p id="cap-address-help" className="muted m-0 text-sm">
+          Leave the address empty to save all traffic in the buffer.
+        </p>
       </section>
 
       {msg ? (
@@ -135,7 +143,7 @@ export function CapturesPage() {
         </p>
       ) : null}
 
-      <section className="panel relative overflow-x-auto" tabIndex={0} aria-label="Saved captures">
+      <section className="panel overflow-x-auto" tabIndex={0} aria-label="Saved captures">
         {data.captures.length === 0 ? (
           <p className="muted m-0">No captures yet. One is saved for each high-severity alert, or use the form above.</p>
         ) : (

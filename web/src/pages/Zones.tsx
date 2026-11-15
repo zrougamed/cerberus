@@ -129,7 +129,7 @@ export function ZonesPage() {
       </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <section className="panel overflow-x-auto">
+        <section className="panel overflow-x-auto" tabIndex={0} aria-label="Traffic without a conduit">
           <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Traffic without a conduit</h2>
           {violations.length === 0 ? (
             <p className="muted m-0">None so far. Every packet between two zones matched a conduit.</p>
@@ -158,7 +158,7 @@ export function ZonesPage() {
           )}
         </section>
 
-        <section className="panel overflow-x-auto">
+        <section className="panel overflow-x-auto" tabIndex={0} aria-label="Conduits">
           <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Conduits</h2>
           {data.conduits.length === 0 ? (
             <p className="muted m-0">No conduits: any traffic between two zones raises an alert.</p>

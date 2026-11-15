@@ -38,7 +38,7 @@ export function AnomaliesPage() {
         </div>
       </section>
 
-      <section className="panel overflow-x-auto">
+      <section className="panel overflow-x-auto" tabIndex={0} aria-label="Recent anomalies">
         <h2 className="m-0 mb-3 font-[family-name:var(--font-display)] text-lg font-bold">Contributors (last window)</h2>
         {contrib.length === 0 ? (
           <p className="muted text-sm">No contributor data yet.</p>

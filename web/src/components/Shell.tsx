@@ -299,7 +299,7 @@ export function Shell() {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
+        <main tabIndex={0} className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
           {paused ? (
             <p className="mb-3 inline-flex items-center gap-2 rounded bg-[var(--signal)] px-2 py-1 font-mono text-xs font-bold uppercase text-[#0c1016]">
               <Activity size={12} aria-hidden /> Updates paused

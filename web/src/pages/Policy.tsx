@@ -2,17 +2,27 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { policyWrite } from '../lib/api'
 import { useLive } from '../lib/live'
-import { getToken, setToken } from '../lib/token'
+import { getToken } from '../lib/token'
+import { TokenUnlock } from '../components/TokenUnlock'
 import { cn } from '../lib/cn'
 import { ruleTarget, type BlockRule } from '../lib/types'
 
 const VERDICT: Record<string, string> = { drop: 'Block', accept: 'Allow', continue: 'Count' }
 
+// Example value for the blocklist target, by the selected kind of match.
+const TARGET_EXAMPLE: Record<string, string> = {
+  cidr: '203.0.113.0/24',
+  mac: '02:00:00:00:00:66',
+  dns: '*.example.com',
+  sni: '*.example.com',
+  host: '*.example.com',
+}
+
 export function PolicyPage() {
   const { policy, policyError, policyLog, reloadPolicy } = useLive()
-  const [tokenInput, setTokenInput] = useState('')
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [targetKind, setTargetKind] = useState('cidr')
 
   const unlocked = Boolean(getToken())
   const writes = policy?.writes_enabled !== false
@@ -22,13 +32,6 @@ export function PolicyPage() {
   const audit = policy?.audit || []
 
   const modeClass = mode === 'enforce' ? 'is-enforce' : 'is-monitor'
-
-  async function unlock(e: FormEvent) {
-    e.preventDefault()
-    setToken(tokenInput.trim())
-    setTokenInput('')
-    await reloadPolicy()
-  }
 
   async function toggleMode() {
     setBusy(true)
@@ -147,41 +150,8 @@ export function PolicyPage() {
         <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Console access</h2>
         {!writes ? (
           <p className="muted text-sm">This server is read-only (no API token configured).</p>
-        ) : unlocked ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="badge">Changes unlocked</span>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setToken('')
-                void reloadPolicy()
-              }}
-            >
-              Lock changes
-            </button>
-          </div>
         ) : (
-          <form className="grid gap-3 sm:grid-cols-[1fr_auto]" onSubmit={(e) => void unlock(e)}>
-            <div className="field">
-              <label htmlFor="policy-token">API token</label>
-              <input
-                id="policy-token"
-                type="password"
-                autoComplete="current-password"
-                minLength={16}
-                required
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-              />
-              <p className="m-0 text-xs text-[var(--text-soft)]">CERBERUS_API_TOKEN. Kept in this tab only.</p>
-            </div>
-            <div className="flex items-end">
-              <button className="btn" type="submit">
-                Unlock changes
-              </button>
-            </div>
-          </form>
+          <TokenUnlock id="policy-token" onChange={() => void reloadPolicy()} />
         )}
       </section>
 
@@ -194,7 +164,7 @@ export function PolicyPage() {
         </p>
       ) : null}
 
-      <section className="panel overflow-x-auto">
+      <section className="panel overflow-x-auto" tabIndex={0} aria-label="Filter rules">
         <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Filter rules</h2>
         {filters.length === 0 ? (
           <p className="muted text-sm">No filter rules.</p>
@@ -329,7 +299,13 @@ export function PolicyPage() {
       <section className="panel">
         <h2 className="m-0 mb-3 font-[family-name:var(--font-display)] text-lg font-bold">Blocklist</h2>
         <form className="grid gap-4" onSubmit={(e) => void addBlocklist(e)}>
-          <fieldset className="flex flex-wrap gap-4 border-0 p-0">
+          <fieldset
+            className="flex flex-wrap gap-4 border-0 p-0"
+            onChange={(e) => {
+              const input: EventTarget = e.target
+              if (input instanceof HTMLInputElement) setTargetKind(input.value)
+            }}
+          >
             <legend className="mb-1 w-full font-bold">Match traffic by</legend>
             <label className="inline-flex items-center gap-2">
               <input type="radio" name="kind" value="cidr" defaultChecked /> IP address or range
@@ -356,7 +332,7 @@ export function PolicyPage() {
                 required
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="203.0.113.0/24, MAC, or *.evil.com"
+                placeholder={TARGET_EXAMPLE[targetKind]}
               />
             </div>
             <div className="field">
@@ -397,7 +373,7 @@ export function PolicyPage() {
         </form>
       </section>
 
-      <section className="panel overflow-x-auto">
+      <section className="panel overflow-x-auto" tabIndex={0} aria-label="Blocklist entries">
         <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Blocklist entries</h2>
         {rules.length === 0 ? (
           <p className="muted text-sm">No blocklist entries.</p>
@@ -446,7 +422,7 @@ export function PolicyPage() {
         )}
       </section>
 
-      <section className="panel overflow-x-auto">
+      <section className="panel overflow-x-auto" tabIndex={0} aria-label="Live log">
         <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Live log</h2>
         {(policyLog || []).length === 0 ? (
           <p className="muted text-sm">No log entries yet.</p>
