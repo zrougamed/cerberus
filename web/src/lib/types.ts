@@ -175,6 +175,10 @@ export type AlertEvent = {
   message?: string
   techniques?: { id: string; name: string }[]
   capture_id?: string
+  id?: string
+  acked_by?: string
+  acked_at?: string
+  note?: string
   [key: string]: unknown
 }
 

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { fetchBaseline, policyWrite } from '../lib/api'
 import { useLive } from '../lib/live'
-import { getToken } from '../lib/token'
+import { useCan } from '../lib/session'
 import { cn } from '../lib/cn'
 import { protocolNames } from '../lib/protocols'
 import type { BaselineFlow, BaselineState } from '../lib/types'
+import { AccessNote } from '../components/AccessNote'
 import { TokenUnlock } from '../components/TokenUnlock'
 
 const REFRESH_MS = 10_000
@@ -73,7 +74,6 @@ export function BaselinePage() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [confirmRelearn, setConfirmRelearn] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
-  const [, setTick] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -96,7 +96,8 @@ export function BaselinePage() {
     }
   }, [paused, reloadKey])
 
-  const unlocked = Boolean(getToken())
+  const unlocked = useCan('analyst')
+  const canRelearn = useCan('admin')
   const flows = data?.flows || []
   const fresh = flows.filter((f) => f.status === 'new')
   const known = flows.filter((f) => f.status !== 'new')
@@ -165,7 +166,7 @@ export function BaselinePage() {
             </dl>
           </>
         ) : null}
-        <TokenUnlock id="baseline-token" onChange={() => setTick((n) => n + 1)} />
+        <TokenUnlock id="baseline-token" />
       </section>
 
       {msg ? (
@@ -212,7 +213,7 @@ export function BaselinePage() {
                 {(f) => <FlowRow key={f.id} f={f} selectable selected={selected.has(f.id)} onToggle={() => toggle(f.id)} />}
               </FlowTable>
             )}
-            {!unlocked && fresh.length > 0 ? <p className="muted m-0 text-sm">Unlock changes with the API token to approve or forget flows.</p> : null}
+            {fresh.length > 0 ? <AccessNote need="analyst" action="approve or forget flows" /> : null}
           </section>
 
           <section className="panel overflow-x-auto" tabIndex={0} aria-label="Known flows">
@@ -244,7 +245,7 @@ export function BaselinePage() {
                   </button>
                 </>
               ) : (
-                <button type="button" className="btn" disabled={!unlocked} onClick={() => setConfirmRelearn(true)}>
+                <button type="button" className="btn" disabled={!canRelearn} onClick={() => setConfirmRelearn(true)}>
                   Start learning again
                 </button>
               )}

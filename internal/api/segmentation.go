@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"github.com/zrougamed/cerberus/internal/auth"
 	"net/http"
 	"strings"
 
@@ -15,8 +16,8 @@ const maxSegmentationBody = 256 << 10
 func (s *Server) registerSegmentationRoutes(mux *http.ServeMux) {
 	const disabled = "zone changes are disabled: set CERBERUS_API_TOKEN"
 	mux.HandleFunc("GET /api/v1/segmentation", s.handleSegmentation)
-	mux.Handle("PUT /api/v1/segmentation", s.requireAuth(http.HandlerFunc(s.handleSegmentationPut), disabled))
-	mux.Handle("DELETE /api/v1/segmentation", s.requireAuth(http.HandlerFunc(s.handleSegmentationReset), disabled))
+	mux.Handle("PUT /api/v1/segmentation", s.requireRole(auth.RoleAdmin, http.HandlerFunc(s.handleSegmentationPut), disabled))
+	mux.Handle("DELETE /api/v1/segmentation", s.requireRole(auth.RoleAdmin, http.HandlerFunc(s.handleSegmentationReset), disabled))
 }
 
 // handleSegmentation returns the active zones, conduits and zone alert

@@ -24,4 +24,7 @@ services:
       # - CERBERUS_ALERTS_CONFIG=/app/configs/alerts.yaml
       # Enables policy changes (blocking) from the console/API; 16+ chars.
       # - CERBERUS_API_TOKEN=${CERBERUS_API_TOKEN}
+      # Named tokens, roles and OIDC sign-in; see docs/access-control.md.
+      # - CERBERUS_AUTH_CONFIG=/app/configs/auth.yaml
+      # - CERBERUS_OIDC_CLIENT_SECRET=${CERBERUS_OIDC_CLIENT_SECRET}
     restart: unless-stopped

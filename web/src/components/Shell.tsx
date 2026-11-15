@@ -9,6 +9,8 @@ import {
   HardDrive,
   LayoutDashboard,
   LineChart,
+  LogIn,
+  LogOut,
   Menu,
   Moon,
   PanelLeftClose,
@@ -24,6 +26,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { cn } from '../lib/cn'
 import { useLive } from '../lib/live'
+import { useSession } from '../lib/session'
 import { applyTheme, initTheme, type Theme } from '../lib/theme'
 import { Logo } from './Logo'
 
@@ -111,6 +114,7 @@ function navClass(isActive: boolean, collapsed: boolean) {
 export function Shell() {
   const { paused, setPaused, version } = useLive()
   const { theme, toggle } = useTheme()
+  const { session, signOut } = useSession()
   const location = useLocation()
   const [open, setOpen] = useState(() => !window.matchMedia('(max-width: 759px)').matches)
 
@@ -283,6 +287,23 @@ export function Shell() {
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {session?.method === 'oidc' ? (
+              <>
+                <span className="hidden text-sm lg:inline">
+                  {session.name} <span className="muted">({session.role})</span>
+                </span>
+                <button type="button" className="btn" onClick={() => void signOut()} aria-label={`Sign out ${session.name}`}>
+                  <LogOut size={16} aria-hidden />
+                  <span className="hidden sm:inline">Sign out</span>
+                </button>
+              </>
+            ) : session?.oidc && session.login_url && !session.authenticated ? (
+              <a className="btn no-underline" href={session.login_url}>
+                <LogIn size={16} aria-hidden />
+                <span className="hidden sm:inline">Sign in</span>
+                <span className="sr-only sm:hidden">Sign in</span>
+              </a>
+            ) : null}
             <button
               type="button"
               className={cn('btn', paused && 'border-[var(--signal)] bg-[var(--signal)] text-[#0c1016]')}

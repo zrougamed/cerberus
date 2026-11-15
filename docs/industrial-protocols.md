@@ -79,7 +79,7 @@ answers requests without being a controller):
 | controller | only answered requests, or announced itself with BACnet I-Am |
 
 An operator can override it from the Assets page or with
-`PUT /api/v1/assets/{mac}/role` (bearer token), choosing from those four
+`PUT /api/v1/assets/{mac}/role` (analyst role), choosing from those four
 or `gateway`, `historian`, `other`. The override is saved with the device
 straight away; an empty role goes back to inference.
 
@@ -114,7 +114,8 @@ flow_baseline:
 
 API: `GET /api/v1/baseline` (`?status=new|learned|approved`, `?limit=`),
 `POST /api/v1/baseline/approve` and `/forget` with `{"ids": [...]}`, and
-`POST /api/v1/baseline/relearn`; the POSTs need the API token. Metrics:
+`POST /api/v1/baseline/relearn`; approve and forget need the analyst role,
+relearn the admin role. Metrics:
 `cerberus_baseline_flows{status}`, `cerberus_baseline_dropped_total`,
 `cerberus_baseline_learning`.
 
@@ -124,7 +125,7 @@ Zones and conduits describe how the site is meant to be segmented (IEC
 62443). Each zone is a set of networks at one Purdue level; a conduit
 allows traffic from one zone to another.
 
-Set them up on the **Zones** page (unlock with the API token): add a zone
+Set them up on the **Zones** page (admin role): add a zone
 per network segment, then a conduit per expected connection, and adjust the
 two zone alerts. Changes apply straight away, without a restart, and are
 saved in Cerberus's database. They take precedence over the `segmentation`

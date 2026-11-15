@@ -4,8 +4,9 @@ import { fetchSegmentation, fetchZones } from '../lib/api'
 import { useLive } from '../lib/live'
 import { cn } from '../lib/cn'
 import type { Segmentation, ZoneInfo, ZoneSummary } from '../lib/types'
-import { getToken } from '../lib/token'
+import { useCan } from '../lib/session'
 import { PURDUE_LEVELS } from '../lib/purdue'
+import { AccessNote } from '../components/AccessNote'
 import { TokenUnlock } from '../components/TokenUnlock'
 import { ZoneEditor } from '../components/ZoneEditor'
 
@@ -56,7 +57,7 @@ export function ZonesPage() {
   const [error, setError] = useState('')
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
-  const [, setTick] = useState(0)
+  const unlocked = useCan('admin')
 
   useEffect(() => {
     let cancelled = false
@@ -85,7 +86,6 @@ export function ZonesPage() {
     return <p className="m-0 rounded bg-[var(--danger-soft)] px-3 py-2 font-semibold text-[var(--danger)]">{error}</p>
   }
 
-  const unlocked = Boolean(getToken())
   const status = msg ? (
     <p
       role="status"
@@ -114,7 +114,7 @@ export function ZonesPage() {
   )
   const access = (
     <section className="panel">
-      <TokenUnlock id="zones-token" onChange={() => setTick((n) => n + 1)} />
+      <TokenUnlock id="zones-token" />
     </section>
   )
 
@@ -131,7 +131,7 @@ export function ZonesPage() {
             <li>Add a conduit for each connection you expect between two zones, with the ports it uses.</li>
             <li>Any other traffic between zones then raises an alert under Rule alerts.</li>
           </ol>
-          {!unlocked ? <p className="muted m-0 text-sm">Enter the API token below to make changes.</p> : null}
+          <AccessNote need="admin" action="change zones" />
         </section>
         {access}
         {editor}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/zrougamed/cerberus/internal/auth"
 	"log"
 	"net"
 	"net/http"
@@ -56,7 +57,7 @@ func (s *Server) advisoryIndex() *advisories.Index {
 
 func (s *Server) registerAdvisoryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/advisories", s.handleAdvisoryStatus)
-	mux.Handle("POST /api/v1/advisories/reload", s.requireAuth(http.HandlerFunc(s.handleAdvisoryReload),
+	mux.Handle("POST /api/v1/advisories/reload", s.requireRole(auth.RoleAdmin, http.HandlerFunc(s.handleAdvisoryReload),
 		"advisory reloads are disabled: set CERBERUS_API_TOKEN"))
 	mux.HandleFunc("GET /api/v1/assets/{mac}/advisories", s.handleAssetAdvisories)
 }

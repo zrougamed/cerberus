@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/csv"
 	"errors"
+	"github.com/zrougamed/cerberus/internal/auth"
 	"log"
 	"net"
 	"net/http"
@@ -34,7 +35,7 @@ type assetEntry struct {
 
 func (s *Server) registerAssetRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/assets", s.handleAssets)
-	mux.Handle("PUT /api/v1/assets/{mac}/role", s.requireAuth(http.HandlerFunc(s.handleAssetRole),
+	mux.Handle("PUT /api/v1/assets/{mac}/role", s.requireRole(auth.RoleAnalyst, http.HandlerFunc(s.handleAssetRole),
 		"asset changes are disabled: set CERBERUS_API_TOKEN"))
 }
 

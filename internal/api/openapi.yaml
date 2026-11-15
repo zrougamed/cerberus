@@ -4,7 +4,10 @@ info:
   version: "1.0"
   description: |
     Fleet telemetry, anomaly snapshots, Prometheus metrics, and active-response policy.
-    State-changing policy routes require `Authorization: Bearer $CERBERUS_API_TOKEN`.
+    Changes need a role (viewer < analyst < admin), shown after each summary.
+    Send a bearer token (`CERBERUS_API_TOKEN` is admin; named tokens carry their
+    own role) or use a Control Room session cookie with the `X-Cerberus-CSRF`
+    header. With `protect_reads`, reads need a viewer too. See docs/access-control.md.
 servers:
   - url: /
 paths:
@@ -34,7 +37,83 @@ paths:
       tags: [Monitor]
       responses:
         "200":
-          description: Recent AlertEvent objects
+          description: Recent AlertEvent objects; acknowledged ones carry acked_by, acked_at and note
+  /api/v1/alerts/{id}/ack:
+    post:
+      summary: Acknowledge an alert (analyst)
+      operationId: ackAlert
+      tags: [Monitor]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: {type: string, maxLength: 500}
+      responses:
+        "200": {description: The acknowledged alert}
+        "400": {description: Note too long or invalid body}
+        "401": {description: Not signed in or invalid token}
+        "403": {description: Role too low or missing CSRF header}
+        "404": {description: Unknown alert or aged out of the history}
+  /api/v1/session:
+    get:
+      summary: Who the caller is and how to sign in
+      operationId: getSession
+      tags: [Access]
+      security: [{}, {bearerAuth: []}, {sessionCookie: []}]
+      responses:
+        "200":
+          description: Session state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated: {type: boolean}
+                  name: {type: string}
+                  role: {type: string, enum: [none, viewer, analyst, admin]}
+                  method: {type: string, enum: [token, oidc]}
+                  csrf: {type: string, description: Send as X-Cerberus-CSRF on changes made with the session cookie}
+                  oidc: {type: boolean}
+                  login_url: {type: string}
+                  protect_reads: {type: boolean}
+                  writes_enabled: {type: boolean}
+        "401": {description: Invalid bearer token}
+  /auth/login:
+    get:
+      summary: Start OIDC sign-in (browser redirect to the provider)
+      operationId: login
+      tags: [Access]
+      responses:
+        "302": {description: Redirect to the identity provider}
+        "404": {description: OIDC is not configured}
+        "503": {description: Provider unreachable or too many sign-ins in progress}
+  /auth/callback:
+    get:
+      summary: OIDC redirect target; starts a session
+      operationId: authCallback
+      tags: [Access]
+      responses:
+        "302": {description: Signed in; redirect to the Control Room with the session cookie}
+        "400": {description: Expired or reused sign-in}
+        "401": {description: Sign-in failed}
+        "403": {description: The user is in no group that maps to a role}
+  /auth/logout:
+    post:
+      summary: End the browser session
+      operationId: logout
+      tags: [Access]
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: X-Cerberus-CSRF, in: header, required: true, schema: {type: string}}
+      responses:
+        "204": {description: Signed out}
+        "403": {description: Not signed in or wrong CSRF header}
   /api/v1/anomalies:
     get:
       summary: Anomaly model snapshot
@@ -84,10 +163,10 @@ paths:
           description: Array of assets (mac, ip, role, role_source, protocols, asset, last_seen), or CSV
   /api/v1/assets/{mac}/role:
     put:
-      summary: Set or clear an asset's role
+      summary: Set or clear an asset's role (analyst)
       operationId: setAssetRole
       tags: [Assets]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - {name: mac, in: path, required: true, schema: {type: string, example: "00:1d:9c:00:00:32"}}
       requestBody:
@@ -110,7 +189,7 @@ paths:
         "401":
           description: Missing or invalid token
         "403":
-          description: No API token configured
+          description: Role too low, missing CSRF header, or no way to authenticate configured
         "404":
           description: Unknown device
   /api/v1/baseline:
@@ -132,10 +211,10 @@ paths:
           description: Invalid status or limit
   /api/v1/baseline/approve:
     post:
-      summary: Approve new flows
+      summary: Approve new flows (analyst)
       operationId: approveBaselineFlows
       tags: [Baseline]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -149,14 +228,15 @@ paths:
         "200": {description: "{approved: n}"}
         "400": {description: Invalid ids}
         "401": {description: Missing or invalid token}
+        "403": {description: Role too low or missing CSRF header}
         "409": {description: Baseline disabled}
   /api/v1/baseline/forget:
     post:
-      summary: Remove flows from the baseline
+      summary: Remove flows from the baseline (analyst)
       description: The next matching request is treated as never seen and alerts again.
       operationId: forgetBaselineFlows
       tags: [Baseline]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -170,16 +250,18 @@ paths:
         "200": {description: "{forgotten: n}"}
         "400": {description: Invalid ids}
         "401": {description: Missing or invalid token}
+        "403": {description: Role too low or missing CSRF header}
         "409": {description: Baseline disabled}
   /api/v1/baseline/relearn:
     post:
-      summary: Drop all flows and start a new learning period
+      summary: Drop all flows and start a new learning period (admin)
       operationId: relearnBaseline
       tags: [Baseline]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         "200": {description: New baseline status}
         "401": {description: Missing or invalid token}
+        "403": {description: Role too low or missing CSRF header}
         "409": {description: Baseline disabled}
   /api/v1/zones:
     get:
@@ -205,11 +287,11 @@ paths:
         "200":
           description: "{source, zones: [{id, name, level, cidrs, industrial, enforce}], conduits: [{from, to, ports, bidirectional}], no_conduit, level_skip}"
     put:
-      summary: Replace zones, conduits and zone alert rules
+      summary: Replace zones, conduits and zone alert rules (admin)
       description: Validated like the alerts file and applied without a restart. Saved across restarts.
       operationId: setSegmentation
       tags: [Zones]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -245,14 +327,16 @@ paths:
         "200": {description: The new active segmentation}
         "400": {description: Validation error with the reason}
         "401": {description: Missing or invalid token}
+        "403": {description: Role too low or missing CSRF header}
     delete:
-      summary: Discard console changes and use the alerts file again
+      summary: Discard console changes and use the alerts file again (admin)
       operationId: resetSegmentation
       tags: [Zones]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         "200": {description: The active segmentation from the alerts file}
         "401": {description: Missing or invalid token}
+        "403": {description: Role too low or missing CSRF header}
   /api/v1/advisories:
     get:
       summary: Advisory bundle status
@@ -263,13 +347,14 @@ paths:
           description: "{loaded, path, generated_at, source, advisories, age_days, stale (older than 90 days), error}"
   /api/v1/advisories/reload:
     post:
-      summary: Reload the advisory bundle from its file
+      summary: Reload the advisory bundle from its file (admin)
       operationId: reloadAdvisories
       tags: [Assets]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         "200": {description: New status}
         "401": {description: Missing or invalid token}
+        "403": {description: Role too low or missing CSRF header}
         "409": {description: No bundle path configured}
         "422": {description: The file could not be loaded; matching is off until a good bundle loads}
   /api/v1/assets/{mac}/advisories:
@@ -286,10 +371,10 @@ paths:
         "404": {description: Unknown device}
   /api/v1/policy/mode:
     put:
-      summary: Set enforcement mode
+      summary: Set enforcement mode (admin)
       operationId: setPolicyMode
       tags: [Policy]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -306,12 +391,13 @@ paths:
           description: Updated mode
         "401":
           description: Missing or invalid token
+        "403": {description: Role too low or missing CSRF header}
   /api/v1/policy/rules:
     post:
-      summary: Add blocklist rule (MAC, CIDR, or hostname/SNI/DNS)
+      summary: Add blocklist rule (MAC, CIDR, or hostname/SNI/DNS) (admin)
       operationId: addPolicyRule
       tags: [Policy]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       requestBody:
         required: true
         content:
@@ -361,16 +447,17 @@ paths:
           description: Invalid body
         "401":
           description: Unauthorized
+        "403": {description: Role too low or missing CSRF header}
         "409":
           description: Conflict
         "422":
           description: Covers protected address (retry with force)
   /api/v1/policy/rules/{id}:
     delete:
-      summary: Remove blocklist rule
+      summary: Remove blocklist rule (admin)
       operationId: deletePolicyRule
       tags: [Policy]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - name: id
           in: path
@@ -384,19 +471,19 @@ paths:
           description: Unknown id
   /api/v1/policy/filters:
     post:
-      summary: Add ordered L3/L4 filter
+      summary: Add ordered L3/L4 filter (admin)
       operationId: addPolicyFilter
       tags: [Policy]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       responses:
         "201":
           description: Created filter
   /api/v1/policy/filters/{id}:
     delete:
-      summary: Remove filter
+      summary: Remove filter (admin)
       operationId: deletePolicyFilter
       tags: [Policy]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - name: id
           in: path
@@ -408,10 +495,10 @@ paths:
           description: Removed
   /api/v1/policy/filters/{id}/position:
     put:
-      summary: Move filter in evaluation order
+      summary: Move filter in evaluation order (admin)
       operationId: movePolicyFilter
       tags: [Policy]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - name: id
           in: path
@@ -423,10 +510,10 @@ paths:
           description: Moved
   /api/v1/policy/filters/{id}/enabled:
     put:
-      summary: Enable or disable filter
+      summary: Enable or disable filter (admin)
       operationId: enablePolicyFilter
       tags: [Policy]
-      security: [{bearerAuth: []}]
+      security: [{bearerAuth: []}, {sessionCookie: []}]
       parameters:
         - name: id
           in: path
@@ -481,4 +568,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque
-      description: Value of CERBERUS_API_TOKEN
+      description: CERBERUS_API_TOKEN (admin) or a named token from the auth file
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: cerberus_session
+      description: Control Room session after OIDC sign-in; changes also need the X-Cerberus-CSRF header

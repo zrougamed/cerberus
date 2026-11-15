@@ -19,6 +19,7 @@ import (
 
 	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/api"
+	"github.com/zrougamed/cerberus/internal/auth"
 	"github.com/zrougamed/cerberus/internal/capture"
 	"github.com/zrougamed/cerberus/internal/databases"
 	"github.com/zrougamed/cerberus/internal/kstats"
@@ -82,14 +83,23 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	apiServer.SetPolicy(policyEngine)
+	// Roles, named tokens and OIDC sign-in (CERBERUS_AUTH_CONFIG, optional).
+	authCfg := auth.Config{}
+	if path := os.Getenv("CERBERUS_AUTH_CONFIG"); path != "" {
+		if authCfg, err = auth.LoadConfig(path); err != nil {
+			log.Fatalf("auth config: %v", err)
+		}
+		fmt.Printf("Loaded auth config from %s\n", path)
+	}
+	apiServer.SetAuth(auth.New(authCfg, ""))
 	mon.OnSegmentationChange(func(c alerts.SegmentationConfig) {
 		policyEngine.SetWatchOnly(c.WatchOnlyPrefixes())
 	})
 	if err := apiServer.SetAPIToken(os.Getenv("CERBERUS_API_TOKEN")); err != nil {
 		log.Fatalf("CERBERUS_API_TOKEN: %v", err)
 	}
-	if os.Getenv("CERBERUS_API_TOKEN") == "" {
-		fmt.Println("Policy changes disabled: set CERBERUS_API_TOKEN to manage rules from the console/API")
+	if os.Getenv("CERBERUS_API_TOKEN") == "" && len(authCfg.Tokens) == 0 && authCfg.OIDC == nil {
+		fmt.Println("Changes disabled: set CERBERUS_API_TOKEN or configure sign-in (CERBERUS_AUTH_CONFIG)")
 	}
 
 	// Offline advisory bundle (tools/advisorygen): CERBERUS_ADVISORIES_FILE,

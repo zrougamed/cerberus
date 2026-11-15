@@ -1,0 +1,34 @@
+# Cerberus access control. Point CERBERUS_AUTH_CONFIG at a copy of this file.
+# Unknown keys are refused and an invalid file stops Cerberus from starting.
+# Full reference: docs/access-control.md
+#
+# Roles: viewer (read), analyst (also ack alerts, approve flows, set asset
+# roles), admin (also policy, zones, captures, baseline relearn).
+# CERBERUS_API_TOKEN, when set, is an extra token with the admin role.
+
+# Require a token or sign-in for API reads and /metrics, not only changes.
+protect_reads: false
+
+# Named API tokens. Store only the SHA-256 of each token:
+#   TOKEN=$(openssl rand -hex 24); printf %s "$TOKEN" | sha256sum
+tokens:
+  - name: grafana
+    role: viewer
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  - name: soar
+    role: analyst
+    sha256: 1111111111111111111111111111111111111111111111111111111111111111
+
+# OIDC sign-in for the Control Room. Remove this section to use tokens only.
+# oidc:
+#   issuer: https://login.example.com/realms/plant
+#   client_id: cerberus
+#   redirect_url: https://cerberus.example.com/auth/callback
+#   client_secret_file: /run/secrets/cerberus-oidc   # or CERBERUS_OIDC_CLIENT_SECRET
+#   groups_claim: groups
+#   roles:
+#     viewer: [ot-operators]
+#     analyst: [ot-security]
+#     admin: [ot-security-leads]
+#   default_role: ""      # empty refuses users in none of the groups
+#   session_hours: 8

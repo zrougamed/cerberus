@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zrougamed/cerberus/internal/auth"
 	"github.com/zrougamed/cerberus/internal/policy"
 )
 
@@ -32,12 +31,7 @@ func (s *Server) SetAPIToken(token string) error {
 	if token != "" && len(token) < MinAPITokenLength {
 		return fmt.Errorf("API token must be at least %d characters", MinAPITokenLength)
 	}
-	if token == "" {
-		s.tokenHash = nil
-		return nil
-	}
-	h := sha256.Sum256([]byte(token))
-	s.tokenHash = h[:]
+	s.auth.SetAdminToken(token)
 	return nil
 }
 
@@ -131,7 +125,7 @@ type policyStatusResponse struct {
 }
 
 func (s *Server) handlePolicyStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, policyStatusResponse{Status: s.policy.Status(), WritesEnabled: s.tokenHash != nil})
+	writeJSON(w, http.StatusOK, policyStatusResponse{Status: s.policy.Status(), WritesEnabled: s.auth.WritesEnabled()})
 }
 
 func (s *Server) handlePolicyMode(w http.ResponseWriter, r *http.Request) {
@@ -212,14 +206,21 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// actor names who made a change in the audit log: an optional
-// X-Cerberus-Actor label (sanitised) plus the client address.
+// actor names who made a change in the audit log, plus the client
+// address. Signed-in users and named tokens are recorded by name. Scripts
+// sharing CERBERUS_API_TOKEN may label themselves with X-Cerberus-Actor.
 func actor(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	label := sanitizeLabel(r.Header.Get("X-Cerberus-Actor"))
+	label := ""
+	if p, ok := auth.FromContext(r.Context()); ok && p.Name != auth.AdminTokenName {
+		label = sanitizeLabel(p.Name)
+	}
+	if label == "" {
+		label = sanitizeLabel(r.Header.Get("X-Cerberus-Actor"))
+	}
 	if label == "" {
 		label = "api"
 	}
@@ -241,42 +242,15 @@ func sanitizeLabel(s string) string {
 }
 
 // requireToken guards policy endpoints: the policy engine must be loaded
-// and the caller must present the API token.
+// and the caller must be an admin.
 func (s *Server) requireToken(next http.Handler) http.Handler {
-	auth := s.requireAuth(next, "policy changes are disabled: set CERBERUS_API_TOKEN")
+	guarded := s.requireRole(auth.RoleAdmin, next, "policy changes are disabled: set CERBERUS_API_TOKEN or configure sign-in")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.policy == nil {
 			writeError(w, http.StatusNotFound, "policy engine not enabled")
 			return
 		}
-		auth.ServeHTTP(w, r)
-	})
-}
-
-// requireAuth guards state-changing endpoints with a bearer token. A
-// header token (not a cookie) also rules out CSRF from other sites.
-// disabled is the error returned when no token is configured.
-func (s *Server) requireAuth(next http.Handler, disabled string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.tokenHash == nil {
-			writeError(w, http.StatusForbidden, disabled)
-			return
-		}
-		client := clientIP(r)
-		if !s.authLimit.allow(client) {
-			w.Header().Set("Retry-After", "60")
-			writeError(w, http.StatusTooManyRequests, "too many failed authentication attempts")
-			return
-		}
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		got := sha256.Sum256([]byte(token))
-		if !ok || subtle.ConstantTimeCompare(got[:], s.tokenHash) != 1 {
-			s.authLimit.fail(client)
-			w.Header().Set("WWW-Authenticate", `Bearer realm="cerberus"`)
-			writeError(w, http.StatusUnauthorized, "missing or invalid bearer token")
-			return
-		}
-		next.ServeHTTP(w, r)
+		guarded.ServeHTTP(w, r)
 	})
 }
 

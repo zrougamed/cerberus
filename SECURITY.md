@@ -23,7 +23,7 @@ You'll get an acknowledgment within 72 hours. If the issue is confirmed, a fix w
 Cerberus runs as root and attaches eBPF programs to TC hooks. The relevant attack surfaces are:
 
 - The eBPF object file (`cerberus_tc.o`) being replaced or tampered with before load
-- The REST API (`127.0.0.1:8080` by default). Reads are unauthenticated and expose network metadata. Policy changes can drop traffic on monitored interfaces and require `CERBERUS_API_TOKEN`; keep that token secret and the API off untrusted networks
+- The REST API (`127.0.0.1:8080` by default). Reads are open by default and expose network metadata; `protect_reads` in `CERBERUS_AUTH_CONFIG` closes them. Policy changes can drop traffic on monitored interfaces and need the admin role (`CERBERUS_API_TOKEN`, an admin named token or an admin OIDC sign-in); keep tokens secret, serve the API over HTTPS, and keep it off untrusted networks
 - The policy file (`./data/policy.json`), which is loaded into the kernel at startup
 - The BuntDB file (`./data/network.db`) containing observed network metadata
 

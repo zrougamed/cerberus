@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { policyWrite } from '../lib/api'
 import { useLive } from '../lib/live'
-import { getToken } from '../lib/token'
+import { useCan } from '../lib/session'
+import { AccessNote } from '../components/AccessNote'
 import { TokenUnlock } from '../components/TokenUnlock'
 import { cn } from '../lib/cn'
 import { ruleTarget, type BlockRule } from '../lib/types'
@@ -24,7 +25,7 @@ export function PolicyPage() {
   const [busy, setBusy] = useState(false)
   const [targetKind, setTargetKind] = useState('cidr')
 
-  const unlocked = Boolean(getToken())
+  const unlocked = useCan('admin')
   const writes = policy?.writes_enabled !== false
   const mode = policy?.mode || 'monitor'
   const filters = policy?.filters || []
@@ -149,9 +150,12 @@ export function PolicyPage() {
       <section className="panel">
         <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Console access</h2>
         {!writes ? (
-          <p className="muted text-sm">This server is read-only (no API token configured).</p>
+          <p className="muted text-sm">This server is read-only: neither CERBERUS_API_TOKEN nor sign-in is configured.</p>
         ) : (
-          <TokenUnlock id="policy-token" onChange={() => void reloadPolicy()} />
+          <div className="grid gap-2">
+            <TokenUnlock id="policy-token" onChange={() => void reloadPolicy()} />
+            <AccessNote need="admin" action="change policy" />
+          </div>
         )}
       </section>
 

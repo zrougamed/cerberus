@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/databases"
@@ -881,6 +882,30 @@ func (nm *NetworkMonitor) SetAlertHook(fn func(models.AlertEvent) string) {
 	nm.mu.Lock()
 	defer nm.mu.Unlock()
 	nm.alertHook = fn
+}
+
+// ErrUnknownAlert is returned for an alert id not in the history.
+var ErrUnknownAlert = errors.New("unknown alert")
+
+// maxNoteLen bounds acknowledgement notes.
+const maxNoteLen = 500
+
+// AckAlert records who acknowledged an alert, with an optional note. A
+// second acknowledgement replaces the first.
+func (nm *NetworkMonitor) AckAlert(id, by, note string, now time.Time) (models.AlertEvent, error) {
+	if utf8.RuneCountInString(note) > maxNoteLen {
+		return models.AlertEvent{}, fmt.Errorf("note is longer than %d characters", maxNoteLen)
+	}
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	for i := range nm.alerts {
+		if nm.alerts[i].ID == id {
+			at := now.UTC()
+			nm.alerts[i].AckedBy, nm.alerts[i].AckedAt, nm.alerts[i].Note = by, &at, strings.TrimSpace(note)
+			return nm.alerts[i], nil
+		}
+	}
+	return models.AlertEvent{}, fmt.Errorf("%w %s", ErrUnknownAlert, id)
 }
 
 // maxAlerts bounds the in-memory rule alert history.
