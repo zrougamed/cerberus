@@ -162,6 +162,7 @@ export type CaptureEntry = {
   to: string
   packets: number
   bytes: number
+  drops: number
 }
 
 export type CaptureState = {
@@ -172,6 +173,7 @@ export type CaptureState = {
   buffer_oldest?: string
   pending: number
   skipped: number
+  kernel_drops: number
   captures: CaptureEntry[]
 }
 

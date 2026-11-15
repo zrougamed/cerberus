@@ -158,7 +158,7 @@ capture:
   interfaces: []
   snaplen: 1518
   buffer_seconds: 120
-  buffer_mb: 64
+  buffer_mb: 32
   on_alert:
     enabled: true
     min_severity: high

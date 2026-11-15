@@ -56,7 +56,7 @@ func defaultCapture() CaptureConfig {
 	return CaptureConfig{
 		Snaplen:       1518,
 		BufferSeconds: 120,
-		BufferMB:      64,
+		BufferMB:      32,
 		OnAlert: CaptureOnAlert{Enabled: true, MinSeverity: "high", BeforeSeconds: 30, AfterSeconds: 10,
 			MinIntervalSeconds: 300},
 		MaxFiles:   50,

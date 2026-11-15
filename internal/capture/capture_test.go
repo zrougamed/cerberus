@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -80,45 +81,164 @@ func TestHasAddr(t *testing.T) {
 	}
 }
 
-func TestRing_EvictsByAgeAndBytes(t *testing.T) {
+// frameOf builds a recognisable frame: every byte is the sequence number.
+func frameOf(seq, size int) []byte {
+	f := make([]byte, size)
+	for i := range f {
+		f[i] = byte(seq)
+	}
+	return f
+}
+
+// checkRing verifies the ring invariants after inserting frames 0..n-1
+// with the given sizes and timestamps.
+func checkRing(t *testing.T, r *ring, sizes []int, times []int64) {
+	t.Helper()
+	got := r.selectPackets(time.Unix(0, 0), time.Unix(0, 1<<62), nil)
+	n, used, _ := r.stats()
+	if len(got) != n || used > len(r.buf) || used < 0 {
+		t.Fatalf("packets %d listed %d, used %d of %d", n, len(got), used, len(r.buf))
+	}
+	// Retained frames are the newest ones, in order: a contiguous suffix.
+	first := len(sizes) - len(got)
+	for i, p := range got {
+		seq := first + i
+		want := min(sizes[seq], maxCapLen)
+		if p.Time.UnixNano() != times[seq] || len(p.Data) != want || p.OrigLen != sizes[seq] {
+			t.Fatalf("frame %d: ts %d len %d orig %d, want ts %d len %d", seq, p.Time.UnixNano(), len(p.Data), p.OrigLen, times[seq], want)
+		}
+		for _, c := range p.Data {
+			if c != byte(seq) {
+				t.Fatalf("frame %d corrupted", seq)
+			}
+		}
+		if times[len(times)-1]-p.Time.UnixNano() > r.maxAge {
+			t.Fatalf("frame %d older than max age kept", seq)
+		}
+	}
+}
+
+func TestRing_EvictsByAgeAndSize(t *testing.T) {
 	t.Parallel()
-	t0 := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	r := newRing(100, 10*time.Second)
+	r := newRing(1024, 10*time.Second)
+	var sizes []int
+	var times []int64
+	add := func(size int, ts int64) {
+		sizes = append(sizes, size)
+		times = append(times, ts)
+		r.add(Packet{Time: time.Unix(0, ts), Data: frameOf(len(sizes)-1, size), OrigLen: size})
+		checkRing(t, r, sizes, times)
+	}
 	for i := range 5 {
-		r.add(Packet{Time: t0.Add(time.Duration(i) * time.Second), Data: make([]byte, 10)})
+		add(10, int64(i)*int64(time.Second))
 	}
-	if n, b, oldest := r.stats(); n != 5 || b != 50 || !oldest.Equal(t0) {
-		t.Fatalf("stats = %d %d %v", n, b, oldest)
+	if n, used, oldest := r.stats(); n != 5 || used != 5*recordLen(10) || oldest.UnixNano() != 0 {
+		t.Fatalf("stats = %d %d %v", n, used, oldest)
 	}
-	r.add(Packet{Time: t0.Add(12 * time.Second), Data: make([]byte, 10)}) // evicts t0, t0+1s
-	if n, _, oldest := r.stats(); n != 4 || !oldest.Equal(t0.Add(2*time.Second)) {
+	add(10, int64(12*time.Second)) // frames at 0s and 1s are too old
+	if n, _, oldest := r.stats(); n != 4 || oldest.UnixNano() != int64(2*time.Second) {
 		t.Fatalf("after age eviction: %d %v", n, oldest)
 	}
-	// 30 + 10 + 80 bytes: the two oldest go, leaving exactly 100.
-	r.add(Packet{Time: t0.Add(13 * time.Second), Data: make([]byte, 80)})
-	if n, b, _ := r.stats(); b != 100 || n != 3 {
-		t.Fatalf("after byte eviction: %d packets %d bytes", n, b)
+	for i := range 40 { // fill past the arena size: wraps and evicts
+		add(100+i, int64(13*time.Second)+int64(i))
 	}
-	got := r.selectPackets(t0.Add(12*time.Second), t0.Add(12*time.Second), nil)
-	if len(got) != 1 {
-		t.Fatalf("window select = %d", len(got))
+	// Larger than the whole arena: dropped, and nothing is evicted for it.
+	before, _, _ := r.stats()
+	r.add(Packet{Time: time.Unix(14, 0), Data: make([]byte, 2000), OrigLen: 2000})
+	if after, _, _ := r.stats(); after != before {
+		t.Fatalf("oversized frame changed the ring: %d -> %d packets", before, after)
 	}
-	r2 := newRing(10, time.Second)
-	if n, _, oldest := r2.stats(); n != 0 || !oldest.IsZero() {
+	checkRing(t, r, sizes, times)
+	empty := newRing(64, time.Second)
+	if n, used, oldest := empty.stats(); n != 0 || used != 0 || !oldest.IsZero() {
 		t.Fatal("empty ring stats")
 	}
 }
 
-func TestRing_CompactsUnderSteadyLoad(t *testing.T) {
+// TestRing_TightWrap uses an arena that leaves 8 bytes at the end, too few
+// for a wrap marker, so the reader must treat the short tail as a gap.
+func TestRing_TightWrap(t *testing.T) {
 	t.Parallel()
-	r := newRing(1000, time.Hour)
-	t0 := time.Now()
-	for i := range 10000 {
-		r.add(Packet{Time: t0.Add(time.Duration(i) * time.Millisecond), Data: make([]byte, 10)})
+	r := newRing(56, time.Hour) // two 24-byte records, then 8 spare bytes
+	var sizes []int
+	var times []int64
+	for i := range 50 {
+		size := 8 + (i%3)*8 // 24, 32 and 40-byte records
+		sizes = append(sizes, size)
+		times = append(times, int64(i))
+		r.add(Packet{Time: time.Unix(0, int64(i)), Data: frameOf(i, size), OrigLen: size})
+		checkRing(t, r, sizes, times)
 	}
-	if cap(r.buf) > 1000 {
-		t.Fatalf("ring grew to %d slots for 100 live packets", cap(r.buf))
+	// A window covering only the newest frame skips the older ones.
+	if got := r.selectPackets(time.Unix(0, 49), time.Unix(0, 49), nil); len(got) != 1 || got[0].Data[0] != 49 {
+		t.Fatalf("window select = %+v", got)
 	}
+}
+
+func TestRing_EmptiesAndRestarts(t *testing.T) {
+	t.Parallel()
+	r := newRing(256, time.Second)
+	r.add(Packet{Time: time.Unix(0, 0), Data: frameOf(0, 40), OrigLen: 40})
+	r.add(Packet{Time: time.Unix(0, 1), Data: frameOf(1, 40), OrigLen: 40})
+	// Far in the future: both expire, the ring empties and restarts at 0.
+	r.add(Packet{Time: time.Unix(10, 0), Data: frameOf(2, 40), OrigLen: 40})
+	if n, used, _ := r.stats(); n != 1 || used != recordLen(40) || r.tail != 0 {
+		t.Fatalf("after expiry: %d packets, %d bytes, tail %d", n, used, r.tail)
+	}
+	// A timestamp field past MaxInt64 (only possible if corrupted) is clamped.
+	binary.LittleEndian.PutUint64(r.buf[0:], 1<<63)
+	if r.ts(0) != math.MaxInt64 {
+		t.Fatal("timestamp not clamped")
+	}
+}
+
+func TestRing_AppendDoesNotAllocate(t *testing.T) {
+	r := newRing(1<<20, time.Hour)
+	frame := make([]byte, 1514)
+	var ts int64
+	allocs := testing.AllocsPerRun(1000, func() {
+		ts++
+		r.appendFrame(ts, 0, frame, len(frame))
+	})
+	if allocs != 0 {
+		t.Fatalf("appendFrame allocates %.1f times per frame", allocs)
+	}
+}
+
+func TestRing_ClampsOddValues(t *testing.T) {
+	t.Parallel()
+	r := newRing(1<<20, time.Hour)
+	r.mu.Lock()
+	r.appendFrame(-5, -1, make([]byte, 70000), 70000) // negative ts and iface, over-long frame
+	r.mu.Unlock()
+	got := r.selectPackets(time.Unix(0, 0), time.Unix(0, 0), nil)
+	if len(got) != 1 || len(got[0].Data) != maxCapLen || got[0].Iface != 0 || got[0].OrigLen != 70000 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func FuzzRing(f *testing.F) {
+	f.Add([]byte{10, 200, 3, 255, 0, 64}, uint16(512))
+	f.Add([]byte{255, 255, 255, 1, 1, 1, 1, 1}, uint16(300))
+	f.Fuzz(func(t *testing.T, ops []byte, arena uint16) {
+		r := newRing(int(arena)+64, 5*time.Second)
+		var sizes []int
+		var times []int64
+		var ts int64
+		for i, op := range ops {
+			size := int(op) * 3 // 0..765 bytes
+			ts += int64(op%7) * int64(time.Second/2)
+			if recordLen(size) > len(r.buf) {
+				continue
+			}
+			sizes = append(sizes, size)
+			times = append(times, ts)
+			r.add(Packet{Time: time.Unix(0, ts), Data: frameOf(len(sizes)-1, size), OrigLen: size})
+			if i%4 == 0 || i == len(ops)-1 {
+				checkRing(t, r, sizes, times)
+			}
+		}
+	})
 }
 
 // readPcapng walks the blocks and returns their types, checking framing.
@@ -222,17 +342,24 @@ func testConfig() alerts.CaptureConfig {
 	return c
 }
 
-// fakeSource emits the given frames once, then waits for cancellation.
+// fakeSource emits the given frames once (one batch), reports drops, then
+// waits for cancellation.
 type fakeSource struct {
 	name   string
 	frames [][]byte
+	drops  uint64
 	err    error
 }
 
 func (f *fakeSource) Name() string { return f.name }
-func (f *fakeSource) Run(ctx context.Context, emit func([]byte, int)) error {
-	for _, fr := range f.frames {
-		emit(fr, len(fr))
+func (f *fakeSource) Run(ctx context.Context, sink Sink) error {
+	sink.Frames(func(add func(int64, []byte, int)) {
+		for _, fr := range f.frames {
+			add(time.Now().UnixNano(), fr, len(fr))
+		}
+	})
+	if f.drops > 0 {
+		sink.Drops(f.drops)
 	}
 	if f.err != nil {
 		return f.err
@@ -265,15 +392,15 @@ func waitFor(t *testing.T, cond func() bool) {
 func TestCapturer_SourcesFeedTheRing(t *testing.T) {
 	t.Parallel()
 	frames := [][]byte{ipv4Frame("10.0.0.5", "10.0.0.9", false), ipv4Frame("10.0.0.7", "10.0.0.9", false)}
-	c := newTestCapturer(t, testConfig(), &fakeSource{name: "eth0", frames: frames}, &fakeSource{name: "eth1", err: errors.New("gone")})
+	c := newTestCapturer(t, testConfig(), &fakeSource{name: "eth0", frames: frames, drops: 3}, &fakeSource{name: "eth1", err: errors.New("gone")})
 	c.Start()
-	waitFor(t, func() bool { return c.Status().BufferPackets == 2 })
+	waitFor(t, func() bool { return c.Status().BufferPackets == 2 && c.Status().KernelDrops == 3 })
 	s := c.Status()
-	if !s.Enabled || len(s.Interfaces) != 2 || s.Interfaces[1] != "eth1" || s.BufferBytes != 68 {
+	if !s.Enabled || len(s.Interfaces) != 2 || s.Interfaces[1] != "eth1" || s.BufferBytes != 2*recordLen(34) {
 		t.Fatalf("status = %+v", s)
 	}
 	got, err := c.CaptureNow(netip.MustParseAddr("10.0.0.5"), time.Minute)
-	if err != nil || got.Packets != 1 || got.Address != "10.0.0.5" || got.Reason != "manual" {
+	if err != nil || got.Packets != 1 || got.Address != "10.0.0.5" || got.Reason != "manual" || got.Drops != 3 {
 		t.Fatalf("capture = %+v err=%v", got, err)
 	}
 	all, err := c.CaptureNow(netip.Addr{}, time.Minute)
@@ -489,5 +616,25 @@ func TestStatus_OldestOnlyWhenBuffered(t *testing.T) {
 	c.ring.add(Packet{Time: ts, Data: []byte{1}})
 	if o := c.Status().BufferOldest; o == nil || !o.Equal(ts) {
 		t.Fatalf("oldest = %v", o)
+	}
+}
+
+func TestCapturer_DropSamplesBoundedAndWindowed(t *testing.T) {
+	t.Parallel()
+	c := newTestCapturer(t, testConfig())
+	t0 := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	for i := range maxDropSamples + 10 {
+		c.recordDrops(t0.Add(time.Duration(i)*time.Second), 1)
+	}
+	if len(c.drops) != maxDropSamples || c.Status().KernelDrops != maxDropSamples+10 {
+		t.Fatalf("samples %d total %d", len(c.drops), c.Status().KernelDrops)
+	}
+	last := t0.Add(time.Duration(maxDropSamples+9) * time.Second)
+	// [last-3s, last-1s] plus the report one second later: 4 samples.
+	if n := c.dropsBetween(last.Add(-3*time.Second), last.Add(-time.Second)); n != 4 {
+		t.Fatalf("window drops = %d, want 4", n)
+	}
+	if n := c.dropsBetween(t0, t0.Add(5*time.Second)); n != 0 {
+		t.Fatalf("evicted samples counted: %d", n)
 	}
 }

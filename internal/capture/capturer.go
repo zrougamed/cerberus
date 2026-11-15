@@ -29,8 +29,43 @@ var ErrDisabled = errors.New("packet capture is disabled")
 // Source delivers frames from one interface until ctx ends.
 type Source interface {
 	Name() string
-	Run(ctx context.Context, emit func(data []byte, origLen int)) error
+	Run(ctx context.Context, sink Sink) error
 }
+
+// Sink receives frames from a source. Frames are delivered in batches (one
+// kernel block at a time) so the ring is locked once per batch.
+type Sink interface {
+	// Frames calls fill, which calls add for each frame in the batch. data
+	// is only valid during add.
+	Frames(fill func(add func(ts int64, data []byte, origLen int)))
+	// Drops reports frames the kernel dropped since the previous call.
+	Drops(n uint64)
+}
+
+// ifaceSink binds a Sink to one interface index.
+type ifaceSink struct {
+	c     *Capturer
+	iface int
+}
+
+func (s ifaceSink) Frames(fill func(add func(int64, []byte, int))) {
+	r := s.c.ring
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fill(func(ts int64, data []byte, origLen int) { r.appendFrame(ts, s.iface, data, origLen) })
+}
+
+func (s ifaceSink) Drops(n uint64) { s.c.recordDrops(s.c.now(), n) }
+
+// dropSample is one report of kernel drops, kept so a capture can say
+// whether its window lost frames.
+type dropSample struct {
+	at time.Time
+	n  uint64
+}
+
+// maxDropSamples keeps an hour of once-a-second reports.
+const maxDropSamples = 3600
 
 // Status summarises the capturer for the API and metrics.
 type Status struct {
@@ -41,6 +76,9 @@ type Status struct {
 	BufferOldest  *time.Time `json:"buffer_oldest,omitempty"` // nil when empty
 	Pending       int        `json:"pending"`
 	Skipped       uint64     `json:"skipped"` // alert captures dropped (rate limit or queue full)
+	// KernelDrops counts frames the kernel dropped because the reader fell
+	// behind; captures covering those moments are incomplete.
+	KernelDrops uint64 `json:"kernel_drops"`
 }
 
 // Capturer reads frames into a ring and writes captures from it.
@@ -53,6 +91,8 @@ type Capturer struct {
 	now    func() time.Time
 
 	mu       sync.Mutex
+	drops    []dropSample
+	dropsAll uint64
 	lastByIP map[string]time.Time
 	pending  int
 	skipped  uint64
@@ -98,9 +138,7 @@ func (c *Capturer) Start() {
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
-			err := s.Run(ctx, func(data []byte, origLen int) {
-				c.ring.add(Packet{Time: c.now(), Iface: i, Data: data, OrigLen: origLen})
-			})
+			err := s.Run(ctx, ifaceSink{c: c, iface: i})
 			if err != nil && ctx.Err() == nil {
 				log.Printf("capture: %s stopped: %v", s.Name(), err)
 			}
@@ -195,7 +233,32 @@ func (c *Capturer) write(meta Capture, addr netip.Addr) (Capture, error) {
 		match = func(p Packet) bool { return hasAddr(p.Data, addr) }
 	}
 	pkts := c.ring.selectPackets(meta.From, meta.To, match)
+	meta.Drops = c.dropsBetween(meta.From, meta.To)
 	return c.store.save(meta, c.ifaces, pkts)
+}
+
+func (c *Capturer) recordDrops(at time.Time, n uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dropsAll += n
+	if len(c.drops) == maxDropSamples {
+		c.drops = append(c.drops[:0], c.drops[1:]...)
+	}
+	c.drops = append(c.drops, dropSample{at: at, n: n})
+}
+
+// dropsBetween sums the drops reported for [from, to]. Each report covers
+// the second before it, so the window extends one second past to.
+func (c *Capturer) dropsBetween(from, to time.Time) uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var n uint64
+	for _, d := range c.drops {
+		if !d.at.Before(from) && !d.at.After(to.Add(time.Second)) {
+			n += d.n
+		}
+	}
+	return n
 }
 
 // List returns stored captures, newest first.
@@ -223,7 +286,7 @@ func (c *Capturer) Status() Status {
 		names = append(names, i.Name)
 	}
 	s := Status{Enabled: true, Interfaces: names, BufferPackets: packets, BufferBytes: bytes,
-		Pending: c.pending, Skipped: c.skipped}
+		Pending: c.pending, Skipped: c.skipped, KernelDrops: c.dropsAll}
 	if packets > 0 {
 		s.BufferOldest = &oldest
 	}
