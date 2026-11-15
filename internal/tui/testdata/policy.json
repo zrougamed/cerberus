@@ -1,0 +1,69 @@
+{
+ "audit": [
+  {
+   "action": "add_rule",
+   "actor": "alice@10.0.0.2",
+   "at": "2026-11-15T10:00:00Z",
+   "detail": "quarantine",
+   "rule_id": "q1"
+  }
+ ],
+ "filters": [
+  {
+   "counters": {
+    "bytes": 200,
+    "packets": 4
+   },
+   "enabled": true,
+   "id": "f1",
+   "summary": "tcp dst 23",
+   "verdict": "drop"
+  },
+  {
+   "counters": {
+    "bytes": 0,
+    "packets": 0
+   },
+   "enabled": false,
+   "id": "f2",
+   "summary": "udp",
+   "verdict": "accept"
+  }
+ ],
+ "kernel_attached": true,
+ "max_filters": 64,
+ "max_rules": 1024,
+ "mode": "enforce",
+ "rules": [
+  {
+   "action": "drop",
+   "counters": {
+    "bytes": 900,
+    "packets": 12
+   },
+   "direction": "any",
+   "id": "q1",
+   "mac": "3c:22:fb:10:aa:09"
+  },
+  {
+   "action": "drop",
+   "counters": {
+    "bytes": 0,
+    "packets": 0
+   },
+   "host_match": "sni",
+   "hostname": "*.evil.example",
+   "id": "h1"
+  },
+  {
+   "action": "log",
+   "cidr": "10.9.0.0/16",
+   "counters": {
+    "bytes": 120,
+    "packets": 3
+   },
+   "id": "c1"
+  }
+ ],
+ "writes_enabled": true
+}

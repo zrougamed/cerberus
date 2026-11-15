@@ -1,0 +1,287 @@
+[
+ {
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "forwarded_source_count": 1,
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "interface": "if0",
+  "ip": "10.0.4.7",
+  "is_gateway": true,
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "3c:22:fb:10:aa:09",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "TCP/502": 1
+  },
+  "targets": [
+   "10.20.0.50"
+  ],
+  "tcp_connections": 1,
+  "tls_connections": 0,
+  "traffic_type_counts": {
+   "TCP_SYN": 1
+  },
+  "udp_connections": 0,
+  "vendor": "Apple, Inc."
+ },
+ {
+  "asset": {
+   "firmware": "v3.20",
+   "model": "M580",
+   "source": "modbus",
+   "updated_at": "2026-11-15T10:00:00Z",
+   "vendor": "Schneider Electric"
+  },
+  "dns_domains": {
+   "ntp.plant.example": 3
+  },
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "forwarded_source_count": 42,
+  "http_hosts": {
+   "plc.local": 1
+  },
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "industrial": {
+   "modbus": {
+    "exceptions": 1,
+    "operations": {
+     "read": 40,
+     "write": 1
+    },
+    "peers": [
+     "10.20.0.10"
+    ],
+    "requests": 40,
+    "responses": 41
+   }
+  },
+  "interface": "if0",
+  "ip": "10.20.0.50",
+  "is_gateway": true,
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "00:1d:9c:00:00:32",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "TCP/50100": 42
+  },
+  "targets": [
+   "10.20.0.10"
+  ],
+  "tcp_connections": 42,
+  "tls_connections": 0,
+  "tls_snis": {
+   "historian.plant.example": 2
+  },
+  "traffic_type_counts": {
+   "TCP_CUSTOM": 42
+  },
+  "udp_connections": 0,
+  "vendor": "Rockwell Automation",
+  "zone": "Line 1"
+ },
+ {
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "forwarded_source_count": 15,
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "industrial": {
+   "s7comm": {
+    "details": {
+     "rack 0 slot 2": 1
+    },
+    "exceptions": 0,
+    "functions": {
+     "cotp_connect": 1,
+     "plc_stop": 1,
+     "read_var": 12,
+     "request_download": 1
+    },
+    "last_seen": "2026-11-15T10:00:00Z",
+    "operations": {
+     "control": 1,
+     "other": 1,
+     "program": 1,
+     "read": 12
+    },
+    "peers": [
+     "10.20.0.60"
+    ],
+    "requests": 15,
+    "responses": 0
+   }
+  },
+  "interface": "if0",
+  "ip": "10.20.0.30",
+  "is_gateway": true,
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "00:1b:1b:00:00:1e",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "TCP/102": 15
+  },
+  "targets": [
+   "10.20.0.60"
+  ],
+  "tcp_connections": 15,
+  "tls_connections": 0,
+  "traffic_type_counts": {
+   "TCP_CUSTOM": 15
+  },
+  "udp_connections": 0,
+  "vendor": "Siemens AG,"
+ },
+ {
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "forwarded_source_count": 42,
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "industrial": {
+   "modbus": {
+    "exceptions": 0,
+    "functions": {
+     "read_device_identification": 1,
+     "read_holding_registers": 40,
+     "write_multiple_registers": 1
+    },
+    "last_seen": "2026-11-15T10:00:00Z",
+    "operations": {
+     "read": 41,
+     "write": 1
+    },
+    "peers": [
+     "10.20.0.50"
+    ],
+    "requests": 42,
+    "responses": 0
+   }
+  },
+  "interface": "if0",
+  "ip": "10.20.0.10",
+  "is_gateway": true,
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "00:1d:9c:00:00:0a",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "TCP/502": 42
+  },
+  "targets": [
+   "10.20.0.50"
+  ],
+  "tcp_connections": 42,
+  "tls_connections": 0,
+  "traffic_type_counts": {
+   "TCP_CUSTOM": 42
+  },
+  "udp_connections": 0,
+  "vendor": "Rockwell Automation"
+ },
+ {
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "interface": "if0",
+  "ip": "192.168.1.24",
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "3c:22:fb:10:aa:04",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "HTTPS": 1
+  },
+  "targets": [
+   "203.0.113.9"
+  ],
+  "tcp_connections": 1,
+  "tls_connections": 0,
+  "traffic_type_counts": {
+   "TCP_HTTPS": 1
+  },
+  "udp_connections": 0,
+  "vendor": "Apple, Inc."
+ },
+ {
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "interface": "if0",
+  "ip": "192.168.1.23",
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "3c:22:fb:10:aa:03",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "HTTPS": 1
+  },
+  "targets": [
+   "203.0.113.9"
+  ],
+  "tcp_connections": 1,
+  "tls_connections": 0,
+  "traffic_type_counts": {
+   "TCP_HTTPS": 1
+  },
+  "udp_connections": 0,
+  "vendor": "Apple, Inc."
+ },
+ {
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "interface": "if0",
+  "ip": "192.168.1.22",
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "3c:22:fb:10:aa:02",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "HTTPS": 1
+  },
+  "targets": [
+   "203.0.113.9"
+  ],
+  "tcp_connections": 1,
+  "tls_connections": 0,
+  "traffic_type_counts": {
+   "TCP_HTTPS": 1
+  },
+  "udp_connections": 0,
+  "vendor": "Apple, Inc."
+ },
+ {
+  "dns_queries": 0,
+  "first_seen": "2026-11-15T10:00:00Z",
+  "http_requests": 0,
+  "icmp_packets": 0,
+  "interface": "if0",
+  "ip": "192.168.1.21",
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "3c:22:fb:10:aa:01",
+  "reply_count": 0,
+  "request_count": 0,
+  "services": {
+   "HTTPS": 1
+  },
+  "targets": [
+   "203.0.113.9"
+  ],
+  "tcp_connections": 1,
+  "tls_connections": 0,
+  "traffic_type_counts": {
+   "TCP_HTTPS": 1
+  },
+  "udp_connections": 0,
+  "vendor": "Apple, Inc."
+ }
+]

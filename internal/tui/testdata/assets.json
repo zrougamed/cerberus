@@ -1,0 +1,46 @@
+[
+ {
+  "advisories": 0,
+  "ip": "10.20.0.10",
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "00:1d:9c:00:00:0a",
+  "oui_vendor": "Rockwell Automation",
+  "protocols": [
+   "modbus"
+  ],
+  "role": "hmi",
+  "role_source": "override"
+ },
+ {
+  "advisories": 0,
+  "ip": "10.20.0.30",
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "00:1b:1b:00:00:1e",
+  "oui_vendor": "Siemens AG,",
+  "protocols": [
+   "s7comm"
+  ],
+  "role": "engineering_workstation",
+  "role_source": "inferred"
+ },
+ {
+  "advisories": 2,
+  "advisory_severity": "high",
+  "asset": {
+   "firmware": "v3.20",
+   "model": "M580",
+   "source": "modbus",
+   "updated_at": "2026-11-15T10:00:00Z",
+   "vendor": "Schneider Electric"
+  },
+  "ip": "10.20.0.50",
+  "last_seen": "2026-11-15T10:00:00Z",
+  "mac": "00:1d:9c:00:00:32",
+  "oui_vendor": "Rockwell Automation",
+  "protocols": [
+   "modbus"
+  ],
+  "role": "controller",
+  "role_source": "inferred"
+ }
+]

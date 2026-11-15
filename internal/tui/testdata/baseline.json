@@ -1,0 +1,102 @@
+{
+ "flows": [
+  {
+   "class": "read",
+   "client": "10.20.0.10",
+   "count": 41,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "c2685418583e64b1",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "modbus",
+   "server": "10.20.0.50",
+   "status": "learned"
+  },
+  {
+   "class": "write",
+   "client": "10.20.0.10",
+   "count": 1,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "ba6e6417b9123b18",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "modbus",
+   "server": "10.20.0.50",
+   "status": "learned"
+  },
+  {
+   "class": "control",
+   "client": "10.20.0.30",
+   "count": 1,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "f7ef94356c44d2a9",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "s7comm",
+   "server": "10.20.0.60",
+   "status": "learned"
+  },
+  {
+   "class": "other",
+   "client": "10.20.0.30",
+   "count": 1,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "7559f670f8bd8976",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "s7comm",
+   "server": "10.20.0.60",
+   "status": "learned"
+  },
+  {
+   "class": "program",
+   "client": "10.20.0.30",
+   "count": 1,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "1fa366f0e3266c00",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "s7comm",
+   "server": "10.20.0.60",
+   "status": "learned"
+  },
+  {
+   "class": "read",
+   "client": "10.20.0.30",
+   "count": 12,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "be419094acd0ac28",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "s7comm",
+   "server": "10.20.0.60",
+   "status": "learned"
+  },
+  {
+   "class": "write",
+   "client": "10.0.4.7",
+   "count": 3,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "new0000000000001",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "modbus",
+   "server": "10.20.0.50",
+   "status": "new"
+  },
+  {
+   "class": "read",
+   "client": "10.0.4.7",
+   "count": 1,
+   "first_seen": "2026-11-15T10:00:00Z",
+   "id": "new0000000000002",
+   "last_seen": "2026-11-15T10:00:00Z",
+   "protocol": "s7comm",
+   "server": "10.20.0.60",
+   "status": "new"
+  }
+ ],
+ "status": {
+  "approved": 0,
+  "dropped": 1,
+  "learned": 6,
+  "learning_until": "2026-11-15T10:00:00Z",
+  "max_flows": 10000,
+  "new": 2,
+  "started_at": "2026-11-15T10:00:00Z",
+  "state": "learning"
+ }
+}

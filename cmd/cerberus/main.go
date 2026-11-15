@@ -27,11 +27,17 @@ import (
 	"github.com/zrougamed/cerberus/internal/monitor"
 	"github.com/zrougamed/cerberus/internal/network"
 	"github.com/zrougamed/cerberus/internal/policy"
+	"github.com/zrougamed/cerberus/internal/tui"
 	"github.com/zrougamed/cerberus/internal/utils"
 	"github.com/zrougamed/cerberus/internal/version"
 )
 
 func main() {
+	// `cerberus tui` is the terminal console: it talks to a running
+	// Cerberus over the API and needs no privileges.
+	if len(os.Args) > 1 && os.Args[1] == "tui" {
+		os.Exit(tui.Main(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	fmt.Printf("Cerberus %s\n", version.String())
 
 	// No startup TC/XDP cleanup: TCX links are owned by this process and the

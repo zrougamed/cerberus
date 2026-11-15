@@ -24,6 +24,7 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Statistics Dashboard**: Real-time network statistics and device behavior analysis
 - **Smart Deduplication**: Only alert on new traffic patterns (first occurrence)
 - **Persistent Storage**: Local database for historical data with Redis migration path
+- **Terminal console**: `cerberus tui` shows devices, alerts, anomalies, assets, zones, baseline, policy, captures and DNS/TLS with live charts, over SSH or `docker exec`, without root (see `docs/tui.md`)
 - **Control Room (Web UI)**: Hash-routed dashboard for summary, devices, rule alerts, anomalies, policy (filter rules, blocklist, live log) and raw JSON
 - **Behavioral anomaly & abuse-style signals**: ML-lite windows highlight SYN-heavy, high-volume, and unusual-port patterns (consistent with scans/floods); rule alerts flag DNS/TCP/target spread; see **[`docs/threat-and-anomaly-patterns.md`](docs/threat-and-anomaly-patterns.md)** for scope and limits (not a full IDS; no dedicated reverse-tunnel classifier)
 - **Active response**: bpfilter-style ordered filter rules (interface, protocol, addresses, ports, TCP flags, ICMP; Allow / Block / Count; per-rule counters and rate-limited packet log) plus a MAC/IP blocklist, with a dry-run mode, TTLs, an audit trail and a Policy page in the console ([`docs/active-response.md`](docs/active-response.md))
@@ -201,6 +202,10 @@ sudo ./build/cerberus
 ```bash
 # Basic usage
 sudo ./build/cerberus
+
+# Terminal console for a running Cerberus (no root needed)
+./build/cerberus tui
+docker exec -it cerberus ./cerberus tui
 ```
 
 ## Output Examples
@@ -433,6 +438,7 @@ cerberus/
 │   ├── network/        # Topology, interface selection, routes
 │   ├── notify/         # Slack / Teams / webhook / syslog sinks
 │   ├── policy/         # Active response: filter chain, blocklist, audit
+│   ├── tui/            # Terminal console (cerberus tui), reads the REST API
 │   └── utils/          # Helper functions (includes L7 inspection)
 ├── scripts/            # Utility scripts
 ├── tools/ouigen/       # Regenerates the embedded IEEE OUI snapshot
@@ -574,6 +580,7 @@ curl https://zrouga.email
 - [x] Accurate IEEE OUI lookup (full registry embedded, MA-L/MA-M/MA-S/IAB, virtualization prefixes)
 - [x] Active response: bpfilter-style filter rules and MAC/IP blocklist with dry run, counters and packet log
 - [x] Kernel-side counters, interface selection, CIDR watchlists
+- [x] Terminal console (`cerberus tui`)
 
 ## Performance
 

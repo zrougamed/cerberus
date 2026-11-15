@@ -1,0 +1,14 @@
+[
+ {
+  "affected": "< v3.40",
+  "confidence": "affected version",
+  "cves": [
+   "CVE-2025-0001"
+  ],
+  "id": "ICSA-25-001-01",
+  "product": "Modicon M580",
+  "score": 8.6,
+  "severity": "high",
+  "title": "Schneider Electric Modicon M580"
+ }
+]

@@ -1,0 +1,49 @@
+{
+ "device_count": 8,
+ "dns_correlated_domains": {
+  "updates.vendor.example": 4
+ },
+ "dns_query_types": {
+  "A": 30,
+  "AAAA": 10
+ },
+ "dns_response_codes": {
+  "NOERROR": 38,
+  "NXDOMAIN": 2
+ },
+ "dns_response_domains": {
+  "updates.vendor.example": 12
+ },
+ "encrypted_dns": {
+  "doh": 1
+ },
+ "generated_at": "2026-11-15T10:00:00Z",
+ "packet_stats": {
+  "arp": 3,
+  "dns": 40,
+  "http": 12,
+  "icmp": 2,
+  "tcp": 1000,
+  "tls": 30,
+  "total": 1100,
+  "udp": 98
+ },
+ "tls_versions": {
+  "TLS 1.2": 10,
+  "TLS 1.3": 20
+ },
+ "top_services": {
+  "HTTPS": 4,
+  "TCP/102": 15,
+  "TCP/50100": 42,
+  "TCP/502": 43
+ },
+ "top_tls_snis": {
+  "historian.plant.example": 9
+ },
+ "top_vendors": {
+  "Apple, Inc.": 5,
+  "Rockwell Automation": 2,
+  "Siemens AG,": 1
+ }
+}
