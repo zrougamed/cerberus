@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,10 @@ type assetEntry struct {
 	Protocols  []string          `json:"protocols"`
 	Asset      *models.AssetInfo `json:"asset,omitempty"`
 	LastSeen   time.Time         `json:"last_seen"`
+	// Advisories counts matching published advisories; AdvisorySeverity is
+	// the highest of their severities. Both empty without a bundle.
+	Advisories       int    `json:"advisories"`
+	AdvisorySeverity string `json:"advisory_severity,omitempty"`
 }
 
 func (s *Server) registerAssetRoutes(mux *http.ServeMux) {
@@ -70,6 +75,7 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 		if !ok || (role != "" && e.Role != role) || (proto != "" && !slices.Contains(e.Protocols, proto)) {
 			continue
 		}
+		s.addAdvisorySummary(&e, d)
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -83,11 +89,22 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+var severityOrder = map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
+
+func (s *Server) addAdvisorySummary(e *assetEntry, d *models.DeviceInfo) {
+	for _, m := range s.matchDevice(d) {
+		e.Advisories++
+		if severityOrder[m.Severity] > severityOrder[e.AdvisorySeverity] {
+			e.AdvisorySeverity = m.Severity
+		}
+	}
+}
+
 func writeAssetsCSV(w http.ResponseWriter, rows []assetEntry) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="cerberus-assets.csv"`)
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"mac", "ip", "role", "role_source", "protocols", "vendor", "model", "firmware", "serial", "device_type", "identity_source", "oui_vendor", "last_seen"})
+	_ = cw.Write([]string{"mac", "ip", "role", "role_source", "protocols", "vendor", "model", "firmware", "serial", "device_type", "identity_source", "oui_vendor", "last_seen", "advisories", "advisory_severity"})
 	for _, e := range rows {
 		a := e.Asset
 		if a == nil {
@@ -95,7 +112,7 @@ func writeAssetsCSV(w http.ResponseWriter, rows []assetEntry) {
 		}
 		record := []string{e.MAC, e.IP, e.Role, e.RoleSource, strings.Join(e.Protocols, " "),
 			a.Vendor, a.Model, a.Firmware, a.Serial, a.DeviceType, a.Source, e.OUIVendor,
-			e.LastSeen.UTC().Format(time.RFC3339)}
+			e.LastSeen.UTC().Format(time.RFC3339), strconv.Itoa(e.Advisories), e.AdvisorySeverity}
 		for i := range record {
 			record[i] = csvSafe(record[i])
 		}

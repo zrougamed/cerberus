@@ -38,6 +38,7 @@ type Server struct {
 	capture   atomic.Pointer[capture.Capturer]
 	tokenHash []byte // sha256 of CERBERUS_API_TOKEN; nil disables writes
 	authLimit authLimiter
+	adv       advisoryState
 }
 
 type kernelStatsFunc func() (kstats.Snapshot, error)
@@ -67,6 +68,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	s.registerBaselineRoutes(mux)
 	s.registerCaptureRoutes(mux)
 	s.registerSegmentationRoutes(mux)
+	s.registerAdvisoryRoutes(mux)
 	mux.HandleFunc("GET /api/v1/zones", s.handleZones)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)

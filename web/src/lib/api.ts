@@ -11,6 +11,8 @@ import type {
   ZoneSummary,
   CaptureState,
   Segmentation,
+  AdvisoryStatus,
+  AdvisoryMatch,
 } from './types'
 import { getToken, setToken } from './token'
 
@@ -82,6 +84,14 @@ export async function downloadCapture(id: string): Promise<string | null> {
 
 export function fetchSegmentation() {
   return getJSON<Segmentation>('/api/v1/segmentation')
+}
+
+export function fetchAdvisoryStatus() {
+  return getJSON<AdvisoryStatus>('/api/v1/advisories')
+}
+
+export function fetchAssetAdvisories(mac: string) {
+  return getJSON<AdvisoryMatch[]>(`/api/v1/assets/${encodeURIComponent(mac)}/advisories`)
 }
 
 export function fetchPolicy() {

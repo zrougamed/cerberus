@@ -23,6 +23,9 @@ Base URL is whatever host/port `CERBERUS_HTTP_ADDR` binds to (default `http://12
 | `GET /api/v1/segmentation` | Active zones, conduits and zone alert rules, with `source` (`config` or `saved`). |
 | `PUT /api/v1/segmentation` | Bearer token. Replace the whole segmentation; validated like the alerts file, applied without a restart, saved across restarts. 400 returns the reason. |
 | `DELETE /api/v1/segmentation` | Bearer token. Discard saved changes and use the alerts file again. |
+| `GET /api/v1/advisories` | Advisory bundle status: `loaded`, `path`, `generated_at`, `source`, `advisories`, `age_days`, `stale`, `error`. |
+| `POST /api/v1/advisories/reload` | Bearer token. Re-read the bundle file. |
+| `GET /api/v1/assets/{mac}/advisories` | Matching advisories for one device, highest score first, each with `confidence`. Asset entries also carry `advisories` (count) and `advisory_severity`. See [advisories.md](advisories.md). |
 | `GET /api/v1/version` | `{ "commit": "<short-sha>", "date": "<RFC3339>" }` build metadata stamped at compile time via `-ldflags -X`. Both fields are `"unknown"` for builds without git or ldflags. |
 
 Errors: non-GET returns **405** with plain text body `method not allowed`.

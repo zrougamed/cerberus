@@ -92,6 +92,16 @@ func main() {
 		fmt.Println("Policy changes disabled: set CERBERUS_API_TOKEN to manage rules from the console/API")
 	}
 
+	// Offline advisory bundle (tools/advisorygen): CERBERUS_ADVISORIES_FILE,
+	// else <data dir>/advisories.json when present.
+	if path := advisoriesPath(); path != "" {
+		if err := apiServer.LoadAdvisories(path); err != nil {
+			fmt.Printf("Advisory matching off: %v\n", err)
+		} else {
+			fmt.Printf("Advisory bundle loaded from %s\n", path)
+		}
+	}
+
 	apiHandler, err := apiServer.Handler()
 	if err != nil {
 		panic(fmt.Errorf("failed to create API handler: %w", err))
@@ -339,6 +349,17 @@ func main() {
 	fmt.Println("\n\nFinal Statistics:")
 	mon.PrintStats()
 	fmt.Println("Shutting down...")
+}
+
+func advisoriesPath() string {
+	if p := os.Getenv("CERBERUS_ADVISORIES_FILE"); p != "" {
+		return p
+	}
+	p := filepath.Join(databases.DataDir(), "advisories.json")
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	return ""
 }
 
 // startCapture opens one packet source per capture interface (the attached

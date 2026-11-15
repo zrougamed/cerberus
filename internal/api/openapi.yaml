@@ -253,6 +253,37 @@ paths:
       responses:
         "200": {description: The active segmentation from the alerts file}
         "401": {description: Missing or invalid token}
+  /api/v1/advisories:
+    get:
+      summary: Advisory bundle status
+      operationId: getAdvisoryStatus
+      tags: [Assets]
+      responses:
+        "200":
+          description: "{loaded, path, generated_at, source, advisories, age_days, stale (older than 90 days), error}"
+  /api/v1/advisories/reload:
+    post:
+      summary: Reload the advisory bundle from its file
+      operationId: reloadAdvisories
+      tags: [Assets]
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: New status}
+        "401": {description: Missing or invalid token}
+        "409": {description: No bundle path configured}
+        "422": {description: The file could not be loaded; matching is off until a good bundle loads}
+  /api/v1/assets/{mac}/advisories:
+    get:
+      summary: Published advisories matching one device
+      operationId: getAssetAdvisories
+      tags: [Assets]
+      parameters:
+        - {name: mac, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: "Matches, highest score first: id, title, url, published, severity, score, cves, product, affected, confidence (affected version | product only)"
+        "400": {description: Invalid MAC address}
+        "404": {description: Unknown device}
   /api/v1/policy/mode:
     put:
       summary: Set enforcement mode

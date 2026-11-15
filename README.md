@@ -31,6 +31,7 @@ Cerberus is a high-performance network monitoring tool built with eBPF (Extended
 - **Kernel-side counters**: Packets/bytes seen by the TC hook and events lost to a full ring buffer, on `/metrics`
 - **Packet capture**: optional in-memory frame ring that saves pcapng files around high-severity alerts or on demand, downloadable from the console ([`docs/packet-capture.md`](docs/packet-capture.md))
 - **ATT&CK for ICS tags**: every rule alert names its MITRE ATT&CK for ICS techniques, in the console and in Slack, Teams, webhook and syslog notifications ([`docs/attack-mapping.md`](docs/attack-mapping.md))
+- **Advisory matching**: assets checked against an offline bundle of published ICS advisories (built from CISA's CSAF feed, attached to each release), with the affected version range and match confidence per device ([`docs/advisories.md`](docs/advisories.md))
 - **Asset inventory**: vendor, model, firmware and serial reported by the devices themselves, inferred roles (controller, HMI, SCADA server, engineering workstation) with operator overrides, CSV export, and an alert when a device's firmware or model changes
 - **Zones and conduits**: Purdue-level zones and the conduits between them; alerts on traffic with no conduit or that skips a level, a zone map in the console, and drop rules refused on industrial zones unless explicitly allowed
 - **Flow baseline**: learns which hosts talk to which controllers with which operations (one week by default), then alerts on anything new; approve, forget or relearn from the console
