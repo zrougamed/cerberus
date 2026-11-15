@@ -13,7 +13,7 @@ Delivery is **asynchronous** (never blocks packet processing). A full buffer dro
 | **Generic webhook** | `webhook.url` | Raw `Event` JSON (`POST`, `Content-Type: application/json`) |
 | **Slack** | `slack.webhook_url` | [Incoming Webhook](https://api.slack.com/messaging/webhooks) with Block Kit |
 | **Microsoft Teams** | `teams.webhook_url`, optional `teams.format` | Adaptive Card (default) or legacy MessageCard |
-| **Syslog** | `syslog.address`, `syslog.network`, `syslog.tag` | Text line via UDP/TCP/unix |
+| **Syslog** | `syslog.address`, `syslog.network`, `syslog.tag`, `syslog.format` | Text, CEF or LEEF over UDP, TCP, TLS or a unix socket |
 
 Enable at least one sink when `notifications.enabled: true`.
 
@@ -90,6 +90,55 @@ notifications:
   teams:
     webhook_url: https://outlook.office.com/webhook/...
     format: message_card
+```
+
+## Syslog formats and TLS
+
+`syslog.format` picks the message body:
+
+| Format | Body |
+|--------|------|
+| `text` (default) | `cerberus kind=rule severity=high title="..." message="..." mac=... ip=... rule=... techniques=T0843,T0889` |
+| `cef` | ArcSight CEF 0: `CEF:0|Cerberus|Cerberus|<version>|<rule or kind>|<title>|<severity>|<extension>` |
+| `leef` | IBM QRadar LEEF 2.0 with the tab delimiter: `LEEF:2.0|Cerberus|Cerberus|<version>|<rule or kind>|<attributes>` |
+
+Severity maps to 3 (low), 6 (medium) and 9 (high) on the 0-10 scale both
+formats use. The event id is the rule (`s7_program`, `watchlist:c2`) or, for
+anomalies and new devices, the kind, so SIEM rules can key on it.
+
+| Field | CEF key | LEEF key |
+|-------|---------|----------|
+| Observed time | `rt` (epoch ms) | `devTime` + `devTimeFormat` |
+| Kind | `cat` | `cat` |
+| Message | `msg` | `msg` |
+| Device IP | `src` (IPv4) or `c6a2` (IPv6) | `src` |
+| Device MAC | `smac` | `srcMAC` |
+| Rule | `cs1` (label `Rule`) | `rule` |
+| OUI vendor | `cs2` (label `Vendor`) | `vendor` |
+| ATT&CK for ICS | `cs3` (label `ATT&CK for ICS`) | `techniques` |
+| Anomaly score | `cfp1` | `score` |
+
+CEF values escape `\`, `=` and line breaks, and header fields escape `\` and
+`|`, as the CEF spec requires. LEEF values have tabs and line breaks replaced
+by spaces.
+
+`syslog.network: tls` sends RFC 5424 messages over TLS with RFC 5425
+octet-counting framing (port 6514 is the usual one). The collector's
+certificate is checked against the system roots, or only against the CA in
+`syslog.ca_file` when it is set; `syslog.server_name` overrides the name
+checked when it differs from the address. TLS 1.2 is the minimum. A failed
+write drops that message and reconnects on the next one; connect and write
+each time out after 5 seconds, so a dead collector does not hold up the
+other sinks.
+
+```yaml
+notifications:
+  enabled: true
+  syslog:
+    network: tls
+    address: siem.plant.example:6514
+    format: cef
+    ca_file: /etc/cerberus/siem-ca.pem
 ```
 
 ## Example config

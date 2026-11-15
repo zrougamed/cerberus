@@ -182,6 +182,9 @@ notifications:
     webhook_url: ""          # Teams Workflow / Incoming Webhook URL
     format: adaptive         # adaptive (default) | message_card
   syslog:
-    network: udp             # udp | tcp | unix | unixgram
-    address: ""              # e.g. 127.0.0.1:514
+    network: udp             # udp | tcp | tls | unix | unixgram
+    address: ""              # e.g. 127.0.0.1:514, or siem.example:6514 for tls
     tag: cerberus
+    format: text             # text | cef | leef
+    ca_file: ""              # tls only: pin the collector's CA (default: system roots)
+    server_name: ""          # tls only: name in the collector's certificate, if not the address host

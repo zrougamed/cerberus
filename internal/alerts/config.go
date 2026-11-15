@@ -115,9 +115,12 @@ type notificationsOverlay struct {
 		Format     *string `yaml:"format" json:"format"`
 	} `yaml:"teams" json:"teams"`
 	Syslog *struct {
-		Network *string `yaml:"network" json:"network"`
-		Address *string `yaml:"address" json:"address"`
-		Tag     *string `yaml:"tag" json:"tag"`
+		Network    *string `yaml:"network" json:"network"`
+		Address    *string `yaml:"address" json:"address"`
+		Tag        *string `yaml:"tag" json:"tag"`
+		Format     *string `yaml:"format" json:"format"`
+		CAFile     *string `yaml:"ca_file" json:"ca_file"`
+		ServerName *string `yaml:"server_name" json:"server_name"`
 	} `yaml:"syslog" json:"syslog"`
 }
 
@@ -362,6 +365,9 @@ func mergeNotifications(dst *notify.Config, src *notificationsOverlay) {
 		if src.Syslog.Tag != nil {
 			dst.Syslog.Tag = *src.Syslog.Tag
 		}
+		setIf(&dst.Syslog.Format, src.Syslog.Format)
+		setIf(&dst.Syslog.CAFile, src.Syslog.CAFile)
+		setIf(&dst.Syslog.ServerName, src.Syslog.ServerName)
 	}
 }
 
