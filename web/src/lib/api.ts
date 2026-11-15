@@ -9,6 +9,7 @@ import type {
   AssetEntry,
   BaselineState,
   ZoneSummary,
+  CaptureState,
 } from './types'
 import { getToken, setToken } from './token'
 
@@ -48,6 +49,34 @@ export function fetchBaseline() {
 
 export function fetchZones() {
   return getJSON<ZoneSummary>('/api/v1/zones')
+}
+
+export function fetchCaptures() {
+  return getJSON<CaptureState>('/api/v1/captures')
+}
+
+/** Downloads a capture with the API token and hands it to the browser. */
+export async function downloadCapture(id: string): Promise<string | null> {
+  let res: Response
+  try {
+    res = await fetch(`/api/v1/captures/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+  } catch {
+    return 'The server could not be reached. Check that Cerberus is running.'
+  }
+  if (res.status === 401) {
+    setToken('')
+    return 'The API token was not accepted. Enter it again to download captures.'
+  }
+  if (!res.ok) return `The server answered ${res.status}.`
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cerberus-${id}.pcapng`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+  return null
 }
 
 export function fetchPolicy() {

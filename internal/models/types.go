@@ -139,6 +139,8 @@ type AlertEvent struct {
 	ObservedAt time.Time `json:"observed_at"`
 	// Techniques are the ATT&CK for ICS techniques the rule maps to.
 	Techniques []Technique `json:"techniques,omitempty"`
+	// CaptureID names the packet capture taken for this alert, if any.
+	CaptureID string `json:"capture_id,omitempty"`
 }
 
 type AnomalyFeatures struct {

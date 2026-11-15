@@ -124,7 +124,33 @@ export type AlertEvent = {
   device_ip?: string
   message?: string
   techniques?: { id: string; name: string }[]
+  capture_id?: string
   [key: string]: unknown
+}
+
+/** GET /api/v1/captures */
+export type CaptureEntry = {
+  id: string
+  created_at: string
+  reason: 'alert' | 'manual'
+  rule?: string
+  alert_id?: string
+  address?: string
+  from: string
+  to: string
+  packets: number
+  bytes: number
+}
+
+export type CaptureState = {
+  enabled: boolean
+  interfaces: string[]
+  buffer_packets: number
+  buffer_bytes: number
+  buffer_oldest?: string
+  pending: number
+  skipped: number
+  captures: CaptureEntry[]
 }
 
 export type AnomalyContribution = {
