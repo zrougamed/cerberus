@@ -44,6 +44,11 @@ Enable at least one sink when `notifications.enabled: true`.
 
 Anomaly events set `kind: "anomaly"` and may include `score`. New devices use `kind: "new_device"`.
 
+Rule events whose rule maps to MITRE ATT&CK for ICS add
+`"techniques": ["T0843 Program Download", "T0889 Modify Program"]`. Slack
+and Teams show them as an "ATT&CK for ICS" fact; syslog appends
+`techniques=T0843,T0889`. See [attack-mapping.md](attack-mapping.md).
+
 ## Slack setup
 
 1. Create an [Incoming Webhook](https://api.slack.com/messaging/webhooks) for your workspace/channel.
@@ -57,7 +62,7 @@ notifications:
     webhook_url: https://hooks.slack.com/services/T.../B.../...
 ```
 
-Messages include a header, severity, body, and fact fields (MAC, IP, rule, score, …).
+Messages include a header, severity, body, and fact fields (MAC, IP, rule, ATT&CK for ICS techniques, score, …).
 
 ## Microsoft Teams setup
 

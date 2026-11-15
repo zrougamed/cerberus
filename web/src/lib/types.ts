@@ -123,6 +123,7 @@ export type AlertEvent = {
   device_mac?: string
   device_ip?: string
   message?: string
+  techniques?: { id: string; name: string }[]
   [key: string]: unknown
 }
 

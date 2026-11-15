@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -864,6 +865,9 @@ const maxAlerts = 500
 // appendAlert stores a rule alert and hands it to the notifiers. Caller
 // holds nm.mu.
 func (nm *NetworkMonitor) appendAlert(alert models.AlertEvent) {
+	if alert.Techniques == nil {
+		alert.Techniques = slices.Clone(alerts.TechniquesFor(alert.Rule))
+	}
 	nm.alerts = append(nm.alerts, alert)
 	if len(nm.alerts) > maxAlerts {
 		nm.alerts = nm.alerts[len(nm.alerts)-maxAlerts:]
@@ -891,8 +895,22 @@ func (nm *NetworkMonitor) notifyRule(alert models.AlertEvent) {
 		DeviceIP:   alert.DeviceIP,
 		Vendor:     alert.Vendor,
 		Rule:       alert.Rule,
+		Techniques: techniqueLabels(alert.Techniques),
 		ObservedAt: alert.ObservedAt,
 	})
+}
+
+// techniqueLabels renders techniques as "T0855 Unauthorized Command
+// Message" for the notification sinks.
+func techniqueLabels(ts []models.Technique) []string {
+	out := make([]string, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, t.ID+" "+t.Name)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (nm *NetworkMonitor) notifyAnomaly(a models.AnomalyAlert) {

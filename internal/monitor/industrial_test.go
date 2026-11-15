@@ -551,3 +551,29 @@ func TestTrackEvent_BACnetIAmAndIEC104Command(t *testing.T) {
 		t.Fatalf("iec104 alert = %+v", got[alerts.RuleIEC104Control])
 	}
 }
+
+func TestAlerts_CarryATTACKTechniques(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	nm.TrackEvent(modbusEvent(1, "10.0.0.9", "10.0.0.5", 50000, 502, 1, 0x06, 0, 1, 0, 3))
+	nm.RecordAlert(models.AlertEvent{DeviceMAC: "02:00:00:00:00:02", Rule: "policy:r-1", Severity: "low", Message: "hit"})
+
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	w := got[alerts.RuleModbusWrite].Techniques
+	if len(w) != 2 || w[0] != (models.Technique{ID: "T0855", Name: "Unauthorized Command Message"}) || w[1].ID != "T0836" {
+		t.Fatalf("modbus_write techniques = %+v", w)
+	}
+	if got["policy:r-1"].Techniques != nil {
+		t.Fatalf("policy hit techniques = %+v", got["policy:r-1"].Techniques)
+	}
+	// The mapping table must not be shared with stored alerts.
+	w[0].Name = "changed"
+	if alerts.TechniquesFor(alerts.RuleModbusWrite)[0].Name != "Unauthorized Command Message" {
+		t.Fatal("alert techniques alias the mapping table")
+	}
+	if techniqueLabels(nil) != nil || techniqueLabels(w)[1] != "T0836 Modify Parameter" {
+		t.Fatalf("labels = %v", techniqueLabels(w))
+	}
+}
