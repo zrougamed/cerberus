@@ -142,3 +142,22 @@ func TestParse_IndustrialUnknownRuleRejected(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestIndustrialRule_MACAllowList(t *testing.T) {
+	t.Parallel()
+	cfg, err := Parse([]byte("industrial:\n  profinet_write:\n    allowed_sources: [\"00:1B:1B:AA:BB:CC\", \"10.0.0.1\"]\n"), ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Industrial.ProfinetWrite
+	if macs := r.SourceMACs(); len(macs) != 1 || macs[0] != "00:1b:1b:aa:bb:cc" {
+		t.Fatalf("macs = %v", macs)
+	}
+	if len(r.SourcePrefixes()) != 1 {
+		t.Fatalf("prefixes = %v", r.SourcePrefixes())
+	}
+	if _, err := Parse([]byte("industrial:\n  profinet_write:\n    allowed_sources: [\"plc-01\"]\n"), ".yaml"); err == nil ||
+		!strings.Contains(err.Error(), "MAC addresses are also accepted") {
+		t.Fatalf("err = %v", err)
+	}
+}

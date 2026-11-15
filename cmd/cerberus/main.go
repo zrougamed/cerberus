@@ -316,6 +316,8 @@ func main() {
 					eventTypeStr = "HTTP"
 				case 7:
 					eventTypeStr = "TLS"
+				case models.EVENT_TYPE_PROFINET:
+					eventTypeStr = "PROFINET"
 				}
 
 				fmt.Printf("Event #%d: Type=%s(%d) SrcIP=%s DstIP=%s SrcPort=%d DstPort=%d\n",

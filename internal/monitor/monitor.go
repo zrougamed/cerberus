@@ -492,6 +492,11 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 		protocol = "TLS"
 		service = "TLS"
 		l7Info = utils.GetL7Info(evt)
+
+	case models.EVENT_TYPE_PROFINET:
+		trafficType = models.TrafficProfinetDCP
+		protocol = "PROFINET"
+		service = "PROFINET_DCP"
 	}
 
 	// Get or create device
@@ -687,7 +692,8 @@ func (nm *NetworkMonitor) TrackEvent(evt *models.NetworkEvent) {
 	// Update cache
 	nm.Cache.Add(srcMAC, device)
 	nm.evaluateAlerts(device)
-	if evt.EventType != models.EVENT_TYPE_ARP {
+	// ARP and PROFINET frames have no IP header to match.
+	if evt.EventType != models.EVENT_TYPE_ARP && evt.EventType != models.EVENT_TYPE_PROFINET {
 		nm.checkWatchlists(device, srcIP, dstIP, time.Now())
 		nm.checkZones(device, evt, srcIP, dstIP, protocol, time.Now())
 	}

@@ -2,7 +2,9 @@ package alerts
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
+	"strings"
 )
 
 // Rule ids raised by the industrial protocol decoders.
@@ -26,6 +28,10 @@ const (
 	// RuleAssetChanged fires when a device reports a different model,
 	// firmware or serial than before. Only enabled and severity apply.
 	RuleAssetChanged = "asset_changed"
+	// PROFINET DCP Set: renaming a station or changing its address takes
+	// it off its controller; a factory reset wipes its configuration.
+	RuleProfinetWrite   = "profinet_write"
+	RuleProfinetControl = "profinet_control"
 )
 
 // defaultIndustrialRealertSeconds keeps a polling SCADA master that writes
@@ -65,6 +71,8 @@ type IndustrialConfig struct {
 	OPCUAInsecure    IndustrialRule `yaml:"opcua_insecure" json:"opcua_insecure"`
 	MQTTAnonymous    IndustrialRule `yaml:"mqtt_anonymous" json:"mqtt_anonymous"`
 	AssetChanged     IndustrialRule `yaml:"asset_changed" json:"asset_changed"`
+	ProfinetWrite    IndustrialRule `yaml:"profinet_write" json:"profinet_write"`
+	ProfinetControl  IndustrialRule `yaml:"profinet_control" json:"profinet_control"`
 }
 
 // NamedIndustrialRule pairs a rule with its id.
@@ -93,6 +101,8 @@ func (c *IndustrialConfig) Rules() []NamedIndustrialRule {
 		{RuleOPCUAInsecure, &c.OPCUAInsecure},
 		{RuleMQTTAnonymous, &c.MQTTAnonymous},
 		{RuleAssetChanged, &c.AssetChanged},
+		{RuleProfinetWrite, &c.ProfinetWrite},
+		{RuleProfinetControl, &c.ProfinetControl},
 	}
 }
 
@@ -139,6 +149,10 @@ func defaultIndustrialConfig() IndustrialConfig {
 		// A firmware or model change on a controller is either planned
 		// maintenance or someone swapping hardware; both deserve a look.
 		AssetChanged: rule("high"),
+		// Both take a running station off the network; engineering tools
+		// do it during commissioning, nothing should in production.
+		ProfinetWrite:   rule("high"),
+		ProfinetControl: rule("high"),
 	}
 }
 
@@ -189,11 +203,28 @@ func validateIndustrial(c IndustrialConfig) error {
 		}
 		for _, s := range r.Rule.AllowedSources {
 			if _, err := parsePrefix(s); err != nil {
-				return fmt.Errorf("industrial.%s: allowed_sources: %w", r.ID, err)
+				if _, macErr := net.ParseMAC(strings.TrimSpace(s)); macErr != nil {
+					return fmt.Errorf("industrial.%s: allowed_sources: %w (MAC addresses are also accepted)", r.ID, err)
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// SourceMACs returns the MAC addresses in AllowedSources, normalised to
+// lower case, for protocols without IP such as PROFINET DCP.
+func (r IndustrialRule) SourceMACs() []string {
+	var out []string
+	for _, s := range r.AllowedSources {
+		if _, err := parsePrefix(s); err == nil {
+			continue
+		}
+		if hw, err := net.ParseMAC(strings.TrimSpace(s)); err == nil {
+			out = append(out, strings.ToLower(hw.String()))
+		}
+	}
+	return out
 }
 
 // SourcePrefixes returns AllowedSources as prefixes. The rule must have

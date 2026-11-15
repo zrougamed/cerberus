@@ -598,3 +598,81 @@ func TestAlertHook_SetsCaptureID(t *testing.T) {
 		t.Fatalf("alerts = %+v seen = %v", got, seen)
 	}
 }
+
+func profinetEvent(srcMAC, dstMAC byte, dcp []byte) *models.NetworkEvent {
+	evt := &models.NetworkEvent{
+		EventType: models.EVENT_TYPE_PROFINET,
+		SrcMac:    [6]byte{0x02, 0, 0, 0, 0, srcMAC},
+		DstMac:    [6]byte{0x02, 0, 0, 0, 0, dstMAC},
+	}
+	copy(evt.L7Payload[:], dcp)
+	return evt
+}
+
+// dcpSet builds a DCP Set request with one block (BlockQualifier first).
+func dcpPayload(frameID uint16, service, stype, opt, sub byte, value ...byte) []byte {
+	data := append([]byte{0, 0}, value...)
+	block := []byte{opt, sub, byte(len(data) >> 8), byte(len(data))}
+	block = append(block, data...)
+	if len(data)%2 == 1 {
+		block = append(block, 0)
+	}
+	p := []byte{byte(frameID >> 8), byte(frameID), service, stype, 0, 0, 0, 1, 0, 0, byte(len(block) >> 8), byte(len(block))}
+	return append(p, block...)
+}
+
+func TestTrackEvent_ProfinetDCP(t *testing.T) {
+	nm := newIndustrialMonitor(t, nil)
+	// The station already has an IP from other traffic; DCP must not erase it.
+	nm.TrackEvent(modbusEvent(9, "10.20.0.50", "10.20.0.10", 502, 50000, 1, 0x03, 2, 0, 7))
+	nm.TrackEvent(profinetEvent(9, 0xFF, dcpPayload(0xFEFF, 3, 1, 2, 1, []byte("ET 200SP")...)))
+	nm.TrackEvent(profinetEvent(1, 9, dcpPayload(0xFEFD, 2, 0, 2, 2, []byte("rogue")...)))
+	nm.TrackEvent(profinetEvent(1, 9, dcpPayload(0xFEFD, 2, 0, 5, 6, 0, 2)))
+
+	station := nm.GetStats()["02:00:00:00:00:09"]
+	if station.IP != "10.20.0.50" {
+		t.Fatalf("station IP = %q", station.IP)
+	}
+	if station.Asset == nil || station.Asset.Model != "ET 200SP" || station.Asset.Source != "profinet" {
+		t.Fatalf("asset = %+v", station.Asset)
+	}
+	got := map[string]models.AlertEvent{}
+	for _, a := range nm.GetAlerts() {
+		got[a.Rule] = a
+	}
+	if want := "PROFINET DCP set_name from 02:00:00:00:00:01 to 02:00:00:00:00:09 (new name rogue)"; got[alerts.RuleProfinetWrite].Message != want {
+		t.Fatalf("write alert = %q, want %q", got[alerts.RuleProfinetWrite].Message, want)
+	}
+	if got[alerts.RuleProfinetControl].Message != "PROFINET DCP set_factory_reset from 02:00:00:00:00:01 to 02:00:00:00:00:09" {
+		t.Fatalf("control alert = %+v", got[alerts.RuleProfinetControl])
+	}
+	if techs := got[alerts.RuleProfinetControl].Techniques; len(techs) != 2 || techs[1].ID != "T0816" {
+		t.Fatalf("techniques = %+v", techs)
+	}
+	tool := nm.GetStats()["02:00:00:00:00:01"].Industrial["profinet"]
+	if tool == nil || tool.Operations["write"] != 1 || tool.Operations["control"] != 1 || tool.Peers[0] != "02:00:00:00:00:09" {
+		t.Fatalf("engineering tool stats = %+v", tool)
+	}
+	// Not decodable as DCP: counted as traffic, nothing industrial.
+	nm.TrackEvent(profinetEvent(3, 0xFF, []byte{0x80, 0x00}))
+	if d := nm.GetStats()["02:00:00:00:00:03"]; d == nil || d.Industrial != nil || d.TrafficTypeCounts[models.TrafficProfinetDCP] != 1 {
+		t.Fatalf("undecodable frame device = %+v", d)
+	}
+}
+
+func TestTrackEvent_ProfinetAllowedMAC(t *testing.T) {
+	nm := newIndustrialMonitor(t, func(c *alerts.IndustrialConfig) {
+		c.ProfinetWrite.AllowedSources = []string{"02:00:00:00:00:01", "10.0.0.0/8"}
+	})
+	nm.TrackEvent(profinetEvent(1, 9, dcpPayload(0xFEFD, 2, 0, 2, 2, []byte("ok")...)))
+	nm.TrackEvent(profinetEvent(2, 9, dcpPayload(0xFEFD, 2, 0, 2, 2, []byte("bad")...)))
+	var who []string
+	for _, a := range nm.GetAlerts() {
+		if a.Rule == alerts.RuleProfinetWrite {
+			who = append(who, a.DeviceMAC)
+		}
+	}
+	if len(who) != 1 || who[0] != "02:00:00:00:00:02" {
+		t.Fatalf("alerts from %v, want only the unlisted station", who)
+	}
+}

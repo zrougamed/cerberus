@@ -9,4 +9,5 @@ export const protocolNames: Record<string, string> = {
   iec104: 'IEC 60870-5-104',
   opcua: 'OPC UA',
   mqtt: 'MQTT',
+  profinet: 'PROFINET DCP',
 }

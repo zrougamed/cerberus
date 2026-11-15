@@ -5,11 +5,13 @@ import (
 	"maps"
 	"net/netip"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/zrougamed/cerberus/internal/alerts"
 	"github.com/zrougamed/cerberus/internal/industrial"
 	"github.com/zrougamed/cerberus/internal/models"
+	"github.com/zrougamed/cerberus/internal/utils"
 )
 
 const (
@@ -34,15 +36,16 @@ type IndustrialCountKey struct {
 
 // industrialRule is an alerts.IndustrialRule with its allow-list parsed.
 type industrialRule struct {
-	id    string
-	cfg   alerts.IndustrialRule
-	allow []netip.Prefix
+	id        string
+	cfg       alerts.IndustrialRule
+	allow     []netip.Prefix
+	allowMACs []string // for Ethernet-only protocols (PROFINET DCP)
 }
 
 func (r *industrialRule) allows(addr string) bool {
 	a, err := netip.ParseAddr(addr)
 	if err != nil {
-		return false
+		return slices.Contains(r.allowMACs, strings.ToLower(addr))
 	}
 	a = a.Unmap()
 	for _, p := range r.allow {
@@ -85,6 +88,8 @@ var industrialRuleTargets = map[string]industrialRuleTarget{
 	alerts.RuleOPCUAWrite:       {protocol: industrial.ProtocolOPCUA, class: industrial.ClassWrite},
 	alerts.RuleOPCUAInsecure:    {protocol: industrial.ProtocolOPCUA, flag: industrial.FlagInsecurePolicy},
 	alerts.RuleMQTTAnonymous:    {protocol: industrial.ProtocolMQTT, flag: industrial.FlagNoUsername},
+	alerts.RuleProfinetWrite:    {protocol: industrial.ProtocolProfinet, class: industrial.ClassWrite},
+	alerts.RuleProfinetControl:  {protocol: industrial.ProtocolProfinet, class: industrial.ClassControl},
 }
 
 // newIndustrialRules maps each target key to the enabled rule for it.
@@ -95,7 +100,7 @@ func newIndustrialRules(cfg alerts.IndustrialConfig) map[string]*industrialRule 
 		if !ok || !r.Rule.Enabled {
 			continue
 		}
-		rules[target.key()] = &industrialRule{id: r.ID, cfg: *r.Rule, allow: r.Rule.SourcePrefixes()}
+		rules[target.key()] = &industrialRule{id: r.ID, cfg: *r.Rule, allow: r.Rule.SourcePrefixes(), allowMACs: r.Rule.SourceMACs()}
 	}
 	return rules
 }
@@ -104,10 +109,16 @@ func newIndustrialRules(cfg alerts.IndustrialConfig) map[string]*industrialRule 
 // the device counters and raises alerts for risky requests. Caller holds
 // nm.mu.
 func (nm *NetworkMonitor) trackIndustrial(device *models.DeviceInfo, evt *models.NetworkEvent, srcIP, dstIP string, now time.Time) {
-	if evt.EventType != models.EVENT_TYPE_TCP && evt.EventType != models.EVENT_TYPE_UDP {
-		return
+	var msg industrial.Message
+	var ok bool
+	switch evt.EventType {
+	case models.EVENT_TYPE_TCP, models.EVENT_TYPE_UDP:
+		msg, ok = industrial.Decode(evt.Protocol, evt.SrcPort, evt.DstPort, evt.L7Payload[:])
+	case models.EVENT_TYPE_PROFINET:
+		// Ethernet-only: the stations are named by MAC address.
+		msg, ok = industrial.DecodeDCP(evt.L7Payload[:])
+		srcIP, dstIP = utils.MacToString(evt.SrcMac), utils.MacToString(evt.DstMac)
 	}
-	msg, ok := industrial.Decode(evt.Protocol, evt.SrcPort, evt.DstPort, evt.L7Payload[:])
 	if !ok {
 		return
 	}
@@ -203,15 +214,16 @@ func (nm *NetworkMonitor) raiseIndustrialAlert(rule *industrialRule, device *mod
 }
 
 var protocolLabels = map[string]string{
-	industrial.ProtocolModbus: "Modbus",
-	industrial.ProtocolS7:     "S7comm",
-	industrial.ProtocolS7Plus: "S7comm-plus",
-	industrial.ProtocolDNP3:   "DNP3",
-	industrial.ProtocolENIP:   "EtherNet/IP",
-	industrial.ProtocolBACnet: "BACnet",
-	industrial.ProtocolIEC104: "IEC 104",
-	industrial.ProtocolOPCUA:  "OPC UA",
-	industrial.ProtocolMQTT:   "MQTT",
+	industrial.ProtocolModbus:   "Modbus",
+	industrial.ProtocolS7:       "S7comm",
+	industrial.ProtocolS7Plus:   "S7comm-plus",
+	industrial.ProtocolDNP3:     "DNP3",
+	industrial.ProtocolENIP:     "EtherNet/IP",
+	industrial.ProtocolBACnet:   "BACnet",
+	industrial.ProtocolIEC104:   "IEC 104",
+	industrial.ProtocolOPCUA:    "OPC UA",
+	industrial.ProtocolMQTT:     "MQTT",
+	industrial.ProtocolProfinet: "PROFINET DCP",
 }
 
 var flagLabels = map[string]string{

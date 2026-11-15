@@ -129,6 +129,13 @@ industrial:
   asset_changed:             # a device reports a different model, firmware or serial
     enabled: true
     severity: high
+  profinet_write:            # DCP Set name or IP: takes a station off its controller
+    enabled: true
+    severity: high
+    allowed_sources: []      # MAC addresses of commissioning tools (DCP has no IP)
+  profinet_control:          # DCP factory reset
+    enabled: true
+    severity: high
 
 # Zones and conduits (IEC 62443). Empty by default: nothing is judged until
 # zones are defined. Industrial zones are watch-only for policy drop rules

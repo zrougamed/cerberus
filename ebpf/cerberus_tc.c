@@ -13,6 +13,8 @@
 #define ETH_P_ARP 0x0806
 #define ETH_P_IP  0x0800
 #define ETH_P_IPV6 0x86DD
+#define ETH_P_8021Q 0x8100
+#define ETH_P_PROFINET 0x8892
 
 #define PROTO_TCP 6
 #define PROTO_UDP 17
@@ -26,6 +28,13 @@
 #define EVENT_TYPE_DNS 5
 #define EVENT_TYPE_HTTP 6
 #define EVENT_TYPE_TLS 7
+#define EVENT_TYPE_PROFINET 8
+
+// PROFINET DCP frame ids (IEC 61158-6-10): Hello, Get/Set, Identify
+// request, Identify response. Cyclic real-time frames use lower ids and are
+// not reported: they arrive every few milliseconds and carry process data.
+#define PN_DCP_FIRST 0xFEFC
+#define PN_DCP_LAST  0xFEFF
 
 // DNS port
 #define DNS_PORT 53
@@ -736,6 +745,52 @@ static __always_inline int handle_arp(struct __sk_buff *skb, struct ethhdr *eth)
     return CERB_PASS;
 }
 
+// ------------------- PROFINET DCP -------------------
+// payload points at the frame id, right after the (optional VLAN tag and)
+// ethertype. Only DCP frames become events.
+static __always_inline int handle_profinet(struct __sk_buff *skb, struct ethhdr *eth, __u8 *payload)
+{
+    void *data_end = (void *)(long)skb->data_end;
+    if ((void *)(payload + 2) > data_end)
+        return CERB_PASS;
+    __u16 frame_id = ((__u16)payload[0] << 8) | payload[1];
+    if (frame_id < PN_DCP_FIRST || frame_id > PN_DCP_LAST)
+        return CERB_PASS;
+
+    struct network_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
+    if (!e) return ringbuf_full(skb);
+
+    e->event_type = EVENT_TYPE_PROFINET;
+    __builtin_memcpy(e->src_mac, eth->h_source, 6);
+    __builtin_memcpy(e->dst_mac, eth->h_dest, 6);
+    e->src_ip = 0;
+    e->dst_ip = 0;
+    e->is_ipv6 = 0;
+    __builtin_memset(e->src_ipv6, 0, 16);
+    __builtin_memset(e->dst_ipv6, 0, 16);
+    e->src_port = 0;
+    e->dst_port = 0;
+    e->protocol = 0;
+    e->tcp_flags = 0;
+    e->arp_op = 0;
+    __builtin_memset(e->arp_sha, 0, 6);
+    __builtin_memset(e->arp_tha, 0, 6);
+    e->icmp_type = 0;
+    e->icmp_code = 0;
+    e->ifindex = skb->ifindex;
+    __builtin_memset(e->l7_payload, 0, L7_PAYLOAD_SIZE);
+
+    #pragma unroll
+    for (int i = 0; i < L7_PAYLOAD_SIZE; i++) {
+        if ((void *)(payload + i + 1) > data_end)
+            break;
+        e->l7_payload[i] = payload[i];
+    }
+
+    bpf_ringbuf_submit(e, 0);
+    return CERB_PASS;
+}
+
 // ------------------- TCP -------------------
 static __always_inline int handle_tcp(struct __sk_buff *skb, struct ethhdr *eth, struct iphdr *iph)
 {
@@ -1100,7 +1155,17 @@ int xdp_arp_monitor(struct __sk_buff *skb)
         return CERB_PASS;
     }
 
+    // PROFINET counts as "other" so the kernel counter layout is unchanged.
     count(CNT_OTHER, skb);
+    if (proto == ETH_P_PROFINET)
+        return handle_profinet(skb, eth, (__u8 *)(eth + 1));
+    if (proto == ETH_P_8021Q) {
+        // PROFINET is usually VLAN-tagged (priority 6): TCI, then ethertype.
+        __u8 *tag = (__u8 *)(eth + 1);
+        if ((void *)(tag + 4) > data_end) return CERB_PASS;
+        if ((((__u16)tag[2] << 8) | tag[3]) == ETH_P_PROFINET)
+            return handle_profinet(skb, eth, tag + 4);
+    }
     return CERB_PASS;
 }
 
