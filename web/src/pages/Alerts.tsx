@@ -17,6 +17,7 @@ export function AlertsPage() {
             <th className="px-2 py-2">Rule</th>
             <th className="px-2 py-2">Device</th>
             <th className="px-2 py-2">Message</th>
+            <th className="px-2 py-2">ATT&amp;CK for ICS</th>
           </tr>
         </thead>
         <tbody>
@@ -29,6 +30,28 @@ export function AlertsPage() {
               <td className="px-2 py-2 font-mono">{String(a.rule || a.rule_id || '—')}</td>
               <td className="px-2 py-2 font-mono">{String(a.device_ip || a.device_mac || '—')}</td>
               <td className="px-2 py-2 [overflow-wrap:anywhere]">{String(a.message || '')}</td>
+              <td className="px-2 py-2">
+                {a.techniques && a.techniques.length ? (
+                  <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                    {a.techniques.map((t) => (
+                      <li key={t.id}>
+                        <a
+                          className="whitespace-nowrap font-mono text-xs font-bold text-[var(--accent)]"
+                          href={`https://attack.mitre.org/techniques/${t.id}/`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={t.name}
+                        >
+                          {t.id}
+                        </a>{' '}
+                        <span className="text-xs">{t.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

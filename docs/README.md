@@ -14,6 +14,7 @@ High-level reference for how the project fits together. The code remains the sou
 | [how-to-alerts.md](how-to-alerts.md) | How to trigger rule alerts vs anomaly alerts, default thresholds, deduplication, testing tips |
 | [active-response.md](active-response.md) | Blocking/counting by MAC or IP range in the kernel: modes, safety rails, policy file, console, API, alerts |
 | [industrial-protocols.md](industrial-protocols.md) | Decoding of Modbus/TCP, S7comm, DNP3, EtherNet/IP, BACnet/IP, IEC 104, OPC UA and MQTT, per-device industrial counters and reported identity, and the industrial alert rules and their allow-list |
+| [attack-mapping.md](attack-mapping.md) | MITRE ATT&CK for ICS techniques attached to each rule alert, and where they appear |
 | [notifications.md](notifications.md) | Outbound sinks: generic webhook, Slack Incoming Webhooks, Microsoft Teams Adaptive Card / MessageCard, syslog |
 
 The root [README.md](../README.md) covers install, prerequisites, troubleshooting, and a compact Control Room wireframe.

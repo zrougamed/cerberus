@@ -29,15 +29,18 @@ const (
 
 // Event is a sink-agnostic notification payload.
 type Event struct {
-	Kind       string    `json:"kind"`
-	Severity   string    `json:"severity"`
-	Title      string    `json:"title"`
-	Message    string    `json:"message"`
-	DeviceMAC  string    `json:"device_mac,omitempty"`
-	DeviceIP   string    `json:"device_ip,omitempty"`
-	Vendor     string    `json:"vendor,omitempty"`
-	Rule       string    `json:"rule,omitempty"`
-	Score      float64   `json:"score,omitempty"`
+	Kind      string  `json:"kind"`
+	Severity  string  `json:"severity"`
+	Title     string  `json:"title"`
+	Message   string  `json:"message"`
+	DeviceMAC string  `json:"device_mac,omitempty"`
+	DeviceIP  string  `json:"device_ip,omitempty"`
+	Vendor    string  `json:"vendor,omitempty"`
+	Rule      string  `json:"rule,omitempty"`
+	Score     float64 `json:"score,omitempty"`
+	// Techniques are ATT&CK for ICS labels such as "T0855 Unauthorized
+	// Command Message".
+	Techniques []string  `json:"techniques,omitempty"`
 	ObservedAt time.Time `json:"observed_at"`
 }
 
@@ -229,6 +232,14 @@ func writeSyslog(w *syslog.Writer, e Event) error {
 	}
 	if e.Score > 0 {
 		msg += fmt.Sprintf(" score=%.2f", e.Score)
+	}
+	if len(e.Techniques) > 0 {
+		ids := make([]string, 0, len(e.Techniques))
+		for _, t := range e.Techniques {
+			id, _, _ := strings.Cut(t, " ")
+			ids = append(ids, id)
+		}
+		msg += " techniques=" + strings.Join(ids, ",")
 	}
 	switch strings.ToLower(e.Severity) {
 	case "high":

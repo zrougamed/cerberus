@@ -122,6 +122,12 @@ type FlowStats struct {
 	LastSeen    time.Time `json:"last_seen"`
 }
 
+// Technique is a MITRE ATT&CK for ICS technique.
+type Technique struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type AlertEvent struct {
 	ID         string    `json:"id"`
 	DeviceMAC  string    `json:"device_mac"`
@@ -131,6 +137,8 @@ type AlertEvent struct {
 	Severity   string    `json:"severity"`
 	Message    string    `json:"message"`
 	ObservedAt time.Time `json:"observed_at"`
+	// Techniques are the ATT&CK for ICS techniques the rule maps to.
+	Techniques []Technique `json:"techniques,omitempty"`
 }
 
 type AnomalyFeatures struct {

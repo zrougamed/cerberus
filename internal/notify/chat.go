@@ -36,6 +36,9 @@ func eventFacts(e Event) [][2]string {
 	if e.Rule != "" {
 		facts = append(facts, [2]string{"Rule", e.Rule})
 	}
+	if len(e.Techniques) > 0 {
+		facts = append(facts, [2]string{"ATT&CK for ICS", strings.Join(e.Techniques, ", ")})
+	}
 	if e.DeviceMAC != "" {
 		facts = append(facts, [2]string{"MAC", e.DeviceMAC})
 	}
