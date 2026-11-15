@@ -193,6 +193,66 @@ paths:
       responses:
         "200":
           description: "{zones: [...], conduits: [...], violations: {\"enterprise>control\": 12}}"
+  /api/v1/segmentation:
+    get:
+      summary: Active zones, conduits and zone alert rules
+      description: >-
+        source is "config" (from the alerts file) or "saved" (edited from
+        the console or this API, which takes precedence).
+      operationId: getSegmentation
+      tags: [Zones]
+      responses:
+        "200":
+          description: "{source, zones: [{id, name, level, cidrs, industrial, enforce}], conduits: [{from, to, ports, bidirectional}], no_conduit, level_skip}"
+    put:
+      summary: Replace zones, conduits and zone alert rules
+      description: Validated like the alerts file and applied without a restart. Saved across restarts.
+      operationId: setSegmentation
+      tags: [Zones]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                zones:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, level, cidrs]
+                    properties:
+                      id: {type: string, pattern: "^[A-Za-z0-9_-]+$"}
+                      name: {type: string}
+                      level: {type: integer, minimum: 0, maximum: 5}
+                      cidrs: {type: array, items: {type: string}, example: ["10.20.0.0/24"]}
+                      industrial: {type: boolean}
+                      enforce: {type: boolean, description: "Allow policy drop rules covering this zone"}
+                conduits:
+                  type: array
+                  items:
+                    type: object
+                    required: [from, to]
+                    properties:
+                      from: {type: string}
+                      to: {type: string}
+                      ports: {type: array, items: {type: integer, minimum: 1, maximum: 65535}}
+                      bidirectional: {type: boolean}
+                no_conduit: {$ref: "#/components/schemas/ZoneRule"}
+                level_skip: {$ref: "#/components/schemas/ZoneRule"}
+      responses:
+        "200": {description: The new active segmentation}
+        "400": {description: Validation error with the reason}
+        "401": {description: Missing or invalid token}
+    delete:
+      summary: Discard console changes and use the alerts file again
+      operationId: resetSegmentation
+      tags: [Zones]
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: The active segmentation from the alerts file}
+        "401": {description: Missing or invalid token}
   /api/v1/policy/mode:
     put:
       summary: Set enforcement mode
@@ -378,6 +438,13 @@ paths:
         "200":
           description: Interactive API docs
 components:
+  schemas:
+    ZoneRule:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        severity: {type: string, enum: [low, medium, high]}
+        realert_seconds: {type: integer, minimum: 0}
   securitySchemes:
     bearerAuth:
       type: http

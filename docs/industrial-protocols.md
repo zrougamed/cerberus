@@ -124,6 +124,17 @@ Zones and conduits describe how the site is meant to be segmented (IEC
 62443). Each zone is a set of networks at one Purdue level; a conduit
 allows traffic from one zone to another.
 
+Set them up on the **Zones** page (unlock with the API token): add a zone
+per network segment, then a conduit per expected connection, and adjust the
+two zone alerts. Changes apply straight away, without a restart, and are
+saved in Cerberus's database. They take precedence over the `segmentation`
+section of the alerts file, which is used until something is saved from the
+console; **Use the config file instead** discards the console changes. The
+same is available over the API: `GET`, `PUT` (whole configuration) and
+`DELETE` (back to the file) on `/api/v1/segmentation`.
+
+The equivalent alerts file section:
+
 ```yaml
 segmentation:
   zones:

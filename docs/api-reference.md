@@ -20,6 +20,9 @@ Base URL is whatever host/port `CERBERUS_HTTP_ADDR` binds to (default `http://12
 | `GET /api/v1/zones` | Segmentation: `zones` (id, name, level, cidrs, industrial, enforce, devices), `conduits` (from, to, ports, bidirectional) and `violations` (`"from>to"` -> packets with no conduit). Empty `zones` when none are configured. |
 | `GET /api/v1/alerts` techniques | Each alert has `techniques`: ATT&CK for ICS `{id, name}` pairs for its rule, omitted when none apply. See [attack-mapping.md](attack-mapping.md). |
 | `GET /api/v1/captures`, `GET/DELETE /api/v1/captures/{id}`, `POST /api/v1/captures` | Packet captures; see [packet-capture.md](packet-capture.md). Download, delete and capture-now need the bearer token. |
+| `GET /api/v1/segmentation` | Active zones, conduits and zone alert rules, with `source` (`config` or `saved`). |
+| `PUT /api/v1/segmentation` | Bearer token. Replace the whole segmentation; validated like the alerts file, applied without a restart, saved across restarts. 400 returns the reason. |
+| `DELETE /api/v1/segmentation` | Bearer token. Discard saved changes and use the alerts file again. |
 | `GET /api/v1/version` | `{ "commit": "<short-sha>", "date": "<RFC3339>" }` build metadata stamped at compile time via `-ldflags -X`. Both fields are `"unknown"` for builds without git or ldflags. |
 
 Errors: non-GET returns **405** with plain text body `method not allowed`.

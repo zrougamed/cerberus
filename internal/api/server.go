@@ -66,6 +66,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	s.registerAssetRoutes(mux)
 	s.registerBaselineRoutes(mux)
 	s.registerCaptureRoutes(mux)
+	s.registerSegmentationRoutes(mux)
 	mux.HandleFunc("GET /api/v1/zones", s.handleZones)
 	if s.policy != nil {
 		s.registerPolicyRoutes(mux)

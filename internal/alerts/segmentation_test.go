@@ -143,7 +143,7 @@ func TestSegmentation_Validation(t *testing.T) {
 		zone + "    - {id: a, level: 2, cidrs: [10.1.0.0/16]}\n":                                                  "duplicate",
 		"segmentation:\n  zones:\n    - {id: a, level: 6, cidrs: [10.0.0.0/8]}\n":                                 "level",
 		"segmentation:\n  zones:\n    - {id: a, level: 1}\n":                                                      "cidrs must not be empty",
-		"segmentation:\n  zones:\n    - {id: a, level: 1, cidrs: [nope]}\n":                                       "bad address",
+		"segmentation:\n  zones:\n    - {id: a, level: 1, cidrs: [nope]}\n":                                       "not a valid IP address",
 		zone + "  conduits:\n    - {from: a, to: b}\n":                                                            "must name zones",
 		zone + "  conduits:\n    - {from: a, to: a}\n":                                                            "same zone",
 		zone + "    - {id: b, level: 2, cidrs: [10.0.0.0/16]}\n  conduits:\n    - {from: a, to: b, ports: [0]}\n": "out of range",
@@ -171,5 +171,17 @@ func TestSegmentation_Validation(t *testing.T) {
 	}
 	if _, err := NewZoneMatcher(SegmentationConfig{Zones: []Zone{{ID: "x", Level: 9, CIDRs: []string{"10.0.0.0/8"}}}}); err == nil {
 		t.Error("invalid config compiled")
+	}
+}
+
+func TestSegmentation_NormalizeKeepsEmptyLists(t *testing.T) {
+	t.Parallel()
+	n := DefaultConfig().Segmentation.Normalize()
+	if n.Zones == nil || n.Conduits == nil {
+		t.Fatalf("normalize returned nil lists: %+v", n)
+	}
+	z := SegmentationConfig{Zones: []Zone{{ID: " a ", Level: 1}}}.Normalize()
+	if z.Zones[0].ID != "a" || z.Zones[0].Name != "a" || z.Zones[0].CIDRs == nil {
+		t.Fatalf("zone = %+v", z.Zones[0])
 	}
 }

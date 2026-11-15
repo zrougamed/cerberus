@@ -295,6 +295,14 @@ func (e *Engine) protectedHit(t target) string {
 	return ""
 }
 
+// SetWatchOnly replaces the watch-only zones, for zone edits made while
+// running. Existing rules are kept; the check applies to new rules.
+func (e *Engine) SetWatchOnly(zones map[string][]netip.Prefix) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.opts.WatchOnly = zones
+}
+
 // watchOnlyIDs returns the watch-only zone ids sorted, for stable errors.
 func (e *Engine) watchOnlyIDs() []string {
 	ids := make([]string, 0, len(e.opts.WatchOnly))

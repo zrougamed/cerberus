@@ -132,7 +132,8 @@ industrial:
 
 # Zones and conduits (IEC 62443). Empty by default: nothing is judged until
 # zones are defined. Industrial zones are watch-only for policy drop rules
-# unless enforce: true.
+# unless enforce: true. Zones can also be edited on the Zones page; saved
+# console changes take precedence over this section.
 segmentation:
   zones: []
   #  - {id: enterprise, name: Office LAN, level: 4, cidrs: [10.0.0.0/16]}

@@ -33,7 +33,7 @@ Dev: run the Go harness on `:18080`, then `npm run dev` in `web/` (Vite proxies 
 | `#/analytics` | Analytics charts |
 | `#/devices` | Device table |
 | `#/device/:mac` | Device detail, with industrial counters and reported identity |
-| `#/zones` | Zones by Purdue level with their devices, conduits, and traffic without a conduit |
+| `#/zones` | Zones by Purdue level with their devices and traffic without a conduit; add, edit and remove zones and conduits and set the zone alerts (needs the API token) |
 | `#/assets` | Industrial asset inventory: role and protocol filters, CSV download, role override (needs the API token) |
 | `#/alerts` | Rule alerts |
 | `#/anomalies` | Anomaly snapshot |
