@@ -1,0 +1,45 @@
+{
+ "conduits": [
+  {
+   "bidirectional": false,
+   "from": "ent",
+   "ports": [
+    502
+   ],
+   "to": "l1"
+  },
+  {
+   "bidirectional": true,
+   "from": "l1",
+   "ports": null,
+   "to": "ent"
+  }
+ ],
+ "violations": {
+  "ent>l1": 17
+ },
+ "zones": [
+  {
+   "cidrs": [
+    "10.20.0.0/24"
+   ],
+   "devices": 3,
+   "enforce": false,
+   "id": "l1",
+   "industrial": true,
+   "level": 1,
+   "name": "Line 1"
+  },
+  {
+   "cidrs": [
+    "10.0.0.0/16"
+   ],
+   "devices": 5,
+   "enforce": true,
+   "id": "ent",
+   "industrial": false,
+   "level": 4,
+   "name": "Office"
+  }
+ ]
+}

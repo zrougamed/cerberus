@@ -1,0 +1,8 @@
+{
+ "authenticated": true,
+ "method": "token",
+ "name": "alice",
+ "protect_reads": false,
+ "role": "analyst",
+ "writes_enabled": true
+}

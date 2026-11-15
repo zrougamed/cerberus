@@ -1,0 +1,82 @@
+[
+ {
+  "acked_at": "2026-11-15T10:00:00Z",
+  "acked_by": "alice",
+  "capture_id": "ff211b1ca46beac6",
+  "device_ip": "10.20.0.30",
+  "device_mac": "00:1b:1b:00:00:1e",
+  "id": "1794753276942855504-00:1b:1b:00:00:1e-s7_program",
+  "message": "S7comm request_download from 10.20.0.30 to 10.20.0.60",
+  "note": "planned download during the outage",
+  "observed_at": "2026-11-15T10:00:00Z",
+  "rule": "s7_program",
+  "severity": "high",
+  "techniques": [
+   {
+    "id": "T0843",
+    "name": "Program Download"
+   },
+   {
+    "id": "T0889",
+    "name": "Modify Program"
+   }
+  ],
+  "vendor": "Siemens AG,"
+ },
+ {
+  "capture_id": "ff211b1ca46beac6",
+  "device_ip": "10.20.0.30",
+  "device_mac": "00:1b:1b:00:00:1e",
+  "id": "1794753276942835112-00:1b:1b:00:00:1e-s7_control",
+  "message": "S7comm plc_stop from 10.20.0.30 to 10.20.0.60",
+  "observed_at": "2026-11-15T10:00:00Z",
+  "rule": "s7_control",
+  "severity": "high",
+  "techniques": [
+   {
+    "id": "T0858",
+    "name": "Change Operating Mode"
+   }
+  ],
+  "vendor": "Siemens AG,"
+ },
+ {
+  "capture_id": "8a5a83fe9456de6c",
+  "device_ip": "10.20.0.10",
+  "device_mac": "00:1d:9c:00:00:0a",
+  "id": "1794753276942558753-00:1d:9c:00:00:0a-modbus_write",
+  "message": "Modbus write_multiple_registers from 10.20.0.10 to 10.20.0.50 unit 1, address 100 count 2",
+  "observed_at": "2026-11-15T10:00:00Z",
+  "rule": "modbus_write",
+  "severity": "high",
+  "techniques": [
+   {
+    "id": "T0855",
+    "name": "Unauthorized Command Message"
+   },
+   {
+    "id": "T0836",
+    "name": "Modify Parameter"
+   }
+  ],
+  "vendor": "Rockwell Automation"
+ },
+ {
+  "device_ip": "10.0.0.9",
+  "device_mac": "aa:bb:cc:00:00:01",
+  "id": "low-1",
+  "message": "DNS volume",
+  "observed_at": "2026-11-15T10:00:00Z",
+  "rule": "dns_queries",
+  "severity": "low"
+ },
+ {
+  "device_ip": "10.0.0.8",
+  "device_mac": "aa:bb:cc:00:00:02",
+  "id": "med-1",
+  "message": "Many targets",
+  "observed_at": "2026-11-15T09:59:00Z",
+  "rule": "target_spread",
+  "severity": "medium"
+ }
+]

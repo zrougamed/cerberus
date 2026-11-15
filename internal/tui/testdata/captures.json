@@ -1,0 +1,39 @@
+{
+ "buffer_bytes": 5242880,
+ "buffer_packets": 900,
+ "captures": [
+  {
+   "address": "10.20.0.30",
+   "alert_id": "1794753276942835112-00:1b:1b:00:00:1e-s7_control",
+   "bytes": 44,
+   "created_at": "2026-11-15T10:00:00Z",
+   "drops": 2,
+   "from": "2026-11-15T10:00:00Z",
+   "id": "ff211b1ca46beac6",
+   "packets": 0,
+   "reason": "alert",
+   "rule": "s7_control",
+   "to": "2026-11-15T10:00:00Z"
+  },
+  {
+   "address": "10.20.0.10",
+   "alert_id": "1794753276942558753-00:1d:9c:00:00:0a-modbus_write",
+   "bytes": 44,
+   "created_at": "2026-11-15T10:00:00Z",
+   "drops": 0,
+   "from": "2026-11-15T10:00:00Z",
+   "id": "8a5a83fe9456de6c",
+   "packets": 0,
+   "reason": "alert",
+   "rule": "modbus_write",
+   "to": "2026-11-15T10:00:00Z"
+  }
+ ],
+ "enabled": true,
+ "interfaces": [
+  "eth0"
+ ],
+ "kernel_drops": 4,
+ "pending": 0,
+ "skipped": 1
+}

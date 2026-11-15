@@ -1,0 +1,53 @@
+{
+ "baseline_windows": 0,
+ "centroid_distance": 2.2,
+ "current_score": 3.4,
+ "is_anomaly": true,
+ "last_contributions": [
+  {
+   "baseline_median": 100,
+   "feature": "packet_rate",
+   "label": "Packet rate",
+   "robust_z": 4.1,
+   "value": 400
+  }
+ ],
+ "last_evaluated_at": "0001-01-01T00:00:00Z",
+ "last_features": {
+  "dns_rate": 0,
+  "http_rate": 0,
+  "packet_rate": 0,
+  "packet_rate_slope": 0,
+  "port_entropy": 0,
+  "tcp_syn_rate": 0,
+  "tls_rate": 0,
+  "unique_device_count": 0,
+  "unusual_port_count": 0
+ },
+ "last_summary": "Packet rate is four times higher than usual.",
+ "recent_alerts": [
+  {
+   "contributions": [],
+   "features": {
+    "dns_rate": 0,
+    "http_rate": 0,
+    "packet_rate": 0,
+    "packet_rate_slope": 0,
+    "port_entropy": 0,
+    "tcp_syn_rate": 0,
+    "tls_rate": 0,
+    "unique_device_count": 0,
+    "unusual_port_count": 0
+   },
+   "observed_at": "2026-11-15T10:00:00Z",
+   "reason": "score",
+   "score": 3.4,
+   "severity": "high",
+   "summary": "Packet rate is four times higher than usual."
+  }
+ ],
+ "recent_anomaly_count": 1,
+ "robust_z_score": 4.1,
+ "status": "ready",
+ "window_seconds": 30
+}
