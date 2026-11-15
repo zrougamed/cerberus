@@ -76,11 +76,15 @@ func main() {
 
 	// Active response: the policy is loaded now (so the API can serve it)
 	// and pushed to the kernel once the BPF collection exists.
-	policyEngine, err := openPolicy(alertCfg.Segmentation.WatchOnlyPrefixes())
+	// Zones may have been edited from the console; use the active ones.
+	policyEngine, err := openPolicy(mon.GetSegmentation().WatchOnlyPrefixes())
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 	apiServer.SetPolicy(policyEngine)
+	mon.OnSegmentationChange(func(c alerts.SegmentationConfig) {
+		policyEngine.SetWatchOnly(c.WatchOnlyPrefixes())
+	})
 	if err := apiServer.SetAPIToken(os.Getenv("CERBERUS_API_TOKEN")); err != nil {
 		log.Fatalf("CERBERUS_API_TOKEN: %v", err)
 	}

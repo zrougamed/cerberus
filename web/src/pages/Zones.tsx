@@ -1,22 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchZones } from '../lib/api'
+import { fetchSegmentation, fetchZones } from '../lib/api'
 import { useLive } from '../lib/live'
 import { cn } from '../lib/cn'
-import type { ZoneInfo, ZoneSummary } from '../lib/types'
+import type { Segmentation, ZoneInfo, ZoneSummary } from '../lib/types'
+import { getToken } from '../lib/token'
+import { PURDUE_LEVELS } from '../lib/purdue'
+import { TokenUnlock } from '../components/TokenUnlock'
+import { ZoneEditor } from '../components/ZoneEditor'
 
 const REFRESH_MS = 10_000
 const MAX_CHIPS = 12
 
-// Purdue reference model level names.
-const LEVELS: Record<number, string> = {
-  5: 'Enterprise network',
-  4: 'Business planning and logistics',
-  3: 'Site operations',
-  2: 'Supervisory control',
-  1: 'Basic control',
-  0: 'Process',
-}
 
 function ZoneCard({ zone, devices }: { zone: ZoneInfo; devices: { mac: string; ip: string }[] }) {
   return (
@@ -57,15 +52,20 @@ function ZoneCard({ zone, devices }: { zone: ZoneInfo; devices: { mac: string; i
 export function ZonesPage() {
   const { devices, paused } = useLive()
   const [data, setData] = useState<ZoneSummary | null>(null)
+  const [seg, setSeg] = useState<Segmentation | null>(null)
   const [error, setError] = useState('')
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [, setTick] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
-        const next = await fetchZones()
+        const [next, nextSeg] = await Promise.all([fetchZones(), fetchSegmentation()])
         if (!cancelled) {
           setData(next)
+          setSeg({ ...nextSeg, zones: nextSeg.zones || [], conduits: nextSeg.conduits || [] })
           setError('')
         }
       } catch {
@@ -78,19 +78,64 @@ export function ZonesPage() {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [paused])
+  }, [paused, reloadKey])
 
-  if (!data && !error) return <p className="muted">Loading…</p>
-  if (error) return <p className="m-0 rounded bg-[var(--danger-soft)] px-3 py-2 font-semibold text-[var(--danger)]">{error}</p>
-  if (!data || data.zones.length === 0) {
+  if ((!data || !seg) && !error) return <p className="muted">Loading…</p>
+  if (error || !data || !seg) {
+    return <p className="m-0 rounded bg-[var(--danger-soft)] px-3 py-2 font-semibold text-[var(--danger)]">{error}</p>
+  }
+
+  const unlocked = Boolean(getToken())
+  const status = msg ? (
+    <p
+      role="status"
+      className={cn(
+        'm-0 rounded px-3 py-2 font-semibold',
+        msg.kind === 'ok' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-[var(--danger-soft)] text-[var(--danger)]',
+      )}
+    >
+      {msg.text}
+    </p>
+  ) : null
+  const editor = (
+    <>
+      {status}
+      <ZoneEditor
+        key={`${seg.source}-${seg.zones.length}-${seg.conduits.length}`}
+        seg={seg}
+        unlocked={unlocked}
+        onSaved={(next) => {
+          setSeg(next)
+          setReloadKey((k) => k + 1)
+        }}
+        onMessage={setMsg}
+      />
+    </>
+  )
+  const access = (
+    <section className="panel">
+      <TokenUnlock id="zones-token" onChange={() => setTick((n) => n + 1)} />
+    </section>
+  )
+
+  if (data.zones.length === 0) {
     return (
-      <section className="panel grid gap-2">
-        <h2 className="m-0 font-[family-name:var(--font-display)] text-lg font-bold">No zones defined</h2>
-        <p className="m-0">
-          Add a <code>segmentation</code> section to the alerts config with your zones (networks and Purdue level) and the conduits between them.
-          Cerberus then alerts on traffic that crosses a zone boundary without a conduit. See <code>docs/industrial-protocols.md</code>.
-        </p>
-      </section>
+      <div className="grid grid-cols-1 gap-3">
+        <section className="panel grid gap-2" aria-labelledby="zones-start">
+          <h2 id="zones-start" className="m-0 font-[family-name:var(--font-display)] text-lg font-bold">
+            Set up zones
+          </h2>
+          <p className="m-0">Cerberus uses zones to alert on traffic that crosses your network segmentation. To set them up:</p>
+          <ol className="m-0 grid list-decimal gap-1 pl-6">
+            <li>Add a zone for each network segment: give it a name, its level from L0 (field devices) to L5 (enterprise), and its address ranges.</li>
+            <li>Add a conduit for each connection you expect between two zones, with the ports it uses.</li>
+            <li>Any other traffic between zones then raises an alert under Rule alerts.</li>
+          </ol>
+          {!unlocked ? <p className="muted m-0 text-sm">Enter the API token below to make changes.</p> : null}
+        </section>
+        {access}
+        {editor}
+      </div>
     )
   }
 
@@ -106,7 +151,7 @@ export function ZonesPage() {
   const violations = Object.entries(data.violations || {}).sort((a, b) => b[1] - a[1])
 
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-1 gap-3">
       <section className="panel grid gap-0 p-0" aria-labelledby="zones-heading">
         <h2 id="zones-heading" className="sr-only">
           Zones by Purdue level
@@ -115,7 +160,7 @@ export function ZonesPage() {
           <div key={level} className="grid gap-2 border-b border-[var(--line)] p-3 last:border-b-0 sm:grid-cols-[11rem_1fr]">
             <div>
               <div className="font-mono text-2xl font-bold leading-none">L{level}</div>
-              <div className="muted text-xs">{LEVELS[level]}</div>
+              <div className="muted text-xs">{PURDUE_LEVELS[level]}</div>
             </div>
             <div className="flex flex-wrap gap-2">
               {data.zones
@@ -128,7 +173,7 @@ export function ZonesPage() {
         ))}
       </section>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3">
         <section className="panel overflow-x-auto" tabIndex={0} aria-label="Traffic without a conduit">
           <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Traffic without a conduit</h2>
           {violations.length === 0 ? (
@@ -158,34 +203,9 @@ export function ZonesPage() {
           )}
         </section>
 
-        <section className="panel overflow-x-auto" tabIndex={0} aria-label="Conduits">
-          <h2 className="m-0 mb-2 font-[family-name:var(--font-display)] text-lg font-bold">Conduits</h2>
-          {data.conduits.length === 0 ? (
-            <p className="muted m-0">No conduits: any traffic between two zones raises an alert.</p>
-          ) : (
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[var(--line)] text-left text-[var(--text-soft)]">
-                  <th className="px-2 py-2">From</th>
-                  <th className="px-2 py-2">To</th>
-                  <th className="px-2 py-2">Ports</th>
-                  <th className="px-2 py-2">Direction</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.conduits.map((c, i) => (
-                  <tr key={i} className="border-b border-[var(--line)]">
-                    <td className="px-2 py-2">{names.get(c.from) || c.from}</td>
-                    <td className="px-2 py-2">{names.get(c.to) || c.to}</td>
-                    <td className="px-2 py-2 font-mono">{c.ports && c.ports.length ? c.ports.join(', ') : 'any'}</td>
-                    <td className="px-2 py-2">{c.bidirectional ? 'Either side opens' : 'Only "from" opens'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
       </div>
+      {access}
+      {editor}
     </div>
   )
 }

@@ -171,7 +171,13 @@ func (s *Server) handlePolicyDelete(w http.ResponseWriter, r *http.Request) {
 
 // decodeBody reads a small JSON body strictly (unknown fields rejected).
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPolicyBody))
+	return decodeBodyLimit(w, r, v, maxPolicyBody)
+}
+
+// decodeBodyLimit decodes one JSON object of at most limit bytes and
+// rejects unknown fields.
+func decodeBodyLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())

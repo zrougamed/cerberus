@@ -36,6 +36,28 @@ export type ZoneSummary = {
   violations: Record<string, number> | null
 }
 
+/** GET/PUT /api/v1/segmentation */
+export type ZoneConfig = {
+  id: string
+  name: string
+  level: number
+  cidrs: string[]
+  industrial: boolean
+  enforce: boolean
+}
+
+export type ConduitConfig = { from: string; to: string; ports: number[] | null; bidirectional: boolean }
+
+export type ZoneRuleConfig = { enabled: boolean; severity: string; realert_seconds: number }
+
+export type Segmentation = {
+  source: 'config' | 'saved'
+  zones: ZoneConfig[]
+  conduits: ConduitConfig[]
+  no_conduit: ZoneRuleConfig
+  level_skip: ZoneRuleConfig
+}
+
 /** GET /api/v1/baseline */
 export type BaselineFlow = {
   id: string

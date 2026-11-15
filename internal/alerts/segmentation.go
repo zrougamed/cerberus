@@ -129,6 +129,28 @@ func mergeZoneRule(dst *ZoneRule, src *zoneRuleOverlay) {
 	}
 }
 
+// Normalize trims zone ids and fills empty names with the id, the same
+// defaults the config file gets. Edits from the API go through it too.
+func (c SegmentationConfig) Normalize() SegmentationConfig {
+	out := c
+	out.Zones = make([]Zone, len(c.Zones))
+	for i, z := range c.Zones {
+		z.ID = strings.TrimSpace(z.ID)
+		z.Name = strings.TrimSpace(z.Name)
+		if z.Name == "" {
+			z.Name = z.ID
+		}
+		z.CIDRs = append([]string{}, z.CIDRs...)
+		out.Zones[i] = z
+	}
+	// Empty lists, not null, in JSON.
+	out.Conduits = append([]Conduit{}, c.Conduits...)
+	return out
+}
+
+// Validate checks zones, conduits and the zone alert rules.
+func (c SegmentationConfig) Validate() error { return validateSegmentation(c) }
+
 func validateSegmentation(c SegmentationConfig) error {
 	ids := map[string]bool{}
 	total := 0

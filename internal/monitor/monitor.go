@@ -48,8 +48,11 @@ type NetworkMonitor struct {
 	industrialRules  map[string]*industrialRule
 	industrialLast   map[string]time.Time // device|rule|target|unit -> last alert
 	industrialCounts map[IndustrialCountKey]uint64
-	flowBaseline     *flowBaseline        // nil when disabled
-	zones            *alerts.ZoneMatcher  // nil without zones
+	flowBaseline     *flowBaseline       // nil when disabled
+	zones            *alerts.ZoneMatcher // nil without zones
+	segmentation     alerts.SegmentationConfig
+	segSource        string
+	onSegChange      func(alerts.SegmentationConfig)
 	zoneLast         map[string]time.Time // from|to|src|dst -> last alert
 	zoneViolations   map[string]uint64    // "from>to" -> packets
 	// alertHook runs for every rule alert before it is stored, with nm.mu
@@ -130,7 +133,8 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		}
 	}
 
-	zones, err := alerts.NewZoneMatcher(cfg.Segmentation)
+	segmentation, segSource := loadSegmentation(db, cfg.Segmentation)
+	zones, err := alerts.NewZoneMatcher(segmentation)
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("segmentation: %w", err)
@@ -162,6 +166,8 @@ func NewNetworkMonitorWithAlerts(cacheSize int, dbPath string, cfg alerts.Config
 		industrialLast:   make(map[string]time.Time),
 		industrialCounts: make(map[IndustrialCountKey]uint64),
 		zones:            zones,
+		segmentation:     segmentation,
+		segSource:        segSource,
 		zoneLast:         make(map[string]time.Time),
 		zoneViolations:   make(map[string]uint64),
 	}

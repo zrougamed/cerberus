@@ -60,9 +60,9 @@ func (nm *NetworkMonitor) checkZones(device *models.DeviceInfo, evt *models.Netw
 	if levels < 0 {
 		levels = -levels
 	}
-	rule, ruleID := nm.alertConfig.Segmentation.NoConduit, alerts.RuleZoneNoConduit
+	rule, ruleID := nm.segmentation.NoConduit, alerts.RuleZoneNoConduit
 	if levels > 1 {
-		rule, ruleID = nm.alertConfig.Segmentation.LevelSkip, alerts.RuleZoneLevelSkip
+		rule, ruleID = nm.segmentation.LevelSkip, alerts.RuleZoneLevelSkip
 	}
 	if !rule.Enabled {
 		return
@@ -98,8 +98,8 @@ func (nm *NetworkMonitor) pruneZoneState(now time.Time) {
 	if len(nm.zoneLast) < maxZoneAlertKeys {
 		return
 	}
-	longest := time.Duration(max(nm.alertConfig.Segmentation.NoConduit.RealertSeconds,
-		nm.alertConfig.Segmentation.LevelSkip.RealertSeconds)) * time.Second
+	longest := time.Duration(max(nm.segmentation.NoConduit.RealertSeconds,
+		nm.segmentation.LevelSkip.RealertSeconds)) * time.Second
 	for k, t := range nm.zoneLast {
 		if now.Sub(t) >= longest {
 			delete(nm.zoneLast, k)

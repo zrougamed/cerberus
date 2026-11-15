@@ -81,3 +81,15 @@ func TestWatchOnlyHit_InvalidPrefix(t *testing.T) {
 		t.Fatalf("invalid prefix hit %q", z)
 	}
 }
+
+func TestSetWatchOnly_AppliesToNewRules(t *testing.T) {
+	t.Parallel()
+	e, _ := boundEngine(t, Options{})
+	if _, err := e.Add(RuleInput{Action: ActionDrop, CIDR: "10.40.0.1"}, "t"); err != nil {
+		t.Fatalf("before zones: %v", err)
+	}
+	e.SetWatchOnly(map[string][]netip.Prefix{"line2": {netip.MustParsePrefix("10.40.0.0/24")}})
+	if _, err := e.Add(RuleInput{Action: ActionDrop, CIDR: "10.40.0.2"}, "t"); err == nil || !strings.Contains(err.Error(), "line2") {
+		t.Fatalf("after zones: %v", err)
+	}
+}

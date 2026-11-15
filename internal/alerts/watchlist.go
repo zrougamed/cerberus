@@ -124,13 +124,13 @@ func parsePrefix(s string) (netip.Prefix, error) {
 	if strings.Contains(s, "/") {
 		p, err := netip.ParsePrefix(s)
 		if err != nil {
-			return netip.Prefix{}, fmt.Errorf("bad cidr %q: %w", s, err)
+			return netip.Prefix{}, fmt.Errorf("%q is not a valid address range; write it like 10.20.0.0/24", s)
 		}
 		return p.Masked(), nil
 	}
 	a, err := netip.ParseAddr(s)
 	if err != nil {
-		return netip.Prefix{}, fmt.Errorf("bad address %q: %w", s, err)
+		return netip.Prefix{}, fmt.Errorf("%q is not a valid IP address or range", s)
 	}
 	return netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()), nil
 }

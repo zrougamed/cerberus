@@ -10,6 +10,7 @@ import type {
   BaselineState,
   ZoneSummary,
   CaptureState,
+  Segmentation,
 } from './types'
 import { getToken, setToken } from './token'
 
@@ -77,6 +78,10 @@ export async function downloadCapture(id: string): Promise<string | null> {
   a.remove()
   URL.revokeObjectURL(url)
   return null
+}
+
+export function fetchSegmentation() {
+  return getJSON<Segmentation>('/api/v1/segmentation')
 }
 
 export function fetchPolicy() {
