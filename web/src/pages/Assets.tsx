@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom'
 import { Download } from 'lucide-react'
 import { fetchAdvisoryStatus, fetchAssets, policyWrite } from '../lib/api'
 import { useLive } from '../lib/live'
-import { getToken } from '../lib/token'
+import { useCan } from '../lib/session'
 import { cn } from '../lib/cn'
 import type { AdvisoryStatus, AssetEntry } from '../lib/types'
 import { SEVERITY_CLASS } from '../lib/severity'
+import { AccessNote } from '../components/AccessNote'
 import { TokenUnlock } from '../components/TokenUnlock'
 import { protocolNames } from '../lib/protocols'
 
@@ -30,7 +31,6 @@ export function AssetsPage() {
   const [role, setRole] = useState('')
   const [protocol, setProtocol] = useState('')
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-  const [, setTick] = useState(0)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export function AssetsPage() {
     [assets],
   )
   const rows = (assets || []).filter((a) => (!role || a.role === role) && (!protocol || a.protocols.includes(protocol)))
-  const unlocked = Boolean(getToken())
+  const unlocked = useCan('analyst')
 
   async function setOverride(a: AssetEntry, next: string) {
     const res = await policyWrite('PUT', `/api/v1/assets/${encodeURIComponent(a.mac)}/role`, { role: next })
@@ -115,7 +115,8 @@ export function AssetsPage() {
                 : 'No advisory bundle loaded. Build one with tools/advisorygen and point CERBERUS_ADVISORIES_FILE at it to see known vulnerabilities per device.'}
           </p>
         ) : null}
-        <TokenUnlock id="assets-token" onChange={() => setTick((n) => n + 1)} />
+        <TokenUnlock id="assets-token" />
+        <AccessNote need="analyst" action="set device roles" />
       </section>
 
       {msg ? (

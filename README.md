@@ -542,7 +542,7 @@ curl https://zrouga.email
 - Captures network metadata and first 128 bytes of payload for L7 inspection
 - Does NOT capture or store complete packet payloads
 - Local database stored at `./data/network.db` (directory 0750); the policy at `./data/policy.json` (0600)
-- Policy changes (blocking) require `CERBERUS_API_TOKEN`; without it the API and console are read-only
+- Changes need a role: the shared `CERBERUS_API_TOKEN` (admin), named tokens, or OIDC sign-in with viewer, analyst and admin roles (see `docs/access-control.md`); without any of them the API and console are read-only
 - No external network connections by default; optional IEEE/IANA database downloads if `CERBERUS_DB_ONLINE` is enabled (see `docs/system-overview.md`)
 - L7 inspection is limited to protocol identification and metadata extraction
 

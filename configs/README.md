@@ -20,3 +20,7 @@
 | [`alerts.notifications.yaml`](alerts.notifications.yaml) | Push alerts off-box | Enables Slack / Teams / webhook / syslog sinks (edit URLs) |
 
 Edit placeholders in `alerts.strict-infra.yaml` (DHCP/RA addresses) and `alerts.notifications.yaml` (Slack/Teams/webhook URLs) before using in production.
+
+## Access control
+
+[`auth.example.yaml`](auth.example.yaml) is a starting point for `CERBERUS_AUTH_CONFIG`: named API tokens with roles, optional OIDC sign-in and `protect_reads`. See [docs/access-control.md](../docs/access-control.md).

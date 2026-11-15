@@ -55,7 +55,7 @@ Captures hold full packet payloads, so:
 
 - files and their directory are created owner-only (0600 / 0700);
 - downloading (`GET /api/v1/captures/{id}`), deleting and capturing on
-  demand all need the API token, even though the list of captures is
+  demand all need the admin role, even though the list of captures is
   readable like the rest of the API;
 - capture ids are random 16-hex strings and are checked before any file is
   touched.

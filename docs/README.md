@@ -17,6 +17,7 @@ High-level reference for how the project fits together. The code remains the sou
 | [attack-mapping.md](attack-mapping.md) | MITRE ATT&CK for ICS techniques attached to each rule alert, and where they appear |
 | [packet-capture.md](packet-capture.md) | In-memory frame ring, pcapng captures around alerts or on demand, access control, API and limits |
 | [advisories.md](advisories.md) | Offline advisory bundle from CISA CSAF, building and loading it, how assets are matched, limits |
+| [access-control.md](access-control.md) | Roles (viewer, analyst, admin), named API tokens, OIDC sign-in, protecting reads, alert acknowledgement |
 | [notifications.md](notifications.md) | Outbound sinks: generic webhook, Slack Incoming Webhooks, Microsoft Teams Adaptive Card / MessageCard, syslog |
 
 The root [README.md](../README.md) covers install, prerequisites, troubleshooting, and a compact Control Room wireframe.

@@ -148,6 +148,10 @@ type AlertEvent struct {
 	Techniques []Technique `json:"techniques,omitempty"`
 	// CaptureID names the packet capture taken for this alert, if any.
 	CaptureID string `json:"capture_id,omitempty"`
+	// AckedBy, AckedAt and Note record an analyst acknowledging the alert.
+	AckedBy string     `json:"acked_by,omitempty"`
+	AckedAt *time.Time `json:"acked_at,omitempty"`
+	Note    string     `json:"note,omitempty"`
 }
 
 type AnomalyFeatures struct {
