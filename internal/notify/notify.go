@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"log/syslog"
 	"net/http"
 	"strings"
 	"sync"
@@ -64,9 +63,16 @@ type TeamsConfig struct {
 
 // SyslogConfig writes RFC5424-compatible messages via log/syslog.
 type SyslogConfig struct {
-	Network string `yaml:"network" json:"network"` // udp, tcp, unix, unixgram
+	Network string `yaml:"network" json:"network"` // udp, tcp, tls, unix, unixgram
 	Address string `yaml:"address" json:"address"`
 	Tag     string `yaml:"tag" json:"tag"`
+	// Format is text (default), cef or leef.
+	Format string `yaml:"format" json:"format"`
+	// CAFile pins the collector's issuing CA for network tls; empty uses
+	// the system roots. ServerName overrides the name checked in the
+	// collector's certificate (default: the address host).
+	CAFile     string `yaml:"ca_file" json:"ca_file"`
+	ServerName string `yaml:"server_name" json:"server_name"`
 }
 
 // Config controls which events are forwarded and to which sinks.
@@ -151,22 +157,13 @@ func (d *Dispatcher) Close() {
 
 func (d *Dispatcher) loop() {
 	defer d.wg.Done()
-	var syslogWriter *syslog.Writer
+	var sink syslogSink
 	if d.cfg.Syslog.Address != "" {
-		tag := d.cfg.Syslog.Tag
-		if tag == "" {
-			tag = "cerberus"
-		}
-		network := d.cfg.Syslog.Network
-		if network == "" {
-			network = "udp"
-		}
-		w, err := syslog.Dial(network, d.cfg.Syslog.Address, syslog.LOG_ALERT|syslog.LOG_DAEMON, tag)
-		if err != nil {
-			log.Printf("notify: syslog dial failed: %v", err)
+		var err error
+		if sink, err = openSyslog(d.cfg.Syslog); err != nil {
+			log.Printf("notify: syslog setup failed: %v", err)
 		} else {
-			syslogWriter = w
-			defer syslogWriter.Close()
+			defer sink.Close()
 		}
 	}
 	for e := range d.ch {
@@ -186,8 +183,8 @@ func (d *Dispatcher) loop() {
 				log.Printf("notify: teams failed: %v", err)
 			}
 		}
-		if syslogWriter != nil {
-			if err := writeSyslog(syslogWriter, e); err != nil {
+		if sink != nil {
+			if err := sink.send(e.Severity, formatEvent(e, strings.ToLower(d.cfg.Syslog.Format))); err != nil {
 				log.Printf("notify: syslog write failed: %v", err)
 			}
 		}
@@ -216,39 +213,6 @@ func (d *Dispatcher) postJSON(url string, payload any) error {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}
 	return nil
-}
-
-func writeSyslog(w *syslog.Writer, e Event) error {
-	msg := fmt.Sprintf("cerberus kind=%s severity=%s title=%q message=%q",
-		e.Kind, e.Severity, e.Title, e.Message)
-	if e.DeviceMAC != "" {
-		msg += fmt.Sprintf(" mac=%s", e.DeviceMAC)
-	}
-	if e.DeviceIP != "" {
-		msg += fmt.Sprintf(" ip=%s", e.DeviceIP)
-	}
-	if e.Rule != "" {
-		msg += fmt.Sprintf(" rule=%s", e.Rule)
-	}
-	if e.Score > 0 {
-		msg += fmt.Sprintf(" score=%.2f", e.Score)
-	}
-	if len(e.Techniques) > 0 {
-		ids := make([]string, 0, len(e.Techniques))
-		for _, t := range e.Techniques {
-			id, _, _ := strings.Cut(t, " ")
-			ids = append(ids, id)
-		}
-		msg += " techniques=" + strings.Join(ids, ",")
-	}
-	switch strings.ToLower(e.Severity) {
-	case "high":
-		return w.Alert(msg)
-	case "medium":
-		return w.Warning(msg)
-	default:
-		return w.Info(msg)
-	}
 }
 
 func (d *Dispatcher) allowsKind(kind string) bool {
@@ -329,8 +293,22 @@ func Validate(cfg Config) error {
 	if cfg.Syslog.Address != "" {
 		switch strings.ToLower(cfg.Syslog.Network) {
 		case "", "udp", "tcp", "unix", "unixgram":
+		case "tls":
+			// Checks the address form and loads the CA file now, so a bad
+			// path fails at startup rather than on the first alert.
+			if _, err := tlsConfig(cfg.Syslog); err != nil {
+				return fmt.Errorf("notifications.syslog: %w", err)
+			}
 		default:
-			return fmt.Errorf("notifications.syslog.network: unknown %q (want udp|tcp|unix|unixgram)", cfg.Syslog.Network)
+			return fmt.Errorf("notifications.syslog.network: unknown %q (want udp|tcp|tls|unix|unixgram)", cfg.Syslog.Network)
+		}
+		switch strings.ToLower(cfg.Syslog.Format) {
+		case "", SyslogFormatText, SyslogFormatCEF, SyslogFormatLEEF:
+		default:
+			return fmt.Errorf("notifications.syslog.format: unknown %q (want text|cef|leef)", cfg.Syslog.Format)
+		}
+		if cfg.Syslog.CAFile != "" && strings.ToLower(cfg.Syslog.Network) != "tls" {
+			return fmt.Errorf("notifications.syslog.ca_file only applies to network tls")
 		}
 	}
 	return nil
